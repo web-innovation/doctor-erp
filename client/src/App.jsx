@@ -24,6 +24,7 @@ import Billing from './pages/billing/Billing';
 import NewBill from './pages/billing/NewBill';
 import Staff from './pages/staff/Staff';
 import Attendance from './pages/staff/Attendance';
+import Leave from './pages/staff/Leave';
 import Reports from './pages/reports/Reports';
 import LabsAgents from './pages/labs-agents/LabsAgents';
 import Settings from './pages/settings/Settings';
@@ -97,6 +98,7 @@ function App() {
         {/* Staff Management */}
         <Route path="/staff" element={<Staff />} />
         <Route path="/staff/attendance" element={<Attendance />} />
+        <Route path="/staff/leave" element={<Leave />} />
         
         {/* Reports */}
         <Route path="/reports" element={

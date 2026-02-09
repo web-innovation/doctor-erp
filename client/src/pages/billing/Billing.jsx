@@ -116,8 +116,99 @@ export default function Billing() {
   };
 
   const handlePrint = (bill) => {
-    // Open print view in new window
-    window.open(`/billing/${bill.id}/print`, '_blank');
+    // Generate print window with bill details
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow popups to print');
+      return;
+    }
+
+    const itemsHtml = (bill.items || []).map(item => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.description}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">₹${item.unitPrice?.toFixed(2)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">₹${(item.quantity * item.unitPrice)?.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Bill - ${bill.billNo || bill.id}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
+          .header h1 { margin: 0; color: #333; }
+          .header p { margin: 5px 0; color: #666; }
+          .bill-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .patient-info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { background: #333; color: white; padding: 10px; text-align: left; }
+          .totals { text-align: right; margin-top: 20px; }
+          .totals p { margin: 5px 0; }
+          .totals .total { font-size: 18px; font-weight: bold; }
+          .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>DocClinic ERP</h1>
+          <p>Tax Invoice</p>
+        </div>
+        
+        <div class="bill-info">
+          <div>
+            <strong>Bill No:</strong> ${bill.billNo || bill.id.slice(-8).toUpperCase()}<br>
+            <strong>Date:</strong> ${formatDate(bill.createdAt)}
+          </div>
+          <div style="text-align: right;">
+            <strong>Status:</strong> ${bill.paymentStatus || 'PENDING'}
+          </div>
+        </div>
+        
+        <div class="patient-info">
+          <strong>Patient:</strong> ${bill.patient?.name || 'Unknown'}<br>
+          ${bill.patient?.phone ? `<strong>Phone:</strong> ${bill.patient.phone}` : ''}
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th style="text-align: center;">Qty</th>
+              <th style="text-align: right;">Price</th>
+              <th style="text-align: right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+        
+        <div class="totals">
+          <p><strong>Subtotal:</strong> ₹${bill.subtotal?.toFixed(2) || '0.00'}</p>
+          ${bill.discountAmount > 0 ? `<p><strong>Discount:</strong> -₹${bill.discountAmount?.toFixed(2)}</p>` : ''}
+          ${bill.taxAmount > 0 ? `<p><strong>Tax:</strong> ₹${bill.taxAmount?.toFixed(2)}</p>` : ''}
+          <p class="total"><strong>Total:</strong> ₹${bill.totalAmount?.toFixed(2) || '0.00'}</p>
+          <p><strong>Paid:</strong> ₹${bill.paidAmount?.toFixed(2) || '0.00'}</p>
+          <p><strong>Balance Due:</strong> ₹${bill.dueAmount?.toFixed(2) || '0.00'}</p>
+        </div>
+        
+        <div class="footer">
+          <p>Thank you for your visit!</p>
+          <p>This is a computer generated invoice.</p>
+        </div>
+        
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const onRecordPayment = (data) => {

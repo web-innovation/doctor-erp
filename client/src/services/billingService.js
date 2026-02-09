@@ -63,7 +63,12 @@ const billingService = {
    * @returns {Promise} - Updated bill with payment recorded
    */
   recordPayment: async (id, paymentData) => {
-    const response = await api.post(`/billing/${id}/payments`, paymentData);
+    // Convert payment method to uppercase for backend
+    const data = {
+      ...paymentData,
+      method: paymentData.method?.toUpperCase() || 'CASH'
+    };
+    const response = await api.post(`/billing/${id}/payment`, data);
     return response.data;
   },
 

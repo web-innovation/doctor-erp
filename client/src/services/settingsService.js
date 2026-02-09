@@ -8,7 +8,7 @@ const settingsService = {
   },
 
   updateProfile: async (data) => {
-    const response = await api.put('/settings/profile', data);
+    const response = await api.patch('/auth/profile', data);
     return response.data;
   },
 

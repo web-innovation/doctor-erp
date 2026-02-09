@@ -61,15 +61,17 @@ router.get('/:id', checkPermission('staff', 'read'), async (req, res, next) => {
 });
 
 // GET /attendance - Attendance list
-router.get('/attendance/list', checkPermission('staff', 'read'), async (req, res, next) => {
+router.get('/attendance', checkPermission('staff', 'read'), async (req, res, next) => {
   try {
-    const { date, staffId, status, page = 1, limit = 50 } = req.query;
+    const { date, staffId, status, month, year, page = 1, limit = 50 } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
     const clinicId = req.user.clinicId;
 
     const where = { staff: { clinicId } };
+    
+    // Filter by specific date
     if (date) {
       const d = new Date(date);
       d.setHours(0, 0, 0, 0);
@@ -77,6 +79,13 @@ router.get('/attendance/list', checkPermission('staff', 'read'), async (req, res
       nextDay.setDate(nextDay.getDate() + 1);
       where.date = { gte: d, lt: nextDay };
     }
+    // Filter by month and year (used by attendance calendar)
+    else if (month && year) {
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999);
+      where.date = { gte: startDate, lte: endDate };
+    }
+    
     if (staffId) where.staffId = staffId;
     if (status) where.status = status;
 
@@ -92,6 +101,60 @@ router.get('/attendance/list', checkPermission('staff', 'read'), async (req, res
     res.json({
       success: true, data: attendance,
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /attendance/summary - Attendance summary for dashboard
+router.get('/attendance/summary', checkPermission('staff', 'read'), async (req, res, next) => {
+  try {
+    const { month, year } = req.query;
+    const clinicId = req.user.clinicId;
+    
+    // Get today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Count total staff
+    const totalStaff = await prisma.staff.count({
+      where: { clinicId }
+    });
+    
+    // Count today's attendance
+    const todayAttendance = await prisma.attendance.groupBy({
+      by: ['status'],
+      where: {
+        staff: { clinicId },
+        date: { gte: today, lt: tomorrow }
+      },
+      _count: true
+    });
+    
+    // Calculate summary
+    let presentToday = 0;
+    let absentToday = 0;
+    let onLeave = 0;
+    
+    todayAttendance.forEach(a => {
+      if (a.status === 'PRESENT' || a.status === 'present') {
+        presentToday = a._count;
+      } else if (a.status === 'ABSENT' || a.status === 'absent') {
+        absentToday = a._count;
+      } else if (a.status === 'LEAVE' || a.status === 'leave') {
+        onLeave = a._count;
+      }
+    });
+    
+    res.json({
+      success: true,
+      totalStaff,
+      presentToday,
+      absentToday,
+      onLeave
     });
   } catch (error) {
     next(error);

@@ -159,13 +159,14 @@ export default function Staff() {
 
   const openEditModal = (staff) => {
     setSelectedStaff(staff);
-    setEditValue('name', staff.name);
-    setEditValue('email', staff.email);
-    setEditValue('phone', staff.phone);
-    setEditValue('designation', staff.designation);
-    setEditValue('department', staff.department);
-    setEditValue('salary', staff.salary);
-    setEditValue('joiningDate', staff.joiningDate?.split('T')[0]);
+    // Staff data comes with nested user object
+    setEditValue('name', staff.user?.name || staff.name || '');
+    setEditValue('email', staff.user?.email || staff.email || '');
+    setEditValue('phone', staff.user?.phone || staff.phone || '');
+    setEditValue('designation', staff.designation || '');
+    setEditValue('department', staff.department || '');
+    setEditValue('salary', staff.salary || '');
+    setEditValue('joiningDate', staff.joiningDate?.split('T')[0] || '');
     setIsEditModalOpen(true);
   };
 

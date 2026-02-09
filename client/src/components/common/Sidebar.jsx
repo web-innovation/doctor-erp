@@ -13,6 +13,8 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   XMarkIcon,
+  ClockIcon,
+  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +26,8 @@ const menuItems = [
   { name: 'Pharmacy', path: '/pharmacy', icon: BuildingStorefrontIcon, roles: ['admin', 'pharmacist', 'DOCTOR', 'PHARMACIST', 'SUPER_ADMIN'] },
   { name: 'Billing', path: '/billing', icon: CurrencyDollarIcon, roles: ['admin', 'receptionist', 'accountant', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Staff', path: '/staff', icon: UsersIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Leave', path: '/staff/leave', icon: CalendarIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Reports', path: '/reports', icon: ChartBarIcon, roles: ['admin', 'doctor', 'accountant', 'DOCTOR', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Labs & Agents', path: '/labs-agents', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Settings', path: '/settings', icon: Cog6ToothIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN'] },

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import {
@@ -58,6 +58,7 @@ const mealTimingOptions = [
 
 export default function NewPrescription() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [medicineSearch, setMedicineSearch] = useState('');
   const [labTestSearch, setLabTestSearch] = useState('');
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
@@ -142,6 +143,8 @@ export default function NewPrescription() {
     mutationFn: prescriptionService.createPrescription,
     onSuccess: async (response) => {
       toast.success('Prescription saved successfully');
+      // Invalidate prescriptions list to refresh
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
       const prescriptionData = response.data || response;
       // Try to open print dialog (PDF generation may not be available)
       try {

@@ -10,22 +10,26 @@ const PAYMENT_METHODS = ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'INSURANCE'];
 
 // Helper: Calculate GST
 const calculateTax = (amount, taxConfig) => {
-  const { gstRate = 18, cgstRate = 9, sgstRate = 9, igstRate = 18, isInterState = false } = taxConfig || {};
+  // Default to 0% GST if not specified (user can select GST rate)
+  const gstRate = taxConfig?.gstRate ?? 0;
+  const isInterState = taxConfig?.isInterState || false;
   
   if (isInterState) {
     return {
-      igst: (amount * igstRate) / 100,
+      igst: (amount * gstRate) / 100,
       cgst: 0,
       sgst: 0,
-      totalTax: (amount * igstRate) / 100
+      totalTax: (amount * gstRate) / 100
     };
   }
   
+  // Split GST into CGST and SGST (each half of total GST)
+  const halfRate = gstRate / 2;
   return {
     igst: 0,
-    cgst: (amount * cgstRate) / 100,
-    sgst: (amount * sgstRate) / 100,
-    totalTax: (amount * (cgstRate + sgstRate)) / 100
+    cgst: (amount * halfRate) / 100,
+    sgst: (amount * halfRate) / 100,
+    totalTax: (amount * gstRate) / 100
   };
 };
 
@@ -199,6 +203,43 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
         items: true
       }
     });
+    
+    // Handle immediate payment if provided
+    if (req.body.payment && req.body.payment.amount > 0) {
+      const paymentAmount = Math.min(req.body.payment.amount, bill.totalAmount);
+      const method = req.body.payment.method?.toUpperCase() || 'CASH';
+      
+      await prisma.payment.create({
+        data: {
+          billId: bill.id,
+          clinicId: req.user.clinicId,
+          amount: paymentAmount,
+          method: PAYMENT_METHODS.includes(method) ? method : 'CASH',
+          reference: req.body.payment.reference || null
+        }
+      });
+      
+      const newPaidAmount = paymentAmount;
+      const newDueAmount = bill.totalAmount - newPaidAmount;
+      const newStatus = newDueAmount <= 0 ? 'PAID' : 'PARTIAL';
+      
+      const updatedBill = await prisma.bill.update({
+        where: { id: bill.id },
+        data: {
+          paidAmount: newPaidAmount,
+          dueAmount: newDueAmount,
+          paymentStatus: newStatus,
+          paymentMethod: method
+        },
+        include: {
+          patient: { select: { id: true, name: true, phone: true } },
+          items: true,
+          payments: true
+        }
+      });
+      
+      return res.status(201).json({ success: true, data: updatedBill, message: 'Bill created with payment recorded' });
+    }
     
     res.status(201).json({ success: true, data: bill, message: 'Bill created successfully' });
   } catch (error) {

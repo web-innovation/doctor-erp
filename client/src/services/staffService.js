@@ -53,6 +53,22 @@ const staffService = {
     return response.data;
   },
 
+  // Leave operations
+  getLeaves: async (params = {}) => {
+    const response = await api.get('/staff/leaves', { params });
+    return response.data;
+  },
+
+  applyLeave: async (data) => {
+    const response = await api.post('/staff/leaves', data);
+    return response.data;
+  },
+
+  updateLeaveStatus: async (id, data) => {
+    const response = await api.put(`/staff/leaves/${id}`, data);
+    return response.data;
+  },
+
   // Departments
   getDepartments: async () => {
     const response = await api.get('/staff/departments');
