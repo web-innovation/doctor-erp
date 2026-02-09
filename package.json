@@ -1,0 +1,46 @@
+{
+  "name": "docclinic-erp",
+  "version": "1.0.0",
+  "description": "Doctor Consultation & Pharmacy Management ERP System",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client",
+    "whatsapp-bot",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:bot\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:bot": "npm run dev --workspace=whatsapp-bot",
+    "build": "npm run build --workspace=client && npm run build --workspace=server",
+    "start": "npm run start --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:seed": "npm run db:seed --workspace=server",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces",
+    "demo": "npx nightwatch tests/e2e/doctor-demo.js --env demo",
+    "demo:interactive": "npx nightwatch tests/e2e/interactive-demo.js --env demo"
+  },
+  "keywords": [
+    "doctor",
+    "clinic",
+    "pharmacy",
+    "erp",
+    "healthcare",
+    "prescription",
+    "billing"
+  ],
+  "author": "DocClinic Team",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "caniuse-lite": "^1.0.30001769",
+    "chromedriver": "^143.0.4",
+    "concurrently": "^8.2.2",
+    "nightwatch": "^3.15.0"
+  },
+  "dependencies": {
+    "lodash": "^4.17.23"
+  }
+}

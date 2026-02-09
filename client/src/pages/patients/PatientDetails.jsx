@@ -1,0 +1,508 @@
+import { useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import {
+  FaArrowLeft,
+  FaEdit,
+  FaPhone,
+  FaEnvelope,
+  FaMapMarkerAlt,
+  FaCalendarAlt,
+  FaUser,
+  FaHeartbeat,
+  FaPrescriptionBottleAlt,
+  FaFileInvoice,
+  FaChartLine,
+  FaPlus,
+  FaAllergies,
+  FaNotesMedical,
+  FaSpinner,
+} from 'react-icons/fa';
+import { patientService } from '../../services/patientService';
+import { prescriptionService } from '../../services/prescriptionService';
+
+const tabs = [
+  { id: 'overview', label: 'Overview', icon: FaUser },
+  { id: 'history', label: 'History', icon: FaNotesMedical },
+  { id: 'prescriptions', label: 'Prescriptions', icon: FaPrescriptionBottleAlt },
+  { id: 'bills', label: 'Bills', icon: FaFileInvoice },
+  { id: 'vitals', label: 'Vitals', icon: FaChartLine },
+];
+
+export default function PatientDetails() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('overview');
+
+  // Fetch patient details
+  const {
+    data: patient,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ['patient', id],
+    queryFn: () => patientService.getById(id),
+    enabled: !!id,
+  });
+
+  // Fetch patient prescriptions
+  const { data: prescriptions } = useQuery({
+    queryKey: ['patientPrescriptions', id],
+    queryFn: () => prescriptionService.getByPatientId(id),
+    enabled: !!id && activeTab === 'prescriptions',
+  });
+
+  // Fetch patient vitals
+  const { data: vitals } = useQuery({
+    queryKey: ['patientVitals', id],
+    queryFn: () => patientService.getVitals(id),
+    enabled: !!id && activeTab === 'vitals',
+  });
+
+  // Fetch patient bills
+  const { data: bills } = useQuery({
+    queryKey: ['patientBills', id],
+    queryFn: () => patientService.getBills(id),
+    enabled: !!id && activeTab === 'bills',
+  });
+
+  // Add vitals mutation
+  const addVitalsMutation = useMutation({
+    mutationFn: (vitalsData) => patientService.addVitals(id, vitalsData),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['patientVitals', id]);
+      toast.success('Vitals added successfully');
+    },
+    onError: () => {
+      toast.error('Failed to add vitals');
+    },
+  });
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const calculateAge = (dob) => {
+    if (!dob) return '-';
+    const today = new Date();
+    const birthDate = new Date(dob);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <FaSpinner className="animate-spin text-4xl text-blue-600" />
+      </div>
+    );
+  }
+
+  if (isError || !patient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">Failed to load patient details</p>
+          <button
+            onClick={() => navigate('/patients')}
+            className="text-blue-600 hover:underline"
+          >
+            Back to Patients
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() => navigate('/patients')}
+            className="p-2 hover:bg-gray-100 rounded-lg transition"
+          >
+            <FaArrowLeft className="text-gray-600" />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-gray-900">Patient Details</h1>
+            <p className="text-gray-500">
+              ID: {patient.patientId || `P${String(patient.id).padStart(5, '0')}`}
+            </p>
+          </div>
+          <Link
+            to={`/patients/${id}/edit`}
+            className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+          >
+            <FaEdit />
+            Edit Patient
+          </Link>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Patient Info Card */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              {/* Photo and Basic Info */}
+              <div className="text-center mb-6">
+                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  {patient.photo ? (
+                    <img
+                      src={patient.photo}
+                      alt={patient.name}
+                      className="w-24 h-24 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-3xl font-bold text-blue-600">
+                      {patient.name?.charAt(0) || 'P'}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
+                <p className="text-gray-500">
+                  {patient.age || calculateAge(patient.dob)} years • {patient.gender || 'N/A'}
+                </p>
+              </div>
+
+              {/* Contact Info */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 text-gray-600">
+                  <FaPhone className="text-blue-500" />
+                  <span>{patient.phone || 'No phone'}</span>
+                </div>
+                <div className="flex items-center gap-3 text-gray-600">
+                  <FaEnvelope className="text-blue-500" />
+                  <span>{patient.email || 'No email'}</span>
+                </div>
+                <div className="flex items-start gap-3 text-gray-600">
+                  <FaMapMarkerAlt className="text-blue-500 mt-1" />
+                  <span>{patient.address || 'No address'}</span>
+                </div>
+                <div className="flex items-center gap-3 text-gray-600">
+                  <FaCalendarAlt className="text-blue-500" />
+                  <span>Registered: {formatDate(patient.createdAt)}</span>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
+                <Link
+                  to={`/prescriptions/new?patientId=${id}`}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition"
+                >
+                  <FaPrescriptionBottleAlt />
+                  New Prescription
+                </Link>
+                <Link
+                  to={`/appointments/new?patientId=${id}`}
+                  className="w-full inline-flex items-center justify-center gap-2 border border-blue-600 text-blue-600 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition"
+                >
+                  <FaCalendarAlt />
+                  Book Appointment
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <div className="lg:col-span-2">
+            {/* Tabs */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+              <div className="flex overflow-x-auto">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-6 py-4 font-medium whitespace-nowrap transition border-b-2 ${
+                      activeTab === tab.id
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <tab.icon />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              {/* Overview Tab */}
+              {activeTab === 'overview' && (
+                <div className="space-y-6">
+                  {/* Basic Info */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-500">Blood Group</p>
+                        <p className="font-medium text-gray-900">{patient.bloodGroup || 'Not recorded'}</p>
+                      </div>
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-500">Date of Birth</p>
+                        <p className="font-medium text-gray-900">{formatDate(patient.dob)}</p>
+                      </div>
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-500">Emergency Contact</p>
+                        <p className="font-medium text-gray-900">{patient.emergencyContact || 'Not recorded'}</p>
+                      </div>
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-500">Insurance</p>
+                        <p className="font-medium text-gray-900">{patient.insurance || 'Not recorded'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Allergies */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <FaAllergies className="text-red-500" />
+                        Allergies
+                      </h3>
+                    </div>
+                    {patient.allergies?.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {patient.allergies.map((allergy, index) => (
+                          <span
+                            key={index}
+                            className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm"
+                          >
+                            {allergy}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">No known allergies</p>
+                    )}
+                  </div>
+
+                  {/* Medical History */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Medical History</h3>
+                    {patient.medicalHistory?.length > 0 ? (
+                      <ul className="space-y-2">
+                        {patient.medicalHistory.map((item, index) => (
+                          <li key={index} className="flex items-start gap-2">
+                            <FaHeartbeat className="text-blue-500 mt-1 flex-shrink-0" />
+                            <span className="text-gray-700">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-gray-500">No medical history recorded</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* History Tab */}
+              {activeTab === 'history' && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Visit History</h3>
+                  {patient.visits?.length > 0 ? (
+                    <div className="space-y-4">
+                      {patient.visits.map((visit, index) => (
+                        <div
+                          key={index}
+                          className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="font-medium text-gray-900">{visit.reason || 'General Checkup'}</p>
+                            <span className="text-sm text-gray-500">{formatDate(visit.date)}</span>
+                          </div>
+                          <p className="text-gray-600 text-sm">{visit.notes || 'No notes'}</p>
+                          <p className="text-sm text-blue-600 mt-2">Dr. {visit.doctor || 'N/A'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No visit history available</p>
+                  )}
+                </div>
+              )}
+
+              {/* Prescriptions Tab */}
+              {activeTab === 'prescriptions' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Prescriptions</h3>
+                    <Link
+                      to={`/prescriptions/new?patientId=${id}`}
+                      className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      <FaPlus />
+                      New Prescription
+                    </Link>
+                  </div>
+                  {prescriptions?.length > 0 ? (
+                    <div className="space-y-4">
+                      {prescriptions.map((prescription) => (
+                        <Link
+                          key={prescription.id}
+                          to={`/prescriptions/${prescription.id}`}
+                          className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="font-medium text-gray-900">
+                              {prescription.diagnosis || 'Prescription'}
+                            </p>
+                            <span className="text-sm text-gray-500">
+                              {formatDate(prescription.date)}
+                            </span>
+                          </div>
+                          <p className="text-gray-600 text-sm">
+                            {prescription.medicines?.length || 0} medicines prescribed
+                          </p>
+                          <p className="text-sm text-blue-600 mt-2">
+                            Dr. {prescription.doctor || 'N/A'}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No prescriptions yet</p>
+                  )}
+                </div>
+              )}
+
+              {/* Bills Tab */}
+              {activeTab === 'bills' && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Bills & Invoices</h3>
+                  {bills?.length > 0 ? (
+                    <div className="space-y-4">
+                      {bills.map((bill) => (
+                        <Link
+                          key={bill.id}
+                          to={`/bills/${bill.id}`}
+                          className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="font-medium text-gray-900">Invoice #{bill.invoiceNumber}</p>
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                bill.status === 'paid'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}
+                            >
+                              {bill.status}
+                            </span>
+                          </div>
+                          <p className="text-gray-600 text-sm">{formatDate(bill.date)}</p>
+                          <p className="font-semibold text-gray-900 mt-2">
+                            ₹{bill.amount?.toLocaleString() || 0}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No bills generated</p>
+                  )}
+                </div>
+              )}
+
+              {/* Vitals Tab */}
+              {activeTab === 'vitals' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Vitals Record</h3>
+                    <button
+                      onClick={() => {
+                        // This would typically open a modal
+                        const vitalsData = {
+                          date: new Date().toISOString(),
+                          bp: '120/80',
+                          pulse: 72,
+                          temperature: 98.6,
+                          weight: 70,
+                          height: 170,
+                        };
+                        addVitalsMutation.mutate(vitalsData);
+                      }}
+                      disabled={addVitalsMutation.isPending}
+                      className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                    >
+                      {addVitalsMutation.isPending ? (
+                        <FaSpinner className="animate-spin" />
+                      ) : (
+                        <FaPlus />
+                      )}
+                      Add Vitals
+                    </button>
+                  </div>
+                  {vitals?.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              Date
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              BP
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              Pulse
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              Temp
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              Weight
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              Height
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vitals.map((vital, index) => (
+                            <tr key={index} className="border-b border-gray-50">
+                              <td className="py-3 px-4 text-gray-900">
+                                {formatDate(vital.date)}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">{vital.bp || '-'}</td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {vital.pulse ? `${vital.pulse} bpm` : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {vital.temperature ? `${vital.temperature}°F` : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {vital.weight ? `${vital.weight} kg` : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {vital.height ? `${vital.height} cm` : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No vitals recorded</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

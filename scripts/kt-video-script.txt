@@ -1,0 +1,172 @@
+================================================================================
+           DOCTOR KT VIDEO SCRIPT - DocClinic ERP System
+================================================================================
+
+INTRODUCTION (30 seconds)
+-------------------------
+"Welcome to the DocClinic ERP Knowledge Transfer session. This video will guide 
+you through using the system for your daily practice - managing patients, 
+appointments, prescriptions, and billing."
+
+--------------------------------------------------------------------------------
+SECTION 1: LOGIN & DASHBOARD (1-2 minutes)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Navigate to login page
+2. Enter credentials
+3. Click Login
+
+NARRATION:
+"Let's start by logging into the system. Enter your email and password, then 
+click Login. You'll be taken to your Dashboard."
+
+"The Dashboard shows you:
+- Today's appointments at a glance
+- Pending prescriptions that need attention
+- Patient statistics 
+- Quick action buttons for common tasks"
+
+--------------------------------------------------------------------------------
+SECTION 2: PATIENT MANAGEMENT (2-3 minutes)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Click "Patients" in sidebar
+2. Show search/filter options
+3. Click on a patient row
+4. Navigate through patient details tabs
+5. Show "Add New Patient" button
+
+NARRATION:
+"Click 'Patients' in the left sidebar to access patient management."
+
+"Here you can see all your patients. Use the search bar to find patients by 
+name, phone, or ID. You can also filter by various criteria."
+
+"Click on any patient to view their complete profile including:
+- Personal and contact information
+- Complete medical history
+- Previous visit records
+- All prescriptions issued"
+
+"To add a new patient, click the 'Add Patient' button and fill in the 
+required information."
+
+--------------------------------------------------------------------------------
+SECTION 3: APPOINTMENTS (2-3 minutes)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Click "Appointments" in sidebar
+2. Show calendar view
+3. Click on an appointment
+4. Create new appointment
+5. Change appointment status
+
+NARRATION:
+"The Appointments section shows your schedule in a calendar view."
+
+"You can see all appointments for the day, week, or month. Click on any 
+appointment to view details or make changes."
+
+"To create a new appointment:
+1. Click 'New Appointment'
+2. Select the patient from the dropdown
+3. Choose the date and time
+4. Add any notes for the visit
+5. Click Save"
+
+"You can update appointment status to Pending, Confirmed, Completed, or 
+Cancelled as needed."
+
+--------------------------------------------------------------------------------
+SECTION 4: PRESCRIPTIONS (2-3 minutes)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Click "Prescriptions" in sidebar
+2. Show prescription list
+3. Click "New Prescription"
+4. Fill prescription form
+5. Show print/download options
+
+NARRATION:
+"The Prescriptions section is where you create and manage patient prescriptions."
+
+"To create a new prescription:
+1. Click 'New Prescription'
+2. Select the patient
+3. Add the diagnosis
+4. Add medications - enter the drug name, dosage, frequency, and duration
+5. You can add multiple medications to one prescription
+6. Add any special instructions
+7. Click Save"
+
+"Once saved, you can:
+- Print the prescription for the patient
+- Download as PDF
+- View it anytime in the patient's history"
+
+--------------------------------------------------------------------------------
+SECTION 5: BILLING (1-2 minutes)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Click "Billing" in sidebar
+2. Show billing list
+3. Create new bill
+4. Add line items
+5. Generate invoice
+
+NARRATION:
+"The Billing section handles all financial transactions."
+
+"To create a bill:
+1. Click 'New Bill'
+2. Select the patient
+3. Add services - consultation, procedures, tests
+4. The system calculates totals automatically
+5. Generate and print the invoice"
+
+"You can view billing history and track payments here as well."
+
+--------------------------------------------------------------------------------
+SECTION 6: REPORTS & SETTINGS (1 minute)
+--------------------------------------------------------------------------------
+ACTIONS:
+1. Quick tour of Reports
+2. Quick tour of Settings
+
+NARRATION:
+"The Reports section provides insights into your practice - patient visits, 
+revenue, and other metrics."
+
+"In Settings, you can update your profile, change password, and customize 
+your preferences."
+
+--------------------------------------------------------------------------------
+SECTION 7: WHATSAPP INTEGRATION (30 seconds)
+--------------------------------------------------------------------------------
+NARRATION:
+"DocClinic also integrates with WhatsApp. Patients can:
+- Book appointments via WhatsApp
+- Receive reminders
+- Get prescription notifications"
+
+--------------------------------------------------------------------------------
+CONCLUSION (30 seconds)
+--------------------------------------------------------------------------------
+NARRATION:
+"That covers the main features of DocClinic ERP for doctors. The system is 
+designed to streamline your workflow and give you more time with patients."
+
+"If you have questions, contact the IT support team."
+
+"Thank you for watching!"
+
+================================================================================
+                    TOTAL VIDEO TIME: 10-15 minutes
+================================================================================
+
+RECORDING TIPS:
+- Speak slowly and clearly
+- Pause 2-3 seconds between sections
+- Move mouse smoothly to guide viewer's attention
+- Keep browser window maximized
+- Close unnecessary tabs/notifications before recording
