@@ -376,11 +376,11 @@ jobs:
       - name: Create deployment package
         run: |
           tar -czf deploy.tar.gz \
-            --exclude='node_modules' \
             --exclude='.git' \
             --exclude='tests' \
             --exclude='*.log' \
-            server/ client/dist/ docker-compose.prod.yml Dockerfile
+            --exclude='**/node_modules' \
+            server/ client/ docker-compose.prod.yml Dockerfile
 
       # Deploy to EC2
       - name: Deploy to EC2
