@@ -505,8 +505,26 @@ jobs:
           # Build and start containers
           echo "Building Docker containers..."
           sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-          sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml build --no-cache
-          sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml up -d
+
+          # Try compose build first; if it fails (buildx version), fallback to manual docker build and compose up --no-build
+          if sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml build --no-cache; then
+            echo "Compose build succeeded"
+            sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml up -d
+          else
+            echo "Compose build failed — falling back to manual docker build"
+            # Build API image
+            echo "Building api image manually"
+            sudo docker build -t docclinic-api:latest -f /app/current/Dockerfile /app/current || true
+
+            # Build whatsapp-bot image if exists
+            if [ -d /app/current/whatsapp-bot ]; then
+              echo "Building whatsapp-bot image manually"
+              sudo docker build -t docclinic-whatsapp:latest -f /app/current/whatsapp-bot/Dockerfile /app/current/whatsapp-bot || true
+            fi
+
+            # Start compose without building
+            sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml up -d --no-build
+          fi
           
           # Wait for containers to start
           echo "Waiting for services to start..."
