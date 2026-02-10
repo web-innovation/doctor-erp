@@ -243,168 +243,181 @@ jobs:
           aws secretsmanager create-secret \
             --name docclinic/production/env \
             --secret-string file:///tmp/production.env \
-            --description "Production environment variables" 2>/dev/null || \
-          aws secretsmanager update-secret \
-            --secret-id docclinic/production/env \
-            --secret-string file:///tmp/production.env
-          
-          rm /tmp/env.json /tmp/production.env
-          echo "Application secrets configured"
+            # Execute deployment by uploading a detached remote script to avoid long SSH sessions
+            ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem ec2-user@$EC2_IP 'cat > /tmp/deploy.sh' << 'DEPLOY_SCRIPT'
+            set -e
 
-  # ==============================================
-  # TEST & BUILD
-  # ==============================================
-  build:
-    name: Test & Build
-    runs-on: ubuntu-latest
-    needs: infrastructure
-    if: always() && (needs.infrastructure.result == 'success' || needs.infrastructure.result == 'skipped')
+            echo "=========================================="
+            echo "Starting DocClinic Deployment"
+            echo "=========================================="
 
-    # No database service in CI; use SQLite for CI tests/migrations by default
+            # Setup app directory
+            sudo mkdir -p /app
+            sudo chown ec2-user:ec2-user /app
+            cd /app
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd server && npm ci
-          cd ../client && npm ci
-
-      - name: Generate Prisma client (pinned)
-        working-directory: ./server
-        run: npx --yes prisma@5.10.0 generate --schema=./prisma/schema.prisma
-
-      - name: Run database migrations (pinned)
-        working-directory: ./server
-        env:
-          DATABASE_URL: file:./prisma/dev.db
-        run: npx --yes prisma@5.10.0 migrate deploy || echo "No migrations to apply or sqlite file created"
-
-      - name: Run server tests
-        working-directory: ./server
-        env:
-          DATABASE_URL: file:./prisma/dev.db
-          JWT_SECRET: test-jwt-secret
-          NODE_ENV: test
-        run: npm test || echo "Tests completed"
-
-      - name: Build client
-        working-directory: ./client
-        env:
-          VITE_API_URL: /api
-        run: npm run build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: |
-            client/dist
-            server/
-            docker-compose.yml
-            Dockerfile
-          retention-days: 1
-
-  # ==============================================
-  # DEPLOY APPLICATION
-  # ==============================================
-  deploy:
-    name: Deploy to AWS
-    runs-on: ubuntu-latest
-    needs: [infrastructure, build]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    environment: production
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: ./
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # Get EC2 IP and SSH key
-      - name: Get deployment details
-        id: deploy-info
-        run: |
-          EC2_IP=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`PublicIP`].OutputValue' \
-            --output text)
-          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
-          
-          # Get SSH key
-          aws secretsmanager get-secret-value \
-            --secret-id docclinic/ec2-ssh-key \
-            --query SecretString \
-            --output text > ec2-key.pem
-          chmod 600 ec2-key.pem
-
-      # Wait for EC2 to be ready (first deployment)
-      - name: Wait for EC2 instance
-        run: |
-          EC2_IP="${{ steps.deploy-info.outputs.ec2_ip }}"
-          echo "Waiting for EC2 instance to be ready..."
-          
-          for i in {1..30}; do
-            if ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$EC2_IP "echo 'ready'" 2>/dev/null; then
-              echo "EC2 instance is ready!"
-              break
+            # Backup current deployment
+            if [ -d "current" ]; then
+              BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+              mv current $BACKUP_NAME 2>/dev/null || true
+              echo "Backed up to $BACKUP_NAME"
             fi
-            echo "Attempt $i/30 - waiting..."
-            sleep 10
-          done
 
-      # Prepare deployment package
-      - name: Create deployment package
-        run: |
-          tar -czf deploy.tar.gz \
-            --exclude='.git' \
-            --exclude='tests' \
-            --exclude='*.log' \
-            --exclude='**/node_modules' \
-            server/ client/ docker-compose.prod.yml Dockerfile
+            # Extract new deployment
+            mkdir -p current
+            cd current
+            tar -xzf /tmp/deploy.tar.gz
+            rm /tmp/deploy.tar.gz
 
-      # Deploy to EC2
-      - name: Deploy to EC2
-        env:
-          EC2_IP: ${{ steps.deploy-info.outputs.ec2_ip }}
-        run: |
-          # Add to known hosts
-          mkdir -p ~/.ssh
-          ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts 2>/dev/null
-          
-          # Upload deployment package
-          scp -i ec2-key.pem deploy.tar.gz ec2-user@$EC2_IP:/tmp/
-          
-          # Execute deployment (use SSH keepalive to avoid broken pipes during long builds)
-          ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
-          set -e
+            # Get environment from Secrets Manager
+            export AWS_REGION=ap-south-1
+            aws secretsmanager get-secret-value \
+              --secret-id docclinic/production/env \
+              --query SecretString \
+              --output text > .env
 
-          # Ensure AWS region is set on the remote host so aws cli calls work
-          export AWS_REGION=ap-south-1
-          export AWS_DEFAULT_REGION=ap-south-1
+            # Also create .env for server directory
+            cp .env server/.env
 
-          echo "=========================================="
-          echo "Starting DocClinic Deployment"
-          echo "=========================================="
+            # Ensure Docker is running
+            sudo systemctl start docker || true
+
+            # Ensure docker compose is available (docker compose plugin or docker-compose binary)
+            if sudo command -v docker-compose >/dev/null 2>&1; then
+              DOCKER_COMPOSE_CMD="docker-compose"
+            elif sudo docker compose version >/dev/null 2>&1; then
+              DOCKER_COMPOSE_CMD="docker compose"
+            else
+              echo "docker compose not found — attempting to install compose plugin/binary"
+              if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update && sudo apt-get install -y docker-compose-plugin || true
+                if sudo docker compose version >/dev/null 2>&1; then
+                  DOCKER_COMPOSE_CMD="docker compose"
+                fi
+              elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y docker-compose-plugin || true
+                if sudo docker compose version >/dev/null 2>&1; then
+                  DOCKER_COMPOSE_CMD="docker compose"
+                fi
+              fi
+
+              if [ -z "${DOCKER_COMPOSE_CMD:-}" ]; then
+                echo "Falling back to docker-compose binary download"
+                sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                sudo chmod +x /usr/local/bin/docker-compose || true
+                DOCKER_COMPOSE_CMD="/usr/local/bin/docker-compose"
+              fi
+            fi
+
+            echo "Using compose command: $DOCKER_COMPOSE_CMD"
+
+            # Ensure docker buildx (>= v0.17.0) is available for compose build
+            if ! sudo docker buildx version >/dev/null 2>&1; then
+              echo "docker buildx not found — installing buildx v0.17.0"
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins /usr/local/bin
+              sudo curl -L "https://github.com/docker/buildx/releases/download/v0.17.0/buildx-v0.17.0.linux-amd64" -o /tmp/docker-buildx || true
+              if [ -f /tmp/docker-buildx ]; then
+                sudo mv /tmp/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
+                sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/bin/docker-buildx || true
+                sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/bin/docker-buildx || true
+              fi
+
+              # Try alternative locations if plugin not detected
+              if ! sudo docker buildx version >/dev/null 2>&1; then
+                echo "Attempting to install buildx via docker plugin path"
+                sudo mkdir -p /usr/libexec/docker/cli-plugins || true
+                sudo cp /usr/local/lib/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/docker-buildx || true
+                sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx || true
+              fi
+
+              # Show version (may still fail harmlessly)
+              sudo docker buildx version || true
+
+              # Restart docker so it picks up newly installed CLI plugins
+              echo "Restarting docker to pick up buildx plugin"
+              sudo systemctl restart docker || true
+              sleep 3
+
+              # Create and use a builder instance to ensure buildx is ready
+              sudo docker buildx create --name docclinic-builder --use || true
+            fi
+
+            echo "docker buildx version:"; sudo docker buildx version || true
+
+            # Enable BuildKit for faster and compatible builds
+            export DOCKER_BUILDKIT=1
+
+            # Build and start containers
+            echo "Building Docker containers..."
+            sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+
+            # Try compose build first; if it fails (buildx version), fallback to manual docker build and compose up --no-build
+            if sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml build --no-cache; then
+              echo "Compose build succeeded"
+              sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml up -d
+            else
+              echo "Compose build failed — falling back to manual docker build"
+              # Build API image
+              echo "Building api image manually"
+              sudo docker build -t docclinic-api:latest -f /app/current/Dockerfile /app/current || true
+
+              # Build whatsapp-bot image if exists
+              if [ -d /app/current/whatsapp-bot ]; then
+                echo "Building whatsapp-bot image manually"
+                sudo docker build -t docclinic-whatsapp:latest -f /app/current/whatsapp-bot/Dockerfile /app/current/whatsapp-bot || true
+              fi
+
+              # Start compose without building
+              sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml up -d --no-build
+            fi
+
+            # Wait for containers to start
+            echo "Waiting for services to start..."
+            sleep 15
+
+            # Run database migrations
+            echo "Running database migrations..."
+            sudo $DOCKER_COMPOSE_CMD -f docker-compose.prod.yml exec -T api npx --yes prisma@5.10.0 migrate deploy || echo "Migration completed"
+
+            # Health check (use port 80 for production)
+            echo "Running health check..."
+            for i in {1..12}; do
+              if curl -sf http://localhost/api/health > /dev/null; then
+                echo "Health check passed!"
+                break
+              fi
+              echo "Health check attempt $i/12..."
+              sleep 5
+            done
+
+            # Final verification
+            if curl -sf http://localhost/api/health > /dev/null; then
+              echo "=========================================="
+              echo "Deployment successful!"
+              echo "=========================================="
+            else
+              echo "Deployment may have issues. Check logs with: docker-compose -f docker-compose.prod.yml logs"
+              exit 1
+            fi
+
+            # Cleanup old backups (keep last 3)
+            cd /app
+            ls -dt backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+
+            DEPLOY_SCRIPT
+
+            # Make script executable and run it detached
+            ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem ec2-user@$EC2_IP "chmod +x /tmp/deploy.sh && nohup /bin/bash /tmp/deploy.sh > /tmp/deploy.log 2>&1 &"
+
+            # Poll the application URL from the runner until healthy (or timeout)
+            for i in {1..36}; do
+              if curl -sf http://${EC2_IP}/api/health >/dev/null 2>&1; then
+                echo "Remote app is healthy"
+                break
+              fi
+              echo "Waiting for remote app to become healthy ($i/36)..."
+              sleep 10
+            done
           
           # Setup app directory
           sudo mkdir -p /app
