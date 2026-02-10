@@ -488,6 +488,11 @@ jobs:
             # Show version (may still fail harmlessly)
             sudo docker buildx version || true
 
+            # Restart docker so it picks up newly installed CLI plugins
+            echo "Restarting docker to pick up buildx plugin"
+            sudo systemctl restart docker || true
+            sleep 3
+
             # Create and use a builder instance to ensure buildx is ready
             sudo docker buildx create --name docclinic-builder --use || true
           fi
