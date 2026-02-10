@@ -397,7 +397,11 @@ jobs:
           # Execute deployment
           ssh -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
           set -e
-          
+
+          # Ensure AWS region is set on the remote host so aws cli calls work
+          export AWS_REGION=ap-south-1
+          export AWS_DEFAULT_REGION=ap-south-1
+
           echo "=========================================="
           echo "Starting DocClinic Deployment"
           echo "=========================================="
