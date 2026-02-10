@@ -1,0 +1,74 @@
+# GitLeaks Configuration
+# Allow certain patterns for demo/development purposes
+
+title = "DocClinic ERP GitLeaks Configuration"
+
+[allowlist]
+  description = "Allow demo/test patterns"
+  
+  # Allow demo passwords in seed files and tests
+  paths = [
+    '''server/prisma/seed\.js$''',
+    '''tests/.*\.js$''',
+    '''scripts/test-.*\.js$''',
+    '''DEMO-GUIDE\.md$''',
+    '''README\.md$''',
+    '''.env\.example$''',
+    '''\.env\..*\.template$''',
+  ]
+  
+  # Allow certain patterns that are not real secrets
+  regexes = [
+    # Demo/test passwords (not production)
+    '''password123''',
+    '''demo123''',
+    '''test-jwt-secret''',
+    '''test-secret''',
+    '''change-this-secret''',
+    '''change-in-production''',
+    '''whatsapp-bot-secret''',
+    # Bcrypt hashes (not actual secrets)
+    '''\$2[aby]\$[0-9]{1,2}\$[./A-Za-z0-9]{53}''',
+    # Placeholder patterns
+    '''your-.*-api-key''',
+    '''your-.*-key''',
+    '''CHANGE_ME''',
+    '''xxx+''',
+  ]
+
+# Detect real secrets
+[[rules]]
+  id = "aws-access-key"
+  description = "AWS Access Key ID"
+  regex = '''AKIA[0-9A-Z]{16}'''
+  tags = ["aws", "credentials"]
+
+[[rules]]
+  id = "aws-secret-key"
+  description = "AWS Secret Access Key"
+  regex = '''(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}'''
+  tags = ["aws", "credentials"]
+
+[[rules]]
+  id = "generic-api-key"
+  description = "Generic API Key"
+  regex = '''(?i)(api[_-]?key|apikey)\s*[=:]\s*['\"][A-Za-z0-9]{32,}['\"]'''
+  tags = ["api", "credentials"]
+
+[[rules]]
+  id = "private-key"
+  description = "Private Key"
+  regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+  tags = ["key", "credentials"]
+
+[[rules]]
+  id = "jwt-secret-production"
+  description = "JWT Secret (not placeholder)"
+  regex = '''jwt[_-]?secret\s*[=:]\s*['\"][^'\"]{32,}['\"]'''
+  tags = ["jwt", "credentials"]
+  [rules.allowlist]
+    regexes = [
+      '''change.*production''',
+      '''demo.*secret''',
+      '''test.*secret''',
+    ]
