@@ -149,6 +149,35 @@ router.post('/:id/vitals', checkPermission('patients', 'update'), async (req, re
   }
 });
 
+// GET /:id/vitals - Get patient vitals
+router.get('/:id/vitals', checkPermission('patients', 'read'), async (req, res, next) => {
+  try {
+    const vitals = await prisma.patientVital.findMany({
+      where: { patientId: req.params.id },
+      orderBy: { recordedAt: 'desc' }
+    });
+    res.json({ success: true, data: vitals });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /:id/bills - Get patient bills
+router.get('/:id/bills', checkPermission('patients', 'read'), async (req, res, next) => {
+  try {
+    const bills = await prisma.bill.findMany({
+      where: { patientId: req.params.id },
+      orderBy: { date: 'desc' },
+      include: {
+        items: true
+      }
+    });
+    res.json({ success: true, data: bills });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /:id/history - Get patient history
 router.get('/:id/history', checkPermission('patients', 'read'), async (req, res, next) => {
   try {

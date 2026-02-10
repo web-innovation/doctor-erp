@@ -144,14 +144,13 @@ router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (re
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
-    const [pendingBills, lowStockItems, upcomingAppointments] = await Promise.all([
+    const [pendingBills, allPharmacyItems, upcomingAppointments] = await Promise.all([
       prisma.bill.count({
         where: { clinicId, paymentStatus: { in: ['PENDING', 'PARTIAL'] }, dueAmount: { gt: 0 } }
       }),
       prisma.pharmacyProduct.findMany({
-        where: { clinicId, isActive: true, quantity: { lte: 10 } },
+        where: { clinicId, isActive: true },
         select: { id: true, name: true, quantity: true, minStock: true },
-        take: 10
       }),
       prisma.appointment.findMany({
         where: { clinicId, date: { gte: today, lt: tomorrow }, status: 'SCHEDULED' },
@@ -160,6 +159,9 @@ router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (re
         take: 5
       })
     ]);
+    
+    // Filter items where quantity is strictly less than minStock
+    const lowStockItems = allPharmacyItems.filter(item => item.quantity < (item.minStock || 10)).slice(0, 10);
     
     const alerts = [];
     if (pendingBills > 0) alerts.push({ type: 'warning', title: 'Pending Bills', message: `${pendingBills} bill(s) pending`, count: pendingBills });

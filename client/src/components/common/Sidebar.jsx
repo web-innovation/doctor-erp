@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   HomeIcon,
   UserGroupIcon,
@@ -15,8 +16,11 @@ import {
   XMarkIcon,
   ClockIcon,
   CalendarIcon,
+  BuildingOffice2Icon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
+import settingsService from '../../services/settingsService';
+import { dashboardService } from '../../services/dashboardService';
 
 const menuItems = [
   { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, roles: ['admin', 'doctor', 'nurse', 'receptionist', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
@@ -33,20 +37,48 @@ const menuItems = [
   { name: 'Settings', path: '/settings', icon: Cog6ToothIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN'] },
 ];
 
+// Admin menu items for Super Admin only
+const adminMenuItems = [
+  { name: 'Admin Panel', path: '/admin', icon: BuildingOffice2Icon, roles: ['SUPER_ADMIN'] },
+  { name: 'All Clinics', path: '/admin/clinics', icon: BuildingStorefrontIcon, roles: ['SUPER_ADMIN'] },
+  { name: 'All Users', path: '/admin/users', icon: UsersIcon, roles: ['SUPER_ADMIN'] },
+];
+
 const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const location = useLocation();
   const { user } = useAuth();
   
+  // Check if we're on admin routes
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  
   // Get user role from AuthContext
   const userRole = user?.role || 'DOCTOR';
+  
+  // Fetch clinic name from settings (only if not on admin routes)
+  const { data: clinicSettings } = useQuery({
+    queryKey: ['clinic-settings'],
+    queryFn: () => settingsService.getClinicSettings(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    enabled: !isAdminRoute && userRole !== 'SUPER_ADMIN',
+  });
+  
+  const clinicName = clinicSettings?.clinicName || 'DocClinic';
+  
+  // Fetch today's OPD count from dashboard stats (only if not on admin routes)
+  const { data: dashboardStats } = useQuery({
+    queryKey: ['dashboard-stats-sidebar'],
+    queryFn: dashboardService.getStats,
+    staleTime: 60000, // Cache for 1 minute
+    refetchInterval: 60000, // Refetch every minute
+    enabled: !isAdminRoute,
+  });
+  
+  const todayOPDCount = dashboardStats?.data?.appointments?.total || 0;
   
   // Filter menu items based on user role
   const filteredMenuItems = menuItems.filter((item) =>
     item.roles.includes(userRole)
   );
-
-  // Mock stats - replace with real data from API/context
-  const todayOPDCount = 24;
 
   const sidebarClasses = `
     fixed top-0 left-0 h-full bg-white shadow-xl z-50
@@ -64,7 +96,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
           {!collapsed && (
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <div className={`w-10 h-10 ${isAdminRoute ? 'bg-purple-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center`}>
                 <svg
                   className="w-6 h-6 text-white"
                   fill="none"
@@ -79,12 +111,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                   />
                 </svg>
               </div>
-              <span className="text-xl font-bold text-gray-800">DocClinic</span>
+              <span className="text-xl font-bold text-gray-800">{isAdminRoute ? 'Admin Panel' : clinicName}</span>
             </div>
           )}
           
           {collapsed && (
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mx-auto">
+            <div className={`w-10 h-10 ${isAdminRoute ? 'bg-purple-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center mx-auto`}>
               <svg
                 className="w-6 h-6 text-white"
                 fill="none"
@@ -112,39 +144,139 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
         {/* Navigation items */}
         <nav className="flex-1 overflow-y-auto py-4">
-          <ul className="space-y-1 px-3">
-            {filteredMenuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname.startsWith(item.path);
+          {/* Show admin menu when on admin routes */}
+          {isAdminRoute && userRole === 'SUPER_ADMIN' ? (
+            <>
+              <ul className="space-y-1 px-3">
+                {adminMenuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path ||
+                    (item.path !== '/admin' && location.pathname.startsWith(item.path));
 
-              return (
-                <li key={item.path}>
+                  return (
+                    <li key={item.path}>
+                      <NavLink
+                        to={item.path}
+                        onClick={onMobileClose}
+                        className={`
+                          flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
+                          ${isActive
+                            ? 'bg-purple-50 text-purple-600 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }
+                          ${collapsed ? 'justify-center' : ''}
+                        `}
+                        title={collapsed ? item.name : ''}
+                      >
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-purple-600' : 'text-gray-400'}`} />
+                        {!collapsed && (
+                          <span className="ml-3">{item.name}</span>
+                        )}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+              {/* Link back to clinic dashboard */}
+              {!collapsed && (
+                <div className="px-3 mt-4 mb-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Switch View
+                  </p>
+                </div>
+              )}
+              {collapsed && <div className="border-t border-gray-200 my-2 mx-3"></div>}
+              <ul className="space-y-1 px-3">
+                <li>
                   <NavLink
-                    to={item.path}
+                    to="/dashboard"
                     onClick={onMobileClose}
                     className={`
                       flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
-                      ${isActive
-                        ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }
+                      text-gray-600 hover:bg-gray-50 hover:text-gray-900
                       ${collapsed ? 'justify-center' : ''}
                     `}
-                    title={collapsed ? item.name : ''}
+                    title={collapsed ? 'Clinic Dashboard' : ''}
                   >
-                    <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <HomeIcon className="h-5 w-5 flex-shrink-0 text-gray-400" />
                     {!collapsed && (
-                      <span className="ml-3">{item.name}</span>
+                      <span className="ml-3">Clinic Dashboard</span>
                     )}
                   </NavLink>
                 </li>
-              );
-            })}
-          </ul>
+              </ul>
+            </>
+          ) : (
+            <>
+              <ul className="space-y-1 px-3">
+                {filteredMenuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path || 
+                    (item.path !== '/dashboard' && location.pathname.startsWith(item.path) && !location.pathname.startsWith('/admin'));
+
+                  return (
+                    <li key={item.path}>
+                      <NavLink
+                        to={item.path}
+                        onClick={onMobileClose}
+                        className={`
+                          flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
+                          ${isActive
+                            ? 'bg-blue-50 text-blue-600 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }
+                          ${collapsed ? 'justify-center' : ''}
+                        `}
+                        title={collapsed ? item.name : ''}
+                      >
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                        {!collapsed && (
+                          <span className="ml-3">{item.name}</span>
+                        )}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+              
+              {/* Admin Menu Link - Only for Super Admin when NOT on admin routes */}
+              {userRole === 'SUPER_ADMIN' && (
+                <>
+                  {!collapsed && (
+                    <div className="px-3 mt-4 mb-2">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        Administration
+                      </p>
+                    </div>
+                  )}
+                  {collapsed && <div className="border-t border-gray-200 my-2 mx-3"></div>}
+                  <ul className="space-y-1 px-3">
+                    <li>
+                      <NavLink
+                        to="/admin"
+                        onClick={onMobileClose}
+                        className={`
+                          flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
+                          text-gray-600 hover:bg-purple-50 hover:text-purple-600
+                          ${collapsed ? 'justify-center' : ''}
+                        `}
+                        title={collapsed ? 'Admin Panel' : ''}
+                      >
+                        <BuildingOffice2Icon className="h-5 w-5 flex-shrink-0 text-gray-400" />
+                        {!collapsed && (
+                          <span className="ml-3">Admin Panel</span>
+                        )}
+                      </NavLink>
+                    </li>
+                  </ul>
+                </>
+              )}
+            </>
+          )}
         </nav>
 
-        {/* Quick stats */}
-        {!collapsed && (
+        {/* Quick stats - only show when not on admin routes */}
+        {!collapsed && !isAdminRoute && (
           <div className="p-4 border-t border-gray-200">
             <div className="bg-blue-50 rounded-lg p-3">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Today's OPD</p>

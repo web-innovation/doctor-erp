@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   MagnifyingGlassIcon,
   BellIcon,
@@ -10,6 +11,8 @@ import {
   PlusIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '../../context/AuthContext';
+import { dashboardService } from '../../services/dashboardService';
 
 const Header = ({ onMenuClick }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,20 +26,36 @@ const Header = ({ onMenuClick }) => {
   
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
-  // Mock user data - replace with real data from context/API
-  const user = {
-    name: 'Dr. Sarah Wilson',
-    role: 'Administrator',
-    avatar: null,
-  };
+  // Fetch alerts/notifications from dashboard API
+  const { data: alertsData } = useQuery({
+    queryKey: ['dashboardAlerts'],
+    queryFn: dashboardService.getAlerts,
+    refetchInterval: 60000, // Refresh every minute
+  });
 
-  // Mock notifications - replace with real data
-  const notifications = [
-    { id: 1, title: 'New appointment', message: 'Patient John Doe booked for 2:30 PM', time: '5 min ago', unread: true },
-    { id: 2, title: 'Lab results ready', message: 'Blood test results for Jane Smith', time: '1 hour ago', unread: true },
-    { id: 3, title: 'Payment received', message: 'Invoice #1234 paid - ₹2,500', time: '2 hours ago', unread: false },
-  ];
+  // Convert alerts to notifications format
+  const notifications = (alertsData?.data?.alerts || []).map((alert, index) => ({
+    id: index + 1,
+    title: alert.title,
+    message: alert.message,
+    time: 'Just now',
+    unread: true,
+    type: alert.type
+  }));
+  
+  // Add upcoming appointments as notifications
+  const upcomingAppointments = alertsData?.data?.upcomingAppointments || [];
+  upcomingAppointments.forEach((apt, index) => {
+    notifications.push({
+      id: 100 + index,
+      title: 'Upcoming Appointment',
+      message: `${apt.patient?.name} at ${apt.timeSlot || 'scheduled'}`,
+      time: 'Today',
+      unread: true
+    });
+  });
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
@@ -86,9 +105,8 @@ const Header = ({ onMenuClick }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userRole');
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -220,7 +238,7 @@ const Header = ({ onMenuClick }) => {
                   </div>
                   <div className="px-4 py-3 border-t border-gray-200">
                     <Link
-                      to="/notifications"
+                      to="/dashboard"
                       className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                       onClick={() => setShowNotifications(false)}
                     >
@@ -246,13 +264,13 @@ const Header = ({ onMenuClick }) => {
                 ) : (
                   <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                     <span className="text-white text-sm font-medium">
-                      {user.name.split(' ').map((n) => n[0]).join('')}
+                      {user?.name?.split(' ').map((n) => n[0]).join('') || 'U'}
                     </span>
                   </div>
                 )}
                 <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500">{user.role}</p>
+                  <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
+                  <p className="text-xs text-gray-500">{user?.role || 'Staff'}</p>
                 </div>
                 <ChevronDownIcon className="h-4 w-4 text-gray-500 hidden md:block" />
               </button>
@@ -260,8 +278,8 @@ const Header = ({ onMenuClick }) => {
               {showUserMenu && (
                 <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 md:hidden">
-                    <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                    <p className="text-xs text-gray-500">{user.role}</p>
+                    <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
+                    <p className="text-xs text-gray-500">{user?.role || 'Staff'}</p>
                   </div>
                   <Link
                     to="/profile"

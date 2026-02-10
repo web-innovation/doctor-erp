@@ -10,6 +10,11 @@ import {
   FaChevronRight,
   FaCalendarAlt,
   FaUserClock,
+  FaClock,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaEye,
+  FaFilter,
 } from 'react-icons/fa';
 import Modal from '../../components/common/Modal';
 import staffService from '../../services/staffService';
@@ -22,9 +27,15 @@ const LEAVE_TYPES = [
 ];
 
 const STATUS_COLORS = {
-  PENDING: 'bg-yellow-100 text-yellow-800',
-  APPROVED: 'bg-green-100 text-green-800',
-  REJECTED: 'bg-red-100 text-red-800',
+  PENDING: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  APPROVED: 'bg-green-100 text-green-800 border-green-200',
+  REJECTED: 'bg-red-100 text-red-800 border-red-200',
+};
+
+const STATUS_ICONS = {
+  PENDING: FaClock,
+  APPROVED: FaCheckCircle,
+  REJECTED: FaTimesCircle,
 };
 
 export default function Leave() {
@@ -32,46 +43,69 @@ export default function Leave() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedLeave, setSelectedLeave] = useState(null);
+  const [viewModal, setViewModal] = useState(null);
   const pageSize = 10;
 
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm();
 
+  const startDateValue = watch('startDate');
+
   // Fetch staff list for dropdown
-  const { data: staffData } = useQuery({
-    queryKey: ['staff', 'all'],
+  const { data: staffData, isLoading: staffLoading } = useQuery({
+    queryKey: ['staff-list'],
     queryFn: () => staffService.getAll({ limit: 100 }),
+    staleTime: 30000, // 30 seconds
   });
 
   const staffList = staffData?.data || [];
 
-  // Fetch leaves
-  const { data: leavesData, isLoading } = useQuery({
-    queryKey: ['leaves', currentPage, pageSize, filterStatus],
+  // Fetch leaves with pagination - also calculate summary from this
+  const { data: leavesData, isLoading, error } = useQuery({
+    queryKey: ['leaves-list', currentPage, pageSize, filterStatus],
     queryFn: () =>
       staffService.getLeaves({
         page: currentPage,
         limit: pageSize,
         status: filterStatus || undefined,
       }),
-    placeholderData: (previousData) => previousData,
+    staleTime: 10000, // 10 seconds
   });
 
   const leaves = leavesData?.data || [];
   const totalPages = leavesData?.pagination?.totalPages || 1;
   const totalCount = leavesData?.pagination?.total || 0;
 
+  // Fetch summary separately only for counts
+  const { data: summaryLeavesData } = useQuery({
+    queryKey: ['leaves-summary'],
+    queryFn: () => staffService.getLeaves({ limit: 500 }),
+    staleTime: 30000, // 30 seconds
+    refetchOnWindowFocus: false,
+  });
+
+  const allLeaves = summaryLeavesData?.data || [];
+
+  // Calculate summary
+  const summary = {
+    total: allLeaves.length,
+    pending: allLeaves.filter(l => l.status === 'PENDING').length,
+    approved: allLeaves.filter(l => l.status === 'APPROVED').length,
+    rejected: allLeaves.filter(l => l.status === 'REJECTED').length,
+  };
+
   // Apply for leave mutation
   const applyMutation = useMutation({
     mutationFn: (data) => staffService.applyLeave(data),
     onSuccess: () => {
       toast.success('Leave application submitted successfully');
-      queryClient.invalidateQueries(['leaves']);
+      queryClient.invalidateQueries({ queryKey: ['leaves-list'] });
+      queryClient.invalidateQueries({ queryKey: ['leaves-summary'] });
       setIsAddModalOpen(false);
       reset();
     },
@@ -83,10 +117,10 @@ export default function Leave() {
   // Update leave status mutation
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }) => staffService.updateLeaveStatus(id, { status }),
-    onSuccess: () => {
-      toast.success('Leave status updated');
-      queryClient.invalidateQueries(['leaves']);
-      setSelectedLeave(null);
+    onSuccess: (_, variables) => {
+      toast.success(`Leave ${variables.status.toLowerCase()} successfully`);
+      queryClient.invalidateQueries({ queryKey: ['leaves-list'] });
+      queryClient.invalidateQueries({ queryKey: ['leaves-summary'] });
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to update leave status');
@@ -104,11 +138,15 @@ export default function Leave() {
   };
 
   const handleApprove = (leave) => {
-    updateStatusMutation.mutate({ id: leave.id, status: 'APPROVED' });
+    if (window.confirm(`Approve leave for ${getStaffName(leave)}?`)) {
+      updateStatusMutation.mutate({ id: leave.id, status: 'APPROVED' });
+    }
   };
 
   const handleReject = (leave) => {
-    updateStatusMutation.mutate({ id: leave.id, status: 'REJECTED' });
+    if (window.confirm(`Reject leave for ${getStaffName(leave)}?`)) {
+      updateStatusMutation.mutate({ id: leave.id, status: 'REJECTED' });
+    }
   };
 
   const formatDate = (dateString) => {
@@ -128,6 +166,15 @@ export default function Leave() {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
+  const getStaffName = (leave) => {
+    return leave.staff?.user?.name || leave.staff?.name || 'Unknown Staff';
+  };
+
+  const getLeaveTypeLabel = (type) => {
+    const found = LEAVE_TYPES.find(t => t.value === type);
+    return found?.label || type;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -135,7 +182,7 @@ export default function Leave() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Leave Management</h1>
-            <p className="text-gray-500 mt-1">Manage staff leave requests</p>
+            <p className="text-gray-500 mt-1">Review and manage staff leave requests</p>
           </div>
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -146,134 +193,198 @@ export default function Leave() {
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <select
-              value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Status</option>
-              <option value="PENDING">Pending</option>
-              <option value="APPROVED">Approved</option>
-              <option value="REJECTED">Rejected</option>
-            </select>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <FaCalendarAlt className="text-blue-600 text-xl" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Total Requests</p>
+                <p className="text-2xl font-bold text-gray-900">{summary.total}</p>
+              </div>
+            </div>
+          </div>
+          <div 
+            className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer transition hover:border-yellow-300 ${filterStatus === 'PENDING' ? 'ring-2 ring-yellow-400' : ''}`}
+            onClick={() => setFilterStatus(filterStatus === 'PENDING' ? '' : 'PENDING')}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                <FaClock className="text-yellow-600 text-xl" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Pending</p>
+                <p className="text-2xl font-bold text-yellow-600">{summary.pending}</p>
+              </div>
+            </div>
+          </div>
+          <div 
+            className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer transition hover:border-green-300 ${filterStatus === 'APPROVED' ? 'ring-2 ring-green-400' : ''}`}
+            onClick={() => setFilterStatus(filterStatus === 'APPROVED' ? '' : 'APPROVED')}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <FaCheckCircle className="text-green-600 text-xl" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Approved</p>
+                <p className="text-2xl font-bold text-green-600">{summary.approved}</p>
+              </div>
+            </div>
+          </div>
+          <div 
+            className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer transition hover:border-red-300 ${filterStatus === 'REJECTED' ? 'ring-2 ring-red-400' : ''}`}
+            onClick={() => setFilterStatus(filterStatus === 'REJECTED' ? '' : 'REJECTED')}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                <FaTimesCircle className="text-red-600 text-xl" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Rejected</p>
+                <p className="text-2xl font-bold text-red-600">{summary.rejected}</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Leave Table */}
+        {/* Filter Bar */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FaFilter className="text-gray-400" />
+              <span className="text-sm text-gray-600">Filter:</span>
+              <select
+                value={filterStatus}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">All Requests</option>
+                <option value="PENDING">Pending Only</option>
+                <option value="APPROVED">Approved Only</option>
+                <option value="REJECTED">Rejected Only</option>
+              </select>
+            </div>
+            {filterStatus && (
+              <button
+                onClick={() => setFilterStatus('')}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Leave Requests List */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-12 text-red-500">
+              <FaTimesCircle className="text-4xl mb-4" />
+              <p className="font-medium">Failed to load leave requests</p>
+              <p className="text-sm mt-1">{error.message}</p>
             </div>
           ) : leaves.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
               <FaUserClock className="text-4xl mb-4" />
               <p className="font-medium">No leave requests found</p>
               <p className="text-sm mt-1">
-                {filterStatus ? 'Try adjusting your filters' : 'No leave applications yet'}
+                {filterStatus ? 'Try adjusting your filters' : 'Click "Apply Leave" to create the first request'}
               </p>
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Staff Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Leave Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Days
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Reason
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {leaves.map((leave) => (
-                      <tr key={leave.id} className="hover:bg-gray-50 transition">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="font-medium text-gray-900">
-                            {leave.staff?.user?.name || 'Unknown'}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-gray-600">{leave.type}</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-sm">
-                            <FaCalendarAlt className="text-gray-400" />
-                            <span>
-                              {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+              {/* Card View for Leave Requests */}
+              <div className="divide-y divide-gray-100">
+                {leaves.map((leave) => {
+                  const StatusIcon = STATUS_ICONS[leave.status] || FaClock;
+                  const days = calculateDays(leave.startDate, leave.endDate);
+                  
+                  return (
+                    <div key={leave.id} className="p-4 hover:bg-gray-50 transition">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        {/* Left: Staff Info */}
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-bold text-lg">
+                              {getStaffName(leave).charAt(0).toUpperCase()}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-medium text-gray-900">
-                            {calculateDays(leave.startDate, leave.endDate)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600 truncate max-w-xs">
-                            {leave.reason || '-'}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                              STATUS_COLORS[leave.status] || 'bg-gray-100 text-gray-700'
-                            }`}
-                          >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 text-lg">{getStaffName(leave)}</p>
+                            <p className="text-sm text-gray-500">{leave.staff?.designation || 'Staff'}</p>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-medium">
+                                {getLeaveTypeLabel(leave.type)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                              </span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-medium">
+                                {days} day{days > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            {leave.reason && (
+                              <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                                <span className="font-medium">Reason:</span> {leave.reason}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right: Status & Actions */}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border ${STATUS_COLORS[leave.status]}`}>
+                            <StatusIcon className="text-xs" />
                             {leave.status}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          
                           {leave.status === 'PENDING' && (
-                            <div className="flex items-center justify-end gap-2">
+                            <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleApprove(leave)}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
-                                title="Approve"
+                                disabled={updateStatusMutation.isPending}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition text-sm"
                               >
                                 <FaCheck />
+                                Approve
                               </button>
                               <button
                                 onClick={() => handleReject(leave)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                                title="Reject"
+                                disabled={updateStatusMutation.isPending}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition text-sm"
                               >
                                 <FaTimes />
+                                Reject
                               </button>
                             </div>
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          
+                          <button
+                            onClick={() => setViewModal(leave)}
+                            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                            title="View Details"
+                          >
+                            <FaEye />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Pagination */}
-              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
                 <p className="text-sm text-gray-500">
                   Showing {(currentPage - 1) * pageSize + 1} to{' '}
                   {Math.min(currentPage * pageSize, totalCount)} of {totalCount} requests
@@ -282,7 +393,7 @@ export default function Leave() {
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    className="p-2 border border-gray-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
                   >
                     <FaChevronLeft className="text-gray-600" />
                   </button>
@@ -292,7 +403,7 @@ export default function Leave() {
                   <button
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    className="p-2 border border-gray-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
                   >
                     <FaChevronRight className="text-gray-600" />
                   </button>
@@ -314,107 +425,217 @@ export default function Leave() {
         size="md"
       >
         <form onSubmit={handleSubmit(onApplyLeave)} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Staff Member <span className="text-red-500">*</span>
-            </label>
-            <select
-              {...register('staffId', { required: 'Staff member is required' })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Staff</option>
-              {staffList.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.user?.name || staff.name}
-                </option>
-              ))}
-            </select>
-            {errors.staffId && (
-              <p className="mt-1 text-sm text-red-500">{errors.staffId.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Leave Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              {...register('type', { required: 'Leave type is required' })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Type</option>
-              {LEAVE_TYPES.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-            {errors.type && (
-              <p className="mt-1 text-sm text-red-500">{errors.type.message}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Start Date <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                {...register('startDate', { required: 'Start date is required' })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {errors.startDate && (
-                <p className="mt-1 text-sm text-red-500">{errors.startDate.message}</p>
-              )}
+          {staffLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                End Date <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                {...register('endDate', { required: 'End date is required' })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {errors.endDate && (
-                <p className="mt-1 text-sm text-red-500">{errors.endDate.message}</p>
-              )}
+          ) : staffList.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>No staff members found.</p>
+              <p className="text-sm mt-1">Please add staff members first.</p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Staff Member <span className="text-red-500">*</span>
+                </label>
+                <select
+                  {...register('staffId', { required: 'Staff member is required' })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Staff Member</option>
+                  {staffList.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.user?.name || staff.name} - {staff.designation || 'Staff'}
+                    </option>
+                  ))}
+                </select>
+                {errors.staffId && (
+                  <p className="mt-1 text-sm text-red-500">{errors.staffId.message}</p>
+                )}
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Reason
-            </label>
-            <textarea
-              {...register('reason')}
-              rows={3}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              placeholder="Enter reason for leave..."
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Leave Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  {...register('type', { required: 'Leave type is required' })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Leave Type</option>
+                  {LEAVE_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+                {errors.type && (
+                  <p className="mt-1 text-sm text-red-500">{errors.type.message}</p>
+                )}
+              </div>
 
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setIsAddModalOpen(false);
-                reset();
-              }}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={applyMutation.isPending}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
-            >
-              {applyMutation.isPending ? 'Submitting...' : 'Submit Application'}
-            </button>
-          </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Start Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    {...register('startDate', { required: 'Start date is required' })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {errors.startDate && (
+                    <p className="mt-1 text-sm text-red-500">{errors.startDate.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    End Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    {...register('endDate', { required: 'End date is required' })}
+                    min={startDateValue}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {errors.endDate && (
+                    <p className="mt-1 text-sm text-red-500">{errors.endDate.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason
+                </label>
+                <textarea
+                  {...register('reason')}
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Enter reason for leave (optional)..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddModalOpen(false);
+                    reset();
+                  }}
+                  className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={applyMutation.isPending || staffList.length === 0}
+                  className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                >
+                  {applyMutation.isPending ? 'Submitting...' : 'Submit Application'}
+                </button>
+              </div>
+            </>
+          )}
         </form>
+      </Modal>
+
+      {/* View Leave Details Modal */}
+      <Modal
+        isOpen={!!viewModal}
+        onClose={() => setViewModal(null)}
+        title="Leave Details"
+        size="md"
+      >
+        {viewModal && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                <span className="text-white font-bold text-2xl">
+                  {getStaffName(viewModal).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 text-xl">{getStaffName(viewModal)}</p>
+                <p className="text-gray-500">{viewModal.staff?.designation || 'Staff'}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+              <div>
+                <p className="text-sm text-gray-500">Leave Type</p>
+                <p className="font-medium text-gray-900">{getLeaveTypeLabel(viewModal.type)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Status</p>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${STATUS_COLORS[viewModal.status]}`}>
+                  {viewModal.status}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Start Date</p>
+                <p className="font-medium text-gray-900">{formatDate(viewModal.startDate)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">End Date</p>
+                <p className="font-medium text-gray-900">{formatDate(viewModal.endDate)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Duration</p>
+                <p className="font-medium text-gray-900">{calculateDays(viewModal.startDate, viewModal.endDate)} day(s)</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Applied On</p>
+                <p className="font-medium text-gray-900">{formatDate(viewModal.createdAt)}</p>
+              </div>
+            </div>
+
+            {viewModal.reason && (
+              <div className="pt-4 border-t">
+                <p className="text-sm text-gray-500 mb-1">Reason</p>
+                <p className="text-gray-900">{viewModal.reason}</p>
+              </div>
+            )}
+
+            {viewModal.status === 'PENDING' && (
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => {
+                    handleApprove(viewModal);
+                    setViewModal(null);
+                  }}
+                  disabled={updateStatusMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition"
+                >
+                  <FaCheck />
+                  Approve Leave
+                </button>
+                <button
+                  onClick={() => {
+                    handleReject(viewModal);
+                    setViewModal(null);
+                  }}
+                  disabled={updateStatusMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition"
+                >
+                  <FaTimes />
+                  Reject Leave
+                </button>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={() => setViewModal(null)}
+                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

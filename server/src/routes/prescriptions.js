@@ -1,6 +1,9 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import emailService from '../services/emailService.js';
+import whatsappService from '../services/whatsappService.js';
+import { logger } from '../config/logger.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -392,31 +395,207 @@ router.get('/patient/:patientId', checkPermission('prescriptions', 'read'), asyn
   }
 });
 
-// POST /:id/send - Mark prescription as sent (WhatsApp/Email)
+// POST /:id/send - Send prescription via WhatsApp/Email
 router.post('/:id/send', checkPermission('prescriptions', 'create'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { via } = req.body; // 'whatsapp' or 'email'
+    const via = req.body.via || req.body.method; // Support both 'via' and 'method' parameter names
 
-    const existing = await prisma.prescription.findFirst({
-      where: { id, clinicId: req.user.clinicId }
+    const prescription = await prisma.prescription.findFirst({
+      where: { id, clinicId: req.user.clinicId },
+      include: {
+        patient: true,
+        medicines: {
+          include: { pharmacyProduct: true }
+        },
+        labTests: true,
+        clinic: true
+      }
     });
 
-    if (!existing) {
+    if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
 
     const updateData = { sentAt: new Date() };
-    if (via === 'whatsapp') updateData.sentViaWhatsApp = true;
-    if (via === 'email') updateData.sentViaEmail = true;
+    
+    if (via === 'email') {
+      // Check if patient has email
+      if (!prescription.patient?.email) {
+        return res.status(400).json({ success: false, message: 'Patient does not have an email address' });
+      }
 
-    const prescription = await prisma.prescription.update({
+      // Build medicine list HTML
+      const medicineList = prescription.medicines.map((m, idx) => 
+        `<tr>
+          <td style="padding: 8px; border: 1px solid #ddd;">${idx + 1}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${m.pharmacyProduct?.name || m.medicineName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${m.dosage || '-'}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${m.duration || '-'}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${m.instructions || '-'}</td>
+        </tr>`
+      ).join('');
+
+      // Build lab tests list HTML
+      const labTestsList = prescription.labTests?.length > 0 
+        ? prescription.labTests.map((test, idx) => 
+            `<tr>
+              <td style="padding: 8px; border: 1px solid #ddd;">${idx + 1}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${test.testName}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${test.instructions || '-'}</td>
+            </tr>`
+          ).join('')
+        : '';
+
+      // Parse diagnosis
+      let diagnosis = '-';
+      try {
+        const diagArr = JSON.parse(prescription.diagnosis || '[]');
+        diagnosis = diagArr.length > 0 ? diagArr.join(', ') : '-';
+      } catch {
+        diagnosis = prescription.diagnosis || '-';
+      }
+
+      // Clinic details
+      const clinic = prescription.clinic;
+      const clinicAddress = clinic?.address || '';
+      const clinicPhone = clinic?.phone || '';
+      const clinicEmail = clinic?.email || '';
+
+      // Send email
+      await emailService.sendEmail({
+        to: prescription.patient.email,
+        subject: `Prescription ${prescription.prescriptionNo} - ${prescription.clinic?.name || 'DocClinic'}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1e40af; color: white; padding: 20px; text-align: center;">
+              <h1 style="margin: 0;">${clinic?.name || 'DocClinic'}</h1>
+              ${clinicAddress ? `<p style="margin: 5px 0 0 0; font-size: 14px;">${clinicAddress}</p>` : ''}
+              ${clinicPhone || clinicEmail ? `<p style="margin: 5px 0 0 0; font-size: 14px;">${clinicPhone ? `📞 ${clinicPhone}` : ''}${clinicPhone && clinicEmail ? ' | ' : ''}${clinicEmail ? `✉️ ${clinicEmail}` : ''}</p>` : ''}
+            </div>
+            
+            <div style="padding: 20px; border: 1px solid #ddd; border-top: none;">
+              <p>Dear <strong>${prescription.patient.name}</strong>,</p>
+              <p>Please find your prescription details below:</p>
+              
+              <table style="width: 100%; margin: 15px 0; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 5px 0;"><strong>Prescription No:</strong></td>
+                  <td>${prescription.prescriptionNo}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0;"><strong>Date:</strong></td>
+                  <td>${new Date(prescription.date).toLocaleDateString('en-IN')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0;"><strong>Diagnosis:</strong></td>
+                  <td>${diagnosis}</td>
+                </tr>
+              </table>
+
+              ${prescription.medicines?.length > 0 ? `
+              <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 5px;">Medicines</h3>
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                  <tr style="background: #f3f4f6;">
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">#</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Medicine</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Dosage</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Duration</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Instructions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${medicineList}
+                </tbody>
+              </table>
+              ` : ''}
+
+              ${prescription.labTests?.length > 0 ? `
+              <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 5px;">Lab Tests</h3>
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                  <tr style="background: #f3f4f6;">
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">#</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Test Name</th>
+                    <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Instructions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${labTestsList}
+                </tbody>
+              </table>
+              ` : ''}
+
+              ${prescription.advice ? `
+                <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 5px;">Advice</h3>
+                <p>${prescription.advice}</p>
+              ` : ''}
+
+              ${prescription.followUpDate ? `
+                <p><strong>Follow-up Date:</strong> ${new Date(prescription.followUpDate).toLocaleDateString('en-IN')}</p>
+              ` : ''}
+              
+              <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+              <div style="background: #f9fafb; padding: 15px; border-radius: 5px;">
+                <p style="margin: 0; color: #374151; font-weight: bold;">${clinic?.name || 'DocClinic'}</p>
+                ${clinicAddress ? `<p style="margin: 5px 0 0 0; color: #6b7280; font-size: 13px;">📍 ${clinicAddress}</p>` : ''}
+                ${clinicPhone ? `<p style="margin: 5px 0 0 0; color: #6b7280; font-size: 13px;">📞 ${clinicPhone}</p>` : ''}
+                ${clinicEmail ? `<p style="margin: 5px 0 0 0; color: #6b7280; font-size: 13px;">✉️ ${clinicEmail}</p>` : ''}
+              </div>
+              <p style="color: #9ca3af; font-size: 11px; text-align: center; margin-top: 15px;">
+                This is an automated email. Please do not reply to this email.
+              </p>
+            </div>
+          </div>
+        `
+      });
+
+      updateData.sentViaEmail = true;
+      logger.info(`Prescription ${prescription.prescriptionNo} sent via email to ${prescription.patient.email}`);
+    }
+    
+    if (via === 'whatsapp') {
+      // Check if patient has phone number
+      if (!prescription.patient?.phone) {
+        return res.status(400).json({ success: false, message: 'Patient does not have a phone number' });
+      }
+
+      // Send via WhatsApp service
+      const whatsappResult = await whatsappService.sendPrescription(prescription);
+      
+      updateData.sentViaWhatsApp = true;
+      logger.info(`Prescription ${prescription.prescriptionNo} WhatsApp message prepared for ${prescription.patient.phone}`);
+
+      // If URL method, return the URL to frontend
+      if (whatsappResult.method === 'url') {
+        const updated = await prisma.prescription.update({
+          where: { id },
+          data: updateData
+        });
+
+        return res.json({ 
+          success: true, 
+          data: updated,
+          whatsappUrl: whatsappResult.url,
+          method: 'url',
+          message: 'Click the link to send prescription via WhatsApp' 
+        });
+      }
+    }
+
+    const updated = await prisma.prescription.update({
       where: { id },
       data: updateData
     });
 
-    res.json({ success: true, data: prescription, message: `Prescription marked as sent via ${via}` });
+    res.json({ 
+      success: true, 
+      data: updated, 
+      message: `Prescription sent via ${via}` 
+    });
   } catch (error) {
+    logger.error('Error sending prescription:', error);
     next(error);
   }
 });

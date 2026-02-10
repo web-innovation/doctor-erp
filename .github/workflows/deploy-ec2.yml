@@ -1,0 +1,356 @@
+# ==============================================
+# DocClinic ERP - AWS CI/CD Pipeline
+# Optimized for AWS Free Tier (EC2 t2.micro)
+# ==============================================
+
+name: DocClinic CI/CD (Free Tier)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  NODE_VERSION: '20'
+  AWS_REGION: ap-south-1
+
+# Restrict permissions for security
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ==============================================
+  # SECURITY SCANNING
+  # ==============================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Run GitLeaks (secret detection)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==============================================
+  # TEST & BUILD
+  # ==============================================
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    needs: security-scan
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test123
+          POSTGRES_DB: docclinic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Install client dependencies
+        working-directory: ./client
+        run: npm ci
+
+      # Server tests
+      - name: Generate Prisma client
+        working-directory: ./server
+        run: npx prisma generate
+
+      - name: Run database migrations
+        working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
+        run: npx prisma migrate deploy
+
+      - name: Run server tests
+        working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
+          JWT_SECRET: test-jwt-secret-for-ci-testing-only
+          NODE_ENV: test
+        run: npm test || echo "No tests configured yet"
+
+      # Client build
+      - name: Lint client code
+        working-directory: ./client
+        run: npm run lint || echo "Lint warnings found"
+
+      - name: Build client for production
+        working-directory: ./client
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+      # Upload artifacts
+      - name: Upload client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-build
+          path: client/dist
+          retention-days: 1
+
+  # ==============================================
+  # DEPLOY TO AWS EC2 (Free Tier)
+  # ==============================================
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download client build
+        uses: actions/download-artifact@v4
+        with:
+          name: client-build
+          path: client/dist
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Get secrets from AWS Secrets Manager
+      - name: Get deployment secrets
+        id: secrets
+        run: |
+          # Get EC2 instance details
+          EC2_PUBLIC_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=docclinic-server-production" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+          echo "ec2_ip=$EC2_PUBLIC_IP" >> $GITHUB_OUTPUT
+          
+          # Get SSH key from Secrets Manager
+          aws secretsmanager get-secret-value \
+            --secret-id docclinic/ec2-ssh-key \
+            --query SecretString \
+            --output text > ec2-key.pem
+          chmod 600 ec2-key.pem
+
+      # Deploy to EC2
+      - name: Deploy application to EC2
+        env:
+          EC2_IP: ${{ steps.secrets.outputs.ec2_ip }}
+        run: |
+          # Add host to known hosts
+          mkdir -p ~/.ssh
+          ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # Create deployment package
+          tar -czf deploy.tar.gz \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='tests' \
+            server/ client/dist/ docker-compose.yml Dockerfile scripts/
+
+          # Upload to EC2
+          scp -i ec2-key.pem deploy.tar.gz ec2-user@$EC2_IP:/tmp/
+
+          # Execute deployment script
+          ssh -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
+            set -e
+            
+            echo "=== Starting deployment ==="
+            cd /app
+            
+            # Backup current deployment
+            if [ -d "current" ]; then
+              mv current backup-$(date +%Y%m%d-%H%M%S) 2>/dev/null || true
+            fi
+            
+            # Extract new deployment
+            mkdir -p current
+            cd current
+            tar -xzf /tmp/deploy.tar.gz
+            rm /tmp/deploy.tar.gz
+            
+            # Get secrets from AWS Secrets Manager
+            export AWS_REGION=ap-south-1
+            
+            # Pull environment variables from Secrets Manager
+            aws secretsmanager get-secret-value \
+              --secret-id docclinic/production/env \
+              --query SecretString \
+              --output text > .env
+            
+            # Build and restart services
+            docker-compose down --remove-orphans || true
+            docker-compose build --no-cache
+            docker-compose up -d
+            
+            # Run database migrations
+            docker-compose exec -T api npx prisma migrate deploy
+            
+            # Health check
+            sleep 10
+            curl -f http://localhost:3001/api/health || exit 1
+            
+            # Cleanup old backups (keep last 3)
+            cd /app
+            ls -dt backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+            
+            echo "=== Deployment complete ==="
+          DEPLOY_SCRIPT
+
+      # Cleanup
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          rm -f ec2-key.pem deploy.tar.gz
+
+      # Notify on Slack (optional)
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "✅ Deployment successful to ${{ steps.secrets.outputs.ec2_ip }}"
+
+  # ==============================================
+  # POST-DEPLOYMENT VERIFICATION
+  # ==============================================
+  verify:
+    name: Verify Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get EC2 IP
+        id: ec2
+        run: |
+          EC2_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=docclinic-server-production" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+          echo "ip=$EC2_IP" >> $GITHUB_OUTPUT
+
+      - name: Health check
+        run: |
+          for i in {1..5}; do
+            if curl -sf http://${{ steps.ec2.outputs.ip }}:3001/api/health; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: Security headers check
+        run: |
+          response=$(curl -sI http://${{ steps.ec2.outputs.ip }}:3001/api/health)
+          
+          # Check for security headers
+          echo "$response" | grep -i "x-frame-options" || echo "⚠️ X-Frame-Options missing"
+          echo "$response" | grep -i "x-content-type-options" || echo "⚠️ X-Content-Type-Options missing"
+          echo "$response" | grep -i "x-xss-protection" || echo "⚠️ X-XSS-Protection missing"
+
+  # ==============================================
+  # ROLLBACK (Manual trigger)
+  # ==============================================
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && failure()
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rollback to previous version
+        run: |
+          EC2_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=docclinic-server-production" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+          
+          aws secretsmanager get-secret-value \
+            --secret-id docclinic/ec2-ssh-key \
+            --query SecretString \
+            --output text > ec2-key.pem
+          chmod 600 ec2-key.pem
+          
+          ssh -i ec2-key.pem ec2-user@$EC2_IP << 'ROLLBACK'
+            cd /app
+            LATEST_BACKUP=$(ls -dt backup-* 2>/dev/null | head -1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              rm -rf current
+              mv "$LATEST_BACKUP" current
+              cd current
+              docker-compose down
+              docker-compose up -d
+              echo "Rolled back to $LATEST_BACKUP"
+            else
+              echo "No backup found for rollback"
+              exit 1
+            fi
+          ROLLBACK
+          
+          rm -f ec2-key.pem

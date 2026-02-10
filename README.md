@@ -158,6 +158,18 @@ docclinic-erp/
 | ACCOUNTANT | ✅ | View | - | View | ✅ | ✅ | ✅ |
 | STAFF | Limited | View | - | - | - | Self | - |
 
+## 🔑 Demo Credentials
+
+> **HIPAA Compliant**: All passwords meet security requirements (14+ chars, mixed case, numbers, special characters)
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | admin@docclinic.com | `DocCl!n1c@Adm1n2024` |
+| Doctor | doctor@demo.com | `D0ct0r@Demo!2024` |
+| Receptionist | receptionist@demo.com | `Recept!0n@Demo24` |
+| Pharmacist | pharmacist@demo.com | `Pharm@c1st!Demo24` |
+| Accountant | accountant@demo.com | `Acc0unt@Demo!2024` |
+
 ## 📱 WhatsApp Commands
 
 ### Patient Commands
@@ -189,22 +201,85 @@ docclinic-erp/
 
 ## 🚢 Deployment
 
-### Using Docker
+### Using Docker (Local)
 ```bash
 docker-compose up -d
 ```
 
-### AWS Deployment
-1. Create stack using CloudFormation:
+### AWS Deployment (Fully Automated - Zero Touch)
+
+The CI/CD pipeline handles **everything automatically**:
+- ✅ Infrastructure provisioning (VPC, EC2, RDS, S3)
+- ✅ SSH key generation and secure storage
+- ✅ Database password generation
+- ✅ Application secrets management
+- ✅ Build, test, and deploy
+- ✅ Database migrations
+- ✅ Health checks and rollback
+
+#### Required GitHub Secrets
+
+Add these in your repo **Settings → Secrets → Actions**:
+
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+
+> **That's it!** No manual AWS console work needed.
+
+#### IAM Permissions Required
+
+Your IAM user needs these permissions:
+- `AmazonEC2FullAccess`
+- `AmazonRDSFullAccess`
+- `AmazonS3FullAccess`
+- `AmazonVPCFullAccess`
+- `IAMFullAccess`
+- `SecretsManagerReadWrite`
+- `CloudFormationFullAccess`
+- `CloudWatchLogsFullAccess`
+
+#### Deploy
+
+Just push to `master` branch:
 ```bash
-aws cloudformation create-stack \
-  --stack-name docclinic-prod \
-  --template-body file://aws/cloudformation.yml \
-  --parameters ParameterKey=DBPassword,ParameterValue=your-password \
-  --capabilities CAPABILITY_IAM
+git push origin master
 ```
 
-2. Push to main branch - GitHub Actions will deploy automatically
+The pipeline will:
+1. **Create infrastructure** (first run) - ~15 mins
+2. **Build and test** application
+3. **Deploy** to EC2
+4. **Run migrations**
+5. **Health check**
+
+#### Manual Actions (Optional)
+
+Go to **Actions → AWS Full Automation** → **Run workflow**:
+- `deploy` - Force redeploy
+- `destroy` - Tear down all infrastructure
+- `infrastructure-only` - Only update infrastructure
+
+#### Estimated AWS Costs (Free Tier Eligible)
+- EC2 t2.micro: Free (750 hrs/month for 12 months)
+- RDS db.t3.micro: Free (750 hrs/month for 12 months)
+- S3: Free (5GB storage)
+- Data Transfer: Free (15GB/month)
+
+#### Access Your Application
+
+After deployment, access your app at:
+```
+http://<EC2_PUBLIC_IP>
+```
+
+Find your EC2 IP in:
+1. **GitHub Actions** → Last deployment run → Summary
+2. **AWS Console** → EC2 → Instances → DocClinic server
+3. **AWS CLI**: `aws cloudformation describe-stacks --stack-name docclinic-production --query 'Stacks[0].Outputs[?OutputKey==`PublicIP`].OutputValue' --output text`
+
+> **Note**: Uses HTTP (no HTTPS) since this is a Free Tier setup without a domain name.
 
 ## 📄 License
 

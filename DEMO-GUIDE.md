@@ -8,12 +8,15 @@ This guide walks through all features for recording a demo/KT video.
 
 ## 🔐 Login Credentials
 
+> **HIPAA Compliant Passwords**: All passwords meet HIPAA security requirements (14+ characters, mixed case, numbers, special characters)
+
 | Role | Email | Password |
 |------|-------|----------|
-| Doctor | doctor@demo.com | demo123 |
-| Receptionist | receptionist@demo.com | demo123 |
-| Pharmacist | pharmacist@demo.com | demo123 |
-| Accountant | accountant@demo.com | demo123 |
+| Super Admin | admin@docclinic.com | `DocCl!n1c@Adm1n2024` |
+| Doctor | doctor@demo.com | `D0ct0r@Demo!2024` |
+| Receptionist | receptionist@demo.com | `Recept!0n@Demo24` |
+| Pharmacist | pharmacist@demo.com | `Pharm@c1st!Demo24` |
+| Accountant | accountant@demo.com | `Acc0unt@Demo!2024` |
 
 ---
 
@@ -25,7 +28,7 @@ This guide walks through all features for recording a demo/KT video.
 - [ ] Click "Login" button
 
 ### 2. Login as Doctor (30 sec)
-- [ ] Enter: doctor@demo.com / demo123
+- [ ] Enter: doctor@demo.com / D0ct0r@Demo!2024
 - [ ] Click Login
 
 ### 3. Dashboard Overview (2 min)
@@ -138,8 +141,51 @@ This guide walks through all features for recording a demo/KT video.
 6. **Multi-Role Access**: Different views for different roles
 7. **WhatsApp Ready**: Bot integration for appointments
 8. **Mobile Responsive**: Works on tablets/phones
-9. **Offline First**: SQLite for reliable local operation
-10. **Cloud Ready**: Can deploy to AWS easily
+9. **HIPAA Compliant**: Secure passwords, audit logs, encryption
+10. **Cloud Ready**: Zero-touch AWS deployment
+
+---
+
+## 🔒 HIPAA Compliance Features
+
+- **Password Policy**: 14+ characters, mixed case, numbers, special chars
+- **Session Management**: Auto-logout, secure tokens
+- **Audit Logging**: All actions logged with timestamps
+- **Data Encryption**: SSL/TLS in transit, encrypted at rest
+- **Access Control**: Role-based permissions
+- **Secure Storage**: AWS Secrets Manager for credentials
+
+---
+
+## 🚀 AWS Deployment (Fully Automated)
+
+### One-Time Setup
+```powershell
+# 1. Configure AWS CLI
+aws configure
+
+# 2. Setup GitHub secrets (run from project root)
+.\scripts\setup-aws-github.ps1
+```
+
+### Deploy
+Just push to main:
+```bash
+git push origin main
+```
+
+The pipeline automatically:
+1. Creates all AWS infrastructure (first run)
+2. Builds and tests the application
+3. Deploys to EC2
+4. Runs database migrations
+5. Performs health checks
+
+### Manual Triggers
+Go to GitHub **Actions → AWS Full Automation → Run workflow**:
+- `deploy` - Redeploy application
+- `destroy` - Remove all infrastructure
+- `infrastructure-only` - Update infra only
 
 ---
 

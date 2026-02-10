@@ -218,7 +218,7 @@ export default function Dashboard() {
           <StatCard
             icon={FaUserInjured}
             title="Today's OPD"
-            value={stats?.data?.patients?.newToday || 0}
+            value={stats?.data?.appointments?.total || 0}
             change={Math.abs(stats?.data?.appointments?.growth) || 0}
             changeType={stats?.data?.appointments?.growth >= 0 ? 'increase' : 'decrease'}
             color="bg-blue-500"
@@ -233,8 +233,8 @@ export default function Dashboard() {
           />
           <StatCard
             icon={FaCalendarCheck}
-            title="Appointments"
-            value={stats?.data?.appointments?.total || 0}
+            title="New Patients"
+            value={stats?.data?.patients?.newToday || 0}
             change={stats?.data?.appointments?.completed || 0}
             changeType="increase"
             color="bg-purple-500"
@@ -312,28 +312,12 @@ export default function Dashboard() {
               <FaBell className="text-gray-400" />
             </div>
             <div className="space-y-3">
-              {alerts?.length > 0 ? (
-                alerts.map((alert, index) => (
-                  <AlertItem key={index} {...alert} />
+              {alerts?.data?.alerts?.length > 0 ? (
+                alerts.data.alerts.map((alert, index) => (
+                  <AlertItem key={index} type={alert.type} message={alert.message} time={alert.title} />
                 ))
               ) : (
-                <>
-                  <AlertItem
-                    type="warning"
-                    message="5 medicines expiring this month"
-                    time="Check inventory"
-                  />
-                  <AlertItem
-                    type="danger"
-                    message="Low stock: Paracetamol 500mg"
-                    time="Only 10 units left"
-                  />
-                  <AlertItem
-                    type="info"
-                    message="2 pending leave requests"
-                    time="Review now"
-                  />
-                </>
+                <p className="text-gray-500 text-center py-4">No alerts at this time</p>
               )}
             </div>
           </div>
@@ -390,15 +374,17 @@ export default function Dashboard() {
                       <FaClock className="text-purple-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{apt.patientName}</p>
-                      <p className="text-sm text-gray-500">{apt.time} - {apt.type}</p>
+                      <p className="font-medium text-gray-900 truncate">{apt.patient?.name || apt.patientName || 'Unknown Patient'}</p>
+                      <p className="text-sm text-gray-500">{apt.timeSlot || apt.time || '-'} - {apt.type || 'Consultation'}</p>
                     </div>
                     <span className={`px-2 py-1 text-xs rounded-full ${
-                      apt.status === 'confirmed' 
+                      apt.status === 'CONFIRMED' || apt.status === 'confirmed'
                         ? 'bg-green-100 text-green-700' 
+                        : apt.status === 'COMPLETED' || apt.status === 'completed'
+                        ? 'bg-blue-100 text-blue-700'
                         : 'bg-yellow-100 text-yellow-700'
                     }`}>
-                      {apt.status}
+                      {apt.status?.toLowerCase() || 'scheduled'}
                     </span>
                   </div>
                 ))

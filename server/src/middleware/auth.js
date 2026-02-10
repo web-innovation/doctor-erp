@@ -133,12 +133,14 @@ export const PERMISSIONS = {
   BILLING_REFUND: ['SUPER_ADMIN', 'ACCOUNTANT'],
 
   // Staff Management
-  'staff:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
+  'staff:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST'],
+  'staff:update': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+  'staff:create': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
   'staff:manage': ['SUPER_ADMIN'],
   STAFF_VIEW: ['SUPER_ADMIN', 'ACCOUNTANT'],
   STAFF_MANAGE: ['SUPER_ADMIN'],
-  ATTENDANCE_VIEW: ['SUPER_ADMIN', 'ACCOUNTANT', 'STAFF'],
-  ATTENDANCE_MARK: ['SUPER_ADMIN', 'RECEPTIONIST'],
+  ATTENDANCE_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'],
+  ATTENDANCE_MARK: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
 
   // Reports
   'reports:sales': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
@@ -160,9 +162,10 @@ export const PERMISSIONS = {
 
   // Settings
   'clinic:read': ['SUPER_ADMIN', 'DOCTOR'],
-  'clinic:manage': ['SUPER_ADMIN'],
-  CLINIC_SETTINGS: ['SUPER_ADMIN'],
-  TAX_SETTINGS: ['SUPER_ADMIN', 'ACCOUNTANT']
+  'clinic:manage': ['SUPER_ADMIN', 'DOCTOR'],
+  'settings:clinic': ['SUPER_ADMIN', 'DOCTOR'],
+  CLINIC_SETTINGS: ['SUPER_ADMIN', 'DOCTOR'],
+  TAX_SETTINGS: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']
 };
 
 // Check permission middleware

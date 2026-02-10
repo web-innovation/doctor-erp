@@ -1,0 +1,61 @@
+# ==============================================
+# DocClinic ERP - Production Docker Compose
+# For AWS deployment with RDS (no local postgres)
+# ==============================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # API Server (serves both backend + frontend)
+  # ==========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docclinic-api
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    ports:
+      - "80:3001"  # Expose on port 80 for direct access
+      - "3001:3001"  # Also keep 3001 for health checks
+    volumes:
+      - uploads:/app/server/uploads
+      - logs:/app/server/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ==========================================
+  # WhatsApp Bot (optional)
+  # ==========================================
+  whatsapp-bot:
+    build:
+      context: ./whatsapp-bot
+      dockerfile: Dockerfile
+    container_name: docclinic-whatsapp
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:3001/api
+      BOT_API_KEY: ${BOT_API_KEY:-whatsapp-bot-secret}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    volumes:
+      - whatsapp_auth:/app/.wwebjs_auth
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - whatsapp  # Only start with: docker-compose --profile whatsapp
+
+volumes:
+  uploads:
+  logs:
+  whatsapp_auth:

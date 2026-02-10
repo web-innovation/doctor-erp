@@ -355,11 +355,18 @@ export default function PrescriptionDetail() {
 
   const handleSend = async (method) => {
     try {
-      await prescriptionService.sendPrescription(id, method);
-      toast.success(`Prescription sent via ${method}`);
+      const response = await prescriptionService.sendPrescription(id, method);
+      
+      // If WhatsApp URL is returned, open it in a new tab
+      if (response.whatsappUrl) {
+        window.open(response.whatsappUrl, '_blank');
+        toast.success('WhatsApp opened. Send the message to complete.');
+      } else {
+        toast.success(`Prescription sent via ${method}`);
+      }
       setShowSendModal(false);
     } catch (error) {
-      toast.error('Failed to send prescription');
+      toast.error(error.response?.data?.message || 'Failed to send prescription');
     }
   };
 

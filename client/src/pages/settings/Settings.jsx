@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -12,15 +12,21 @@ import {
   FaEye,
   FaEyeSlash,
   FaCheck,
+  FaEnvelope,
+  FaWhatsapp,
 } from 'react-icons/fa';
 import settingsService from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
+import EmailSettings from '../../components/settings/EmailSettings';
+import WhatsAppSettings from '../../components/settings/WhatsAppSettings';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
   { id: 'clinic', label: 'Clinic', icon: FaClinicMedical },
   { id: 'tax', label: 'Tax Setup', icon: FaPercent },
   { id: 'hours', label: 'Working Hours', icon: FaClock },
+  { id: 'email', label: 'Email', icon: FaEnvelope },
+  { id: 'whatsapp', label: 'WhatsApp', icon: FaWhatsapp },
   { id: 'preferences', label: 'Preferences', icon: FaCog },
 ];
 
@@ -37,7 +43,7 @@ const DEFAULT_WIDGETS = [
 
 export default function Settings() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, loadUser } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -100,62 +106,72 @@ export default function Settings() {
   const { data: clinicData, isLoading: clinicLoading } = useQuery({
     queryKey: ['clinic-settings'],
     queryFn: () => settingsService.getClinicSettings(),
-    onSuccess: (data) => {
-      if (data) {
-        setClinicValue('clinicName', data.clinicName);
-        setClinicValue('address', data.address);
-        setClinicValue('phone', data.phone);
-        setClinicValue('email', data.email);
-        setClinicValue('website', data.website);
-        setClinicValue('registrationNo', data.registrationNo);
-        setClinicValue('gstNo', data.gstNo);
-      }
-    },
   });
+
+  // Populate clinic form when data is loaded
+  useEffect(() => {
+    if (clinicData) {
+      setClinicValue('clinicName', clinicData.clinicName || '');
+      setClinicValue('address', clinicData.address || '');
+      setClinicValue('phone', clinicData.phone || '');
+      setClinicValue('email', clinicData.email || '');
+      setClinicValue('website', clinicData.website || '');
+      setClinicValue('registrationNo', clinicData.registrationNo || '');
+      setClinicValue('gstNo', clinicData.gstNo || '');
+    }
+  }, [clinicData, setClinicValue]);
 
   // Fetch tax settings
   const { data: taxData, isLoading: taxLoading } = useQuery({
     queryKey: ['tax-settings'],
     queryFn: () => settingsService.getTaxSettings(),
-    onSuccess: (data) => {
-      if (data) {
-        setTaxValue('consultationGST', data.consultationGST);
-        setTaxValue('pharmacyGST', data.pharmacyGST);
-        setTaxValue('labGST', data.labGST);
-        setTaxValue('otherGST', data.otherGST);
-        setTaxValue('inclusiveTax', data.inclusiveTax);
-      }
-    },
   });
+
+  // Populate tax form when data is loaded
+  useEffect(() => {
+    if (taxData) {
+      setTaxValue('consultationGST', taxData.consultationGST || '');
+      setTaxValue('pharmacyGST', taxData.pharmacyGST || '');
+      setTaxValue('labGST', taxData.labGST || '');
+      setTaxValue('otherGST', taxData.otherGST || '');
+      setTaxValue('inclusiveTax', taxData.inclusiveTax || false);
+    }
+  }, [taxData, setTaxValue]);
 
   // Fetch working hours
-  const { isLoading: hoursLoading } = useQuery({
+  const { data: hoursData, isLoading: hoursLoading } = useQuery({
     queryKey: ['working-hours'],
     queryFn: () => settingsService.getWorkingHours(),
-    onSuccess: (data) => {
-      if (data?.hours) {
-        setWorkingHours(data.hours);
-      }
-    },
   });
 
+  // Populate working hours when data is loaded
+  useEffect(() => {
+    if (hoursData?.hours) {
+      setWorkingHours(hoursData.hours);
+    }
+  }, [hoursData]);
+
   // Fetch preferences
-  const { isLoading: preferencesLoading } = useQuery({
+  const { data: preferencesData, isLoading: preferencesLoading } = useQuery({
     queryKey: ['preferences'],
     queryFn: () => settingsService.getPreferences(),
-    onSuccess: (data) => {
-      if (data?.dashboardWidgets) {
-        setDashboardWidgets(data.dashboardWidgets);
-      }
-    },
   });
+
+  // Populate preferences when data is loaded
+  useEffect(() => {
+    if (preferencesData?.dashboardWidgets) {
+      setDashboardWidgets(preferencesData.dashboardWidgets);
+    }
+  }, [preferencesData]);
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
     mutationFn: (data) => settingsService.updateProfile(data),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Profile updated successfully');
       queryClient.invalidateQueries(['user']);
+      // Refresh user data in auth context
+      await loadUser();
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to update profile');
@@ -773,6 +789,18 @@ export default function Settings() {
         return renderTaxTab();
       case 'hours':
         return renderHoursTab();
+      case 'email':
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <EmailSettings />
+          </div>
+        );
+      case 'whatsapp':
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <WhatsAppSettings />
+          </div>
+        );
       case 'preferences':
         return renderPreferencesTab();
       default:

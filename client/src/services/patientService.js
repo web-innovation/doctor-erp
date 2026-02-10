@@ -25,7 +25,7 @@ const patientService = {
    */
   getPatient: async (id) => {
     const response = await api.get(`/patients/${id}`);
-    return response.data;
+    return response.data?.data || response.data;
   },
 
   /**
@@ -98,7 +98,29 @@ const patientService = {
    */
   getHistory: async (id, params = {}) => {
     const response = await api.get(`/patients/${id}/history`, { params });
-    return response.data;
+    return response.data?.data || response.data;
+  },
+
+  /**
+   * Get patient vitals history
+   * @param {string} id - Patient ID
+   * @param {Object} [params] - Query parameters
+   * @returns {Promise} - Patient vitals records
+   */
+  getVitals: async (id, params = {}) => {
+    const response = await api.get(`/patients/${id}/vitals`, { params });
+    return response.data?.data || response.data;
+  },
+
+  /**
+   * Get patient bills
+   * @param {string} id - Patient ID
+   * @param {Object} [params] - Query parameters
+   * @returns {Promise} - Patient bills
+   */
+  getBills: async (id, params = {}) => {
+    const response = await api.get(`/patients/${id}/bills`, { params });
+    return response.data?.data || response.data;
   },
 
   /**
@@ -114,6 +136,7 @@ const patientService = {
 
 // Alias for backward compatibility
 patientService.getAll = patientService.getPatients;
+patientService.getById = patientService.getPatient;
 
 export { patientService };
 export default patientService;

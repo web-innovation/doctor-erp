@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { SessionTimeoutWarning } from './components/common';
 
 // Layouts
 import DashboardLayout from './layouts/DashboardLayout';
@@ -28,6 +29,12 @@ import Leave from './pages/staff/Leave';
 import Reports from './pages/reports/Reports';
 import LabsAgents from './pages/labs-agents/LabsAgents';
 import Settings from './pages/settings/Settings';
+
+// Admin Pages
+import AdminDashboard from './pages/admin/AdminDashboard';
+import Clinics from './pages/admin/Clinics';
+import ClinicDetail from './pages/admin/ClinicDetail';
+import Users from './pages/admin/Users';
 
 // Landing Page
 import Landing from './pages/Landing';
@@ -59,7 +66,11 @@ function App() {
   const { user } = useAuth();
 
   return (
-    <Routes>
+    <>
+      {/* HIPAA: Session timeout warning for authenticated users */}
+      {user && <SessionTimeoutWarning />}
+      
+      <Routes>
       {/* Public Routes */}
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
       
@@ -121,6 +132,14 @@ function App() {
         <Route path="/profile" element={<Navigate to="/settings" replace />} />
       </Route>
 
+      {/* Super Admin Routes */}
+      <Route element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']}><DashboardLayout /></ProtectedRoute>}>
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/clinics" element={<Clinics />} />
+        <Route path="/admin/clinics/:id" element={<ClinicDetail />} />
+        <Route path="/admin/users" element={<Users />} />
+      </Route>
+
       {/* 404 */}
       <Route path="*" element={
         <div className="min-h-screen flex items-center justify-center">
@@ -132,6 +151,7 @@ function App() {
         </div>
       } />
     </Routes>
+    </>
   );
 }
 

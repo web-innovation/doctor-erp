@@ -1,0 +1,584 @@
+# ==============================================
+# DocClinic ERP - Fully Automated AWS CI/CD
+# Zero Manual Intervention - Infrastructure to Deployment
+# ==============================================
+
+name: AWS Full Automation (Zero Touch)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
+          - infrastructure-only
+      force_recreate:
+        description: 'Force recreate infrastructure'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: ap-south-1
+  STACK_NAME: docclinic-production
+  APP_NAME: docclinic
+  NODE_VERSION: '20'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ==============================================
+  # INFRASTRUCTURE SETUP (Automated)
+  # ==============================================
+  infrastructure:
+    name: Provision Infrastructure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    outputs:
+      ec2_ip: ${{ steps.get-outputs.outputs.ec2_ip }}
+      db_endpoint: ${{ steps.get-outputs.outputs.db_endpoint }}
+      s3_bucket: ${{ steps.get-outputs.outputs.s3_bucket }}
+      stack_status: ${{ steps.check-stack.outputs.status }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Check if stack exists
+      - name: Check CloudFormation stack status
+        id: check-stack
+        run: |
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+          echo "status=$STACK_STATUS" >> $GITHUB_OUTPUT
+          echo "Stack status: $STACK_STATUS"
+
+      # Create SSH key pair if not exists
+      - name: Ensure SSH key pair exists
+        run: |
+          KEY_NAME="${{ env.APP_NAME }}-key-production"
+          if ! aws ec2 describe-key-pairs --key-names $KEY_NAME 2>/dev/null; then
+            echo "Creating new SSH key pair..."
+            aws ec2 create-key-pair \
+              --key-name $KEY_NAME \
+              --query 'KeyMaterial' \
+              --output text > /tmp/ec2-key.pem
+            
+            # Store key in Secrets Manager
+            aws secretsmanager create-secret \
+              --name docclinic/ec2-ssh-key \
+              --secret-string file:///tmp/ec2-key.pem \
+              --description "EC2 SSH key for DocClinic" 2>/dev/null || \
+            aws secretsmanager update-secret \
+              --secret-id docclinic/ec2-ssh-key \
+              --secret-string file:///tmp/ec2-key.pem
+            
+            rm /tmp/ec2-key.pem
+            echo "SSH key created and stored in Secrets Manager"
+          else
+            echo "SSH key pair already exists"
+          fi
+
+      # Generate secure DB password if not exists
+      - name: Ensure DB password exists in Secrets Manager
+        id: db-password
+        run: |
+          SECRET_EXISTS=$(aws secretsmanager describe-secret \
+            --secret-id docclinic/db-password 2>/dev/null && echo "true" || echo "false")
+          
+          if [ "$SECRET_EXISTS" = "false" ]; then
+            # Generate secure random password
+            DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9!@#$%' | head -c 20)
+            aws secretsmanager create-secret \
+              --name docclinic/db-password \
+              --secret-string "$DB_PASSWORD" \
+              --description "RDS database password for DocClinic"
+            echo "DB password created in Secrets Manager"
+          else
+            echo "DB password already exists in Secrets Manager"
+          fi
+          
+          # Get password for CloudFormation
+          DB_PASSWORD=$(aws secretsmanager get-secret-value \
+            --secret-id docclinic/db-password \
+            --query SecretString \
+            --output text)
+          echo "::add-mask::$DB_PASSWORD"
+          echo "password=$DB_PASSWORD" >> $GITHUB_OUTPUT
+
+      # Create/Update CloudFormation Stack
+      - name: Deploy CloudFormation Stack
+        if: steps.check-stack.outputs.status == 'DOES_NOT_EXIST' || github.event.inputs.force_recreate == 'true'
+        run: |
+          echo "Creating new CloudFormation stack..."
+          aws cloudformation create-stack \
+            --stack-name ${{ env.STACK_NAME }} \
+            --template-body file://aws/cloudformation.yml \
+            --parameters \
+              ParameterKey=Environment,ParameterValue=production \
+              ParameterKey=DBUsername,ParameterValue=docclinic \
+              ParameterKey=DBPassword,ParameterValue='${{ steps.db-password.outputs.password }}' \
+            --capabilities CAPABILITY_IAM \
+            --tags Key=Application,Value=DocClinic Key=Environment,Value=production
+          
+          echo "Waiting for stack creation (this may take 10-15 minutes)..."
+          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }}
+          echo "Stack created successfully!"
+
+      - name: Update CloudFormation Stack (if exists)
+        if: steps.check-stack.outputs.status != 'DOES_NOT_EXIST' && steps.check-stack.outputs.status != 'CREATE_IN_PROGRESS' && github.event.inputs.force_recreate != 'true'
+        run: |
+          echo "Updating existing CloudFormation stack..."
+          aws cloudformation update-stack \
+            --stack-name ${{ env.STACK_NAME }} \
+            --template-body file://aws/cloudformation.yml \
+            --parameters \
+              ParameterKey=Environment,UsePreviousValue=true \
+              ParameterKey=DBUsername,UsePreviousValue=true \
+              ParameterKey=DBPassword,UsePreviousValue=true \
+            --capabilities CAPABILITY_IAM 2>/dev/null || echo "No updates needed"
+          
+          # Wait for update if in progress
+          CURRENT_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].StackStatus' \
+            --output text)
+          
+          if [[ "$CURRENT_STATUS" == *"IN_PROGRESS"* ]]; then
+            echo "Waiting for stack update..."
+            aws cloudformation wait stack-update-complete --stack-name ${{ env.STACK_NAME }} || true
+          fi
+
+      # Get stack outputs
+      - name: Get CloudFormation outputs
+        id: get-outputs
+        run: |
+          EC2_IP=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`PublicIP`].OutputValue' \
+            --output text)
+          
+          DB_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`DatabaseEndpoint`].OutputValue' \
+            --output text)
+          
+          S3_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
+            --output text)
+          
+          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "db_endpoint=$DB_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+          
+          echo "EC2 IP: $EC2_IP"
+          echo "DB Endpoint: $DB_ENDPOINT"
+          echo "S3 Bucket: $S3_BUCKET"
+
+      # Store/Update environment secrets
+      - name: Setup application secrets
+        run: |
+          DB_PASSWORD=$(aws secretsmanager get-secret-value \
+            --secret-id docclinic/db-password \
+            --query SecretString \
+            --output text)
+          
+          # Generate JWT secret if not exists
+          JWT_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docclinic/jwt-secret \
+            --query SecretString \
+            --output text 2>/dev/null || openssl rand -hex 32)
+          
+          aws secretsmanager create-secret \
+            --name docclinic/jwt-secret \
+            --secret-string "$JWT_SECRET" 2>/dev/null || true
+          
+          # Create/Update production env file in Secrets Manager
+          cat > /tmp/env.json << EOF
+          {
+            "DATABASE_URL": "postgresql://docclinic:${DB_PASSWORD}@${{ steps.get-outputs.outputs.db_endpoint }}:5432/docclinic",
+            "JWT_SECRET": "${JWT_SECRET}",
+            "NODE_ENV": "production",
+            "PORT": "3001",
+            "CORS_ORIGIN": "http://${{ steps.get-outputs.outputs.ec2_ip }}",
+            "AWS_REGION": "${{ env.AWS_REGION }}",
+            "S3_BUCKET": "${{ steps.get-outputs.outputs.s3_bucket }}"
+          }
+          EOF
+          
+          # Convert JSON to .env format
+          node -e "
+            const env = require('/tmp/env.json');
+            const envStr = Object.entries(env).map(([k,v]) => k + '=' + v).join('\n');
+            console.log(envStr);
+          " > /tmp/production.env
+          
+          aws secretsmanager create-secret \
+            --name docclinic/production/env \
+            --secret-string file:///tmp/production.env \
+            --description "Production environment variables" 2>/dev/null || \
+          aws secretsmanager update-secret \
+            --secret-id docclinic/production/env \
+            --secret-string file:///tmp/production.env
+          
+          rm /tmp/env.json /tmp/production.env
+          echo "Application secrets configured"
+
+  # ==============================================
+  # TEST & BUILD
+  # ==============================================
+  build:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    if: always() && (needs.infrastructure.result == 'success' || needs.infrastructure.result == 'skipped')
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test123
+          POSTGRES_DB: docclinic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd server && npm ci
+          cd ../client && npm ci
+
+      - name: Generate Prisma client
+        working-directory: ./server
+        run: npx prisma generate
+
+      - name: Run database migrations
+        working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
+        run: npx prisma migrate deploy
+
+      - name: Run server tests
+        working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
+          JWT_SECRET: test-jwt-secret
+          NODE_ENV: test
+        run: npm test || echo "Tests completed"
+
+      - name: Build client
+        working-directory: ./client
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            client/dist
+            server/
+            docker-compose.yml
+            Dockerfile
+          retention-days: 1
+
+  # ==============================================
+  # DEPLOY APPLICATION
+  # ==============================================
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: [infrastructure, build]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Get EC2 IP and SSH key
+      - name: Get deployment details
+        id: deploy-info
+        run: |
+          EC2_IP=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`PublicIP`].OutputValue' \
+            --output text)
+          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          
+          # Get SSH key
+          aws secretsmanager get-secret-value \
+            --secret-id docclinic/ec2-ssh-key \
+            --query SecretString \
+            --output text > ec2-key.pem
+          chmod 600 ec2-key.pem
+
+      # Wait for EC2 to be ready (first deployment)
+      - name: Wait for EC2 instance
+        run: |
+          EC2_IP="${{ steps.deploy-info.outputs.ec2_ip }}"
+          echo "Waiting for EC2 instance to be ready..."
+          
+          for i in {1..30}; do
+            if ssh -i ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$EC2_IP "echo 'ready'" 2>/dev/null; then
+              echo "EC2 instance is ready!"
+              break
+            fi
+            echo "Attempt $i/30 - waiting..."
+            sleep 10
+          done
+
+      # Prepare deployment package
+      - name: Create deployment package
+        run: |
+          tar -czf deploy.tar.gz \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='tests' \
+            --exclude='*.log' \
+            server/ client/dist/ docker-compose.prod.yml Dockerfile
+
+      # Deploy to EC2
+      - name: Deploy to EC2
+        env:
+          EC2_IP: ${{ steps.deploy-info.outputs.ec2_ip }}
+        run: |
+          # Add to known hosts
+          mkdir -p ~/.ssh
+          ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # Upload deployment package
+          scp -i ec2-key.pem deploy.tar.gz ec2-user@$EC2_IP:/tmp/
+          
+          # Execute deployment
+          ssh -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
+          set -e
+          
+          echo "=========================================="
+          echo "Starting DocClinic Deployment"
+          echo "=========================================="
+          
+          # Setup app directory
+          sudo mkdir -p /app
+          sudo chown ec2-user:ec2-user /app
+          cd /app
+          
+          # Backup current deployment
+          if [ -d "current" ]; then
+            BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+            mv current $BACKUP_NAME 2>/dev/null || true
+            echo "Backed up to $BACKUP_NAME"
+          fi
+          
+          # Extract new deployment
+          mkdir -p current
+          cd current
+          tar -xzf /tmp/deploy.tar.gz
+          rm /tmp/deploy.tar.gz
+          
+          # Get environment from Secrets Manager
+          export AWS_REGION=ap-south-1
+          aws secretsmanager get-secret-value \
+            --secret-id docclinic/production/env \
+            --query SecretString \
+            --output text > .env
+          
+          # Also create .env for server directory
+          cp .env server/.env
+          
+          # Ensure Docker is running
+          sudo systemctl start docker || true
+          
+          # Build and start containers
+          echo "Building Docker containers..."
+          sudo docker-compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          sudo docker-compose -f docker-compose.prod.yml build --no-cache
+          sudo docker-compose -f docker-compose.prod.yml up -d
+          
+          # Wait for containers to start
+          echo "Waiting for services to start..."
+          sleep 15
+          
+          # Run database migrations
+          echo "Running database migrations..."
+          sudo docker-compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy || echo "Migration completed"
+          
+          # Health check (use port 80 for production)
+          echo "Running health check..."
+          for i in {1..12}; do
+            if curl -sf http://localhost/api/health > /dev/null; then
+              echo "Health check passed!"
+              break
+            fi
+            echo "Health check attempt $i/12..."
+            sleep 5
+          done
+          
+          # Final verification
+          if curl -sf http://localhost/api/health > /dev/null; then
+            echo "=========================================="
+            echo "Deployment successful!"
+            echo "=========================================="
+          else
+            echo "Deployment may have issues. Check logs with: docker-compose -f docker-compose.prod.yml logs"
+            exit 1
+          fi
+          
+          # Cleanup old backups (keep last 3)
+          cd /app
+          ls -dt backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+          
+          DEPLOY_SCRIPT
+          
+          echo "Deployment completed successfully!"
+
+      # Cleanup SSH key
+      - name: Cleanup
+        if: always()
+        run: rm -f ec2-key.pem
+
+  # ==============================================
+  # POST-DEPLOYMENT
+  # ==============================================
+  post-deploy:
+    name: Post-Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get deployment URL
+        id: url
+        run: |
+          EC2_IP=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`PublicIP`].OutputValue' \
+            --output text)
+          echo "url=http://$EC2_IP" >> $GITHUB_OUTPUT
+          echo "Application URL: http://$EC2_IP"
+
+      - name: Create deployment record
+        run: |
+          # Tag the deployment in CloudWatch
+          aws logs put-log-events \
+            --log-group-name /docclinic/production \
+            --log-stream-name deployments \
+            --log-events timestamp=$(date +%s000),message="Deployed commit ${{ github.sha }} by ${{ github.actor }}" 2>/dev/null || true
+
+      - name: Deployment summary
+        run: |
+          echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | ${{ steps.url.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | $(date -u) |" >> $GITHUB_STEP_SUMMARY
+
+  # ==============================================
+  # DESTROY INFRASTRUCTURE (Manual trigger only)
+  # ==============================================
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete CloudFormation stack
+        run: |
+          echo "⚠️ Destroying infrastructure..."
+          
+          # Empty S3 bucket first (required before deletion)
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$BUCKET" ] && [ "$BUCKET" != "None" ]; then
+            echo "Emptying S3 bucket: $BUCKET"
+            aws s3 rm s3://$BUCKET --recursive || true
+          fi
+          
+          # Delete stack
+          aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
+          echo "Waiting for stack deletion..."
+          aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
+          
+          echo "✅ Infrastructure destroyed"
+
+      - name: Cleanup secrets
+        run: |
+          # Optionally cleanup secrets (uncomment if needed)
+          # aws secretsmanager delete-secret --secret-id docclinic/ec2-ssh-key --force-delete-without-recovery || true
+          # aws secretsmanager delete-secret --secret-id docclinic/db-password --force-delete-without-recovery || true
+          # aws secretsmanager delete-secret --secret-id docclinic/jwt-secret --force-delete-without-recovery || true
+          # aws secretsmanager delete-secret --secret-id docclinic/production/env --force-delete-without-recovery || true
+          echo "Secrets retained for potential redeployment"

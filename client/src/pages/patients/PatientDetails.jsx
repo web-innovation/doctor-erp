@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import {
   FaArrowLeft,
@@ -21,6 +22,7 @@ import {
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
 import { prescriptionService } from '../../services/prescriptionService';
+import Modal from '../../components/common/Modal';
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: FaUser },
@@ -33,8 +35,19 @@ const tabs = [
 export default function PatientDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  
+  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+
+  // Open edit modal when URL ends with /edit
+  useEffect(() => {
+    if (location.pathname.endsWith('/edit')) {
+      setIsEditModalOpen(true);
+    }
+  }, [location.pathname]);
 
   // Fetch patient details
   const {
@@ -43,9 +56,27 @@ export default function PatientDetails() {
     isError,
   } = useQuery({
     queryKey: ['patient', id],
-    queryFn: () => patientService.getById(id),
+    queryFn: () => patientService.getPatient(id),
     enabled: !!id,
   });
+
+  // Reset form when patient data changes
+  useEffect(() => {
+    if (patient) {
+      reset({
+        name: patient.name || '',
+        phone: patient.phone || '',
+        email: patient.email || '',
+        gender: patient.gender || '',
+        dateOfBirth: patient.dateOfBirth ? patient.dateOfBirth.split('T')[0] : '',
+        age: patient.age || '',
+        bloodGroup: patient.bloodGroup || '',
+        address: patient.address || '',
+        city: patient.city || '',
+        emergencyContact: patient.emergencyContact || '',
+      });
+    }
+  }, [patient, reset]);
 
   // Fetch patient prescriptions
   const { data: prescriptions } = useQuery({
@@ -68,6 +99,13 @@ export default function PatientDetails() {
     enabled: !!id && activeTab === 'bills',
   });
 
+  // Fetch patient history (appointments)
+  const { data: history } = useQuery({
+    queryKey: ['patientHistory', id],
+    queryFn: () => patientService.getHistory(id),
+    enabled: !!id && activeTab === 'history',
+  });
+
   // Add vitals mutation
   const addVitalsMutation = useMutation({
     mutationFn: (vitalsData) => patientService.addVitals(id, vitalsData),
@@ -79,6 +117,30 @@ export default function PatientDetails() {
       toast.error('Failed to add vitals');
     },
   });
+
+  // Update patient mutation
+  const updatePatientMutation = useMutation({
+    mutationFn: (data) => patientService.updatePatient(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['patient', id]);
+      queryClient.invalidateQueries(['patients']);
+      toast.success('Patient updated successfully');
+      setIsEditModalOpen(false);
+      navigate(`/patients/${id}`);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to update patient');
+    },
+  });
+
+  const closeEditModal = () => {
+    setIsEditModalOpen(false);
+    navigate(`/patients/${id}`);
+  };
+
+  const onEditSubmit = (data) => {
+    updatePatientMutation.mutate(data);
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -142,13 +204,13 @@ export default function PatientDetails() {
               ID: {patient.patientId || `P${String(patient.id).padStart(5, '0')}`}
             </p>
           </div>
-          <Link
-            to={`/patients/${id}/edit`}
+          <button
+            onClick={() => setIsEditModalOpen(true)}
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
           >
             <FaEdit />
             Edit Patient
-          </Link>
+          </button>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -313,20 +375,31 @@ export default function PatientDetails() {
               {activeTab === 'history' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Visit History</h3>
-                  {patient.visits?.length > 0 ? (
+                  {history?.appointments?.length > 0 ? (
                     <div className="space-y-4">
-                      {patient.visits.map((visit, index) => (
-                        <div
-                          key={index}
-                          className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                      {history.appointments.map((visit, index) => (
+                        <Link
+                          key={visit.id || index}
+                          to={`/appointments/${visit.id}`}
+                          className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
                         >
                           <div className="flex justify-between items-start mb-2">
                             <p className="font-medium text-gray-900">{visit.reason || 'General Checkup'}</p>
-                            <span className="text-sm text-gray-500">{formatDate(visit.date)}</span>
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                visit.status === 'COMPLETED'
+                                  ? 'bg-green-100 text-green-700'
+                                  : visit.status === 'CANCELLED'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}
+                            >
+                              {visit.status}
+                            </span>
                           </div>
-                          <p className="text-gray-600 text-sm">{visit.notes || 'No notes'}</p>
-                          <p className="text-sm text-blue-600 mt-2">Dr. {visit.doctor || 'N/A'}</p>
-                        </div>
+                          <p className="text-gray-600 text-sm">{formatDate(visit.date)}</p>
+                          <p className="text-gray-600 text-sm mt-1">{visit.notes || 'No notes'}</p>
+                        </Link>
                       ))}
                     </div>
                   ) : (
@@ -388,24 +461,26 @@ export default function PatientDetails() {
                       {bills.map((bill) => (
                         <Link
                           key={bill.id}
-                          to={`/bills/${bill.id}`}
+                          to={`/billing/${bill.id}`}
                           className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <p className="font-medium text-gray-900">Invoice #{bill.invoiceNumber}</p>
+                            <p className="font-medium text-gray-900">Invoice #{bill.billNo}</p>
                             <span
                               className={`px-2 py-1 text-xs rounded-full ${
-                                bill.status === 'paid'
+                                bill.paymentStatus === 'PAID'
                                   ? 'bg-green-100 text-green-700'
+                                  : bill.paymentStatus === 'PARTIAL'
+                                  ? 'bg-blue-100 text-blue-700'
                                   : 'bg-yellow-100 text-yellow-700'
                               }`}
                             >
-                              {bill.status}
+                              {bill.paymentStatus}
                             </span>
                           </div>
                           <p className="text-gray-600 text-sm">{formatDate(bill.date)}</p>
                           <p className="font-semibold text-gray-900 mt-2">
-                            ₹{bill.amount?.toLocaleString() || 0}
+                            ₹{bill.totalAmount?.toLocaleString() || 0}
                           </p>
                         </Link>
                       ))}
@@ -423,14 +498,14 @@ export default function PatientDetails() {
                     <h3 className="text-lg font-semibold text-gray-900">Vitals Record</h3>
                     <button
                       onClick={() => {
-                        // This would typically open a modal
+                        // This would typically open a modal - for now using sample data
                         const vitalsData = {
-                          date: new Date().toISOString(),
-                          bp: '120/80',
+                          bloodPressure: '120/80',
                           pulse: 72,
                           temperature: 98.6,
                           weight: 70,
                           height: 170,
+                          spO2: 98,
                         };
                         addVitalsMutation.mutate(vitalsData);
                       }}
@@ -468,15 +543,18 @@ export default function PatientDetails() {
                             <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
                               Height
                             </th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                              SpO2
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {vitals.map((vital, index) => (
-                            <tr key={index} className="border-b border-gray-50">
+                            <tr key={vital.id || index} className="border-b border-gray-50">
                               <td className="py-3 px-4 text-gray-900">
-                                {formatDate(vital.date)}
+                                {formatDate(vital.recordedAt)}
                               </td>
-                              <td className="py-3 px-4 text-gray-600">{vital.bp || '-'}</td>
+                              <td className="py-3 px-4 text-gray-600">{vital.bloodPressure || '-'}</td>
                               <td className="py-3 px-4 text-gray-600">
                                 {vital.pulse ? `${vital.pulse} bpm` : '-'}
                               </td>
@@ -488,6 +566,9 @@ export default function PatientDetails() {
                               </td>
                               <td className="py-3 px-4 text-gray-600">
                                 {vital.height ? `${vital.height} cm` : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-gray-600">
+                                {vital.spO2 ? `${vital.spO2}%` : '-'}
                               </td>
                             </tr>
                           ))}
@@ -503,6 +584,155 @@ export default function PatientDetails() {
           </div>
         </div>
       </div>
+
+      {/* Edit Patient Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={closeEditModal}
+        title="Edit Patient"
+        size="lg"
+      >
+        <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Patient Name *
+              </label>
+              <input
+                type="text"
+                {...register('name', { required: 'Name is required' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {errors.name && (
+                <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Phone Number *
+              </label>
+              <input
+                type="tel"
+                {...register('phone', { required: 'Phone is required' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {errors.phone && (
+                <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                {...register('email')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Gender
+              </label>
+              <select
+                {...register('gender')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Date of Birth
+              </label>
+              <input
+                type="date"
+                {...register('dateOfBirth')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Age
+              </label>
+              <input
+                type="number"
+                {...register('age')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Blood Group
+              </label>
+              <select
+                {...register('bloodGroup')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select Blood Group</option>
+                <option value="A+">A+</option>
+                <option value="A-">A-</option>
+                <option value="B+">B+</option>
+                <option value="B-">B-</option>
+                <option value="AB+">AB+</option>
+                <option value="AB-">AB-</option>
+                <option value="O+">O+</option>
+                <option value="O-">O-</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                City
+              </label>
+              <input
+                type="text"
+                {...register('city')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Address
+              </label>
+              <textarea
+                {...register('address')}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Emergency Contact
+              </label>
+              <input
+                type="text"
+                {...register('emergencyContact')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={closeEditModal}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={updatePatientMutation.isPending}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {updatePatientMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

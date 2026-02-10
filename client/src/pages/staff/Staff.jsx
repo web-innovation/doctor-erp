@@ -293,12 +293,12 @@ export default function Staff() {
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                               <span className="text-blue-600 font-medium text-sm">
-                                {staff.name?.charAt(0).toUpperCase()}
+                                {(staff.user?.name || staff.name || 'S').charAt(0).toUpperCase()}
                               </span>
                             </div>
                             <div>
-                              <p className="font-medium text-gray-900">{staff.name}</p>
-                              <p className="text-sm text-gray-500">{staff.email}</p>
+                              <p className="font-medium text-gray-900">{staff.user?.name || staff.name || 'Unknown'}</p>
+                              <p className="text-sm text-gray-500">{staff.user?.email || staff.email || '-'}</p>
                             </div>
                           </div>
                         </td>
@@ -311,17 +311,17 @@ export default function Staff() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                          {staff.phone || '-'}
+                          {staff.user?.phone || staff.phone || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span
                             className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                              staff.isActive !== false
+                              (staff.user?.isActive ?? staff.isActive) !== false
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-red-100 text-red-700'
                             }`}
                           >
-                            {staff.isActive !== false ? 'Active' : 'Inactive'}
+                            {(staff.user?.isActive ?? staff.isActive) !== false ? 'Active' : 'Inactive'}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">

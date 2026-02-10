@@ -562,3 +562,41 @@ model WhatsAppSession {
 
   @@index([phone])
 }
+
+// ==========================================
+// EMAIL NOTIFICATIONS (OAuth2)
+// ==========================================
+
+model EmailLog {
+  id             String    @id @default(uuid())
+  recipientEmail String
+  subject        String
+  type           String    // appointment_reminder, prescription, bill, password_reset, welcome, test
+  status         String    @default("sent") // sent, failed
+  messageId      String?
+  error          String?
+  
+  sentAt         DateTime  @default(now())
+  
+  userId         String?
+  patientId      String?
+  
+  @@index([type])
+  @@index([status])
+  @@index([sentAt])
+  @@index([recipientEmail])
+}
+
+model ClinicSettings {
+  id        String   @id @default(uuid())
+  key       String
+  value     String   // JSON string for complex values
+  
+  clinicId  String
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, key])
+  @@index([key])
+}

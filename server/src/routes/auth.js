@@ -6,8 +6,26 @@ import { prisma } from '../index.js';
 import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../config/logger.js';
+import { logAuthEvent } from '../middleware/hipaaAudit.js';
+import { validatePassword, hashPassword, getPasswordRequirements } from '../utils/passwordPolicy.js';
 
 const router = express.Router();
+
+// Get client IP helper
+function getClientIP(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+         req.headers['x-real-ip'] ||
+         req.socket?.remoteAddress ||
+         req.ip ||
+         'unknown';
+}
+
+// ===========================================
+// PASSWORD REQUIREMENTS (for UI)
+// ===========================================
+router.get('/password-requirements', (req, res) => {
+  res.json(getPasswordRequirements());
+});
 
 // ===========================================
 // REGISTER (Initial clinic setup)
@@ -16,7 +34,7 @@ router.post('/register', [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email required'),
   body('phone').trim().notEmpty().withMessage('Phone is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password').notEmpty().withMessage('Password is required'),
   body('clinicName').trim().notEmpty().withMessage('Clinic name is required')
 ], async (req, res, next) => {
   try {
@@ -27,6 +45,15 @@ router.post('/register', [
 
     const { name, email, phone, password, clinicName, clinicAddress, clinicCity, clinicState, clinicPincode } = req.body;
 
+    // HIPAA: Validate password meets security requirements
+    const passwordValidation = validatePassword(password, { email, name });
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Password does not meet security requirements',
+        details: passwordValidation.errors
+      });
+    }
+
     // Check existing user
     const existingUser = await prisma.user.findFirst({
       where: { OR: [{ email }, { phone }] }
@@ -36,7 +63,8 @@ router.post('/register', [
       throw new AppError('User with this email or phone already exists', 409);
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // HIPAA: Use stronger hashing
+    const hashedPassword = await hashPassword(password);
 
     // Create clinic and user in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -103,6 +131,7 @@ router.post('/login', [
     }
 
     const { email, password } = req.body;
+    const clientIP = getClientIP(req);
 
     // Find by email or phone
     const user = await prisma.user.findFirst({
@@ -116,15 +145,34 @@ router.post('/login', [
     });
 
     if (!user) {
+      // HIPAA: Log failed login attempt
+      await logAuthEvent('LOGIN_FAILED', null, {
+        reason: 'User not found',
+        attemptedEmail: email,
+        ipAddress: clientIP,
+        userAgent: req.headers['user-agent']
+      });
       throw new AppError('Invalid credentials', 401);
     }
 
     if (!user.isActive) {
+      // HIPAA: Log attempt to access deactivated account
+      await logAuthEvent('LOGIN_FAILED', user.id, {
+        reason: 'Account deactivated',
+        ipAddress: clientIP,
+        userAgent: req.headers['user-agent']
+      });
       throw new AppError('Account is deactivated', 401);
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
+      // HIPAA: Log failed password attempt
+      await logAuthEvent('LOGIN_FAILED', user.id, {
+        reason: 'Invalid password',
+        ipAddress: clientIP,
+        userAgent: req.headers['user-agent']
+      });
       throw new AppError('Invalid credentials', 401);
     }
 
@@ -146,9 +194,15 @@ router.post('/login', [
         userId: user.id,
         token,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        ipAddress: req.ip,
+        ipAddress: clientIP,
         device: req.headers['user-agent']
       }
+    });
+
+    // HIPAA: Log successful login
+    await logAuthEvent('LOGIN_SUCCESS', user.id, {
+      ipAddress: clientIP,
+      userAgent: req.headers['user-agent']
     });
 
     logger.info(`User logged in: ${user.email}`);

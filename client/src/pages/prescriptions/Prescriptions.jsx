@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   FaSearch,
   FaPlus,
@@ -45,9 +46,19 @@ export default function Prescriptions() {
   // Send prescription mutation
   const sendMutation = useMutation({
     mutationFn: ({ id, method }) => prescriptionService.sendPrescription(id, method),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      // If WhatsApp URL is returned, open it in a new tab
+      if (response.whatsappUrl) {
+        window.open(response.whatsappUrl, '_blank');
+        toast.success('WhatsApp opened. Send the message to complete.');
+      } else {
+        toast.success('Prescription sent successfully');
+      }
       setShowSendModal(false);
       setSelectedPrescription(null);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to send prescription');
     },
   });
 

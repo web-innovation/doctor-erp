@@ -101,7 +101,8 @@ export default function Reports() {
     },
   });
 
-  const report = reportData || {};
+  // Extract actual data from response - API returns { success: true, data: {...} }
+  const report = reportData?.data || {};
 
   // Chart options
   const lineChartOptions = {
@@ -197,7 +198,7 @@ export default function Reports() {
     datasets: [
       {
         label: 'Revenue',
-        data: report.chartData?.revenue || chartLabels.map(() => Math.floor(Math.random() * 50000) + 10000),
+        data: report.chartData?.revenue || chartLabels.map(() => 0),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
         fill: true,
@@ -211,14 +212,14 @@ export default function Reports() {
     labels: report.chartData?.labels || chartLabels,
     datasets: [
       {
-        label: 'Patients',
-        data: report.chartData?.patients || chartLabels.map(() => Math.floor(Math.random() * 50) + 10),
+        label: 'New Patients',
+        data: report.chartData?.patients || chartLabels.map(() => 0),
         backgroundColor: 'rgba(16, 185, 129, 0.8)',
         borderRadius: 4,
       },
       {
         label: 'Consultations',
-        data: report.chartData?.consultations || chartLabels.map(() => Math.floor(Math.random() * 40) + 5),
+        data: report.chartData?.consultations || chartLabels.map(() => 0),
         backgroundColor: 'rgba(59, 130, 246, 0.8)',
         borderRadius: 4,
       },
@@ -231,7 +232,7 @@ export default function Reports() {
     datasets: [
       {
         label: 'Sales',
-        data: report.chartData?.sales || chartLabels.map(() => Math.floor(Math.random() * 30000) + 5000),
+        data: report.chartData?.sales || chartLabels.map(() => 0),
         borderColor: 'rgb(168, 85, 247)',
         backgroundColor: 'rgba(168, 85, 247, 0.1)',
         fill: true,
@@ -307,32 +308,32 @@ export default function Reports() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <SummaryCard
                 title="Total Revenue"
-                value={formatCurrency(report.totalRevenue || 485000)}
-                change={report.revenueChange || 12.5}
+                value={formatCurrency(report.totalRevenue || 0)}
+                change={report.revenueChange}
                 changeType="increase"
                 icon={FaRupeeSign}
                 color="bg-blue-500"
               />
               <SummaryCard
                 title="Total Transactions"
-                value={report.totalTransactions || 342}
-                change={report.transactionsChange || 8.3}
+                value={report.totalTransactions || 0}
+                change={report.transactionsChange}
                 changeType="increase"
                 icon={FaChartBar}
                 color="bg-green-500"
               />
               <SummaryCard
                 title="Average Bill"
-                value={formatCurrency(report.avgBill || 1418)}
-                change={report.avgBillChange || 3.2}
+                value={formatCurrency(report.avgBill || 0)}
+                change={report.avgBillChange}
                 changeType="increase"
                 icon={FaChartLine}
                 color="bg-purple-500"
               />
               <SummaryCard
                 title="Outstanding"
-                value={formatCurrency(report.outstanding || 25000)}
-                change={report.outstandingChange || 5.1}
+                value={formatCurrency(report.outstanding || 0)}
+                change={report.outstandingChange}
                 changeType="decrease"
                 icon={FaRupeeSign}
                 color="bg-orange-500"
@@ -356,32 +357,32 @@ export default function Reports() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <SummaryCard
                 title="Total Patients"
-                value={report.totalPatients || 856}
-                change={report.patientsChange || 15.2}
+                value={report.totalPatients || 0}
+                change={report.patientsChange}
                 changeType="increase"
                 icon={FaUserMd}
                 color="bg-blue-500"
               />
               <SummaryCard
                 title="Consultations"
-                value={report.totalConsultations || 724}
-                change={report.consultationsChange || 10.8}
+                value={report.totalConsultations || 0}
+                change={report.consultationsChange}
                 changeType="increase"
                 icon={FaChartBar}
                 color="bg-green-500"
               />
               <SummaryCard
                 title="New Patients"
-                value={report.newPatients || 132}
-                change={report.newPatientsChange || 22.5}
+                value={report.newPatients || 0}
+                change={report.newPatientsChange}
                 changeType="increase"
                 icon={FaChartLine}
                 color="bg-purple-500"
               />
               <SummaryCard
                 title="Revisits"
-                value={report.revisits || 592}
-                change={report.revisitsChange || 7.3}
+                value={report.revisits || 0}
+                change={report.revisitsChange}
                 changeType="increase"
                 icon={FaUserMd}
                 color="bg-orange-500"
@@ -405,35 +406,35 @@ export default function Reports() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <SummaryCard
                 title="Total Sales"
-                value={formatCurrency(report.totalSales || 285000)}
-                change={report.salesChange || 18.5}
+                value={formatCurrency(report.totalSales || 0)}
+                change={report.salesChange}
                 changeType="increase"
                 icon={FaRupeeSign}
                 color="bg-purple-500"
               />
               <SummaryCard
-                title="Products Sold"
-                value={report.productsSold || 1542}
-                change={report.productsSoldChange || 12.3}
+                title="Transactions"
+                value={report.totalTransactions || 0}
+                change={report.transactionsChange}
                 changeType="increase"
                 icon={FaPills}
                 color="bg-blue-500"
               />
               <SummaryCard
                 title="Low Stock Items"
-                value={report.lowStock || 23}
-                change={report.lowStockChange || 8.5}
+                value={report.lowStockCount || 0}
+                change={report.lowStockChange}
                 changeType="decrease"
                 icon={FaChartBar}
                 color="bg-red-500"
               />
               <SummaryCard
-                title="Expiring Soon"
-                value={report.expiringSoon || 12}
-                change={report.expiringChange || 15.0}
-                changeType="decrease"
+                title="Total Products"
+                value={report.totalProducts || 0}
+                change={report.productsChange}
+                changeType="increase"
                 icon={FaChartLine}
-                color="bg-yellow-500"
+                color="bg-green-500"
               />
             </div>
 
@@ -448,38 +449,43 @@ export default function Reports() {
         );
 
       case 'commissions':
+        // Calculate totals from summary
+        const totalCommission = report.summary?.totalCommission || 0;
+        const paidCommission = totalCommission - (report.summary?.pendingAmount || 0);
+        const pendingCommission = report.summary?.pendingAmount || 0;
+        
         return (
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <SummaryCard
                 title="Total Commissions"
-                value={formatCurrency(report.totalCommissions || 85000)}
-                change={report.commissionsChange || 14.2}
+                value={formatCurrency(totalCommission)}
+                change={report.commissionsChange}
                 changeType="increase"
                 icon={FaHandHoldingUsd}
                 color="bg-green-500"
               />
               <SummaryCard
                 title="Paid"
-                value={formatCurrency(report.paidCommissions || 72000)}
-                change={report.paidChange || 10.5}
+                value={formatCurrency(paidCommission)}
+                change={report.paidChange}
                 changeType="increase"
                 icon={FaRupeeSign}
                 color="bg-blue-500"
               />
               <SummaryCard
                 title="Pending"
-                value={formatCurrency(report.pendingCommissions || 13000)}
-                change={report.pendingChange || 5.3}
+                value={formatCurrency(pendingCommission)}
+                change={report.pendingChange}
                 changeType="decrease"
                 icon={FaChartBar}
                 color="bg-orange-500"
               />
               <SummaryCard
-                title="Total Partners"
-                value={report.totalPartners || 45}
-                change={report.partnersChange || 8.9}
+                title="Total Records"
+                value={report.summary?.count || 0}
+                change={report.recordsChange}
                 changeType="increase"
                 icon={FaUserMd}
                 color="bg-purple-500"
@@ -496,28 +502,50 @@ export default function Reports() {
               </div>
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Earners</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Commission Summary</h3>
                 <div className="space-y-4">
-                  {(report.topEarners || [
-                    { name: 'Dr. Sharma', amount: 25000, type: 'Doctor' },
-                    { name: 'City Lab', amount: 18000, type: 'Lab' },
-                    { name: 'Agent Ravi', amount: 12000, type: 'Agent' },
-                    { name: 'Dr. Patel', amount: 10000, type: 'Doctor' },
-                    { name: 'MedTest Lab', amount: 8000, type: 'Lab' },
-                  ]).map((earner, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm">
-                          {index + 1}
-                        </span>
-                        <div>
-                          <p className="font-medium text-gray-900">{earner.name}</p>
-                          <p className="text-sm text-gray-500">{earner.type}</p>
-                        </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm">
+                        L
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-900">Lab Commissions</p>
+                        <p className="text-sm text-gray-500">{report.byLab?.length || 0} labs</p>
                       </div>
-                      <span className="font-semibold text-green-600">{formatCurrency(earner.amount)}</span>
                     </div>
-                  ))}
+                    <span className="font-semibold text-green-600">
+                      {formatCurrency(report.byLab?.reduce((sum, l) => sum + (l._sum?.amount || 0), 0) || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-semibold text-sm">
+                        A
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-900">Agent Commissions</p>
+                        <p className="text-sm text-gray-500">{report.byAgent?.length || 0} agents</p>
+                      </div>
+                    </div>
+                    <span className="font-semibold text-green-600">
+                      {formatCurrency(report.byAgent?.reduce((sum, a) => sum + (a._sum?.amount || 0), 0) || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 font-semibold text-sm">
+                        P
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-900">Pending Payments</p>
+                        <p className="text-sm text-gray-500">{report.summary?.pendingCount || 0} records</p>
+                      </div>
+                    </div>
+                    <span className="font-semibold text-orange-600">
+                      {formatCurrency(pendingCommission)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

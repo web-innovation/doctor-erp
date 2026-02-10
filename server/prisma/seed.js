@@ -10,6 +10,40 @@ async function main() {
   console.log('🌱 Seeding DocClinic database with demo data...\n');
 
   // ==========================================
+  // 0. CREATE SUPER ADMIN
+  // ==========================================
+  console.log('👑 Creating Super Admin...');
+  // HIPAA Compliant Passwords: 14+ chars, uppercase, lowercase, numbers, special chars
+  const hashedAdminPassword = await bcrypt.hash('DocCl!n1c@Adm1n2024', 10);
+  
+  // Check if super admin exists
+  const existingSuperAdmin = await prisma.user.findUnique({
+    where: { email: 'admin@docclinic.com' }
+  });
+  
+  let superAdmin;
+  if (existingSuperAdmin) {
+    superAdmin = existingSuperAdmin;
+    console.log(`   ⏭️  Super Admin already exists: ${superAdmin.email}`);
+  } else {
+    superAdmin = await prisma.user.create({
+      data: {
+        name: 'Super Administrator',
+        email: 'admin@docclinic.com',
+        phone: '9999999999',
+        password: hashedAdminPassword,
+        role: 'SUPER_ADMIN',
+        clinicId: null, // Super admin is not tied to any clinic
+        preferences: JSON.stringify({
+          dashboardWidgets: ['stats', 'clinics', 'users'],
+          theme: 'light'
+        })
+      }
+    });
+    console.log(`   ✅ Super Admin: ${superAdmin.name} (admin@docclinic.com / DocCl!n1c@Adm1n2024)`);
+  }
+
+  // ==========================================
   // 1. CREATE CLINIC
   // ==========================================
   console.log('🏥 Creating clinic...');
@@ -48,14 +82,18 @@ async function main() {
   // 2. CREATE USERS (Staff)
   // ==========================================
   console.log('\n👥 Creating users...');
-  const hashedPassword = await bcrypt.hash('demo123', 10);
+  // HIPAA Compliant Passwords: 14+ chars, uppercase, lowercase, numbers, special chars
+  const doctorPassword = await bcrypt.hash('D0ct0r@Demo!2024', 10);
+  const receptionistPassword = await bcrypt.hash('Recept!0n@Demo24', 10);
+  const pharmacistPassword = await bcrypt.hash('Pharm@c1st!Demo24', 10);
+  const accountantPassword = await bcrypt.hash('Acc0unt@Demo!2024', 10);
 
   const doctor = await prisma.user.create({
     data: {
       name: 'Dr. Rajesh Kumar',
       email: 'doctor@demo.com',
       phone: '9876543211',
-      password: hashedPassword,
+      password: doctorPassword,
       role: 'DOCTOR',
       clinicId: clinic.id,
       preferences: JSON.stringify({
@@ -64,43 +102,43 @@ async function main() {
       })
     }
   });
-  console.log(`   ✅ Doctor: ${doctor.name} (doctor@demo.com / demo123)`);
+  console.log(`   ✅ Doctor: ${doctor.name} (doctor@demo.com / D0ct0r@Demo!2024)`);
 
   const receptionist = await prisma.user.create({
     data: {
       name: 'Priya Sharma',
       email: 'receptionist@demo.com',
       phone: '9876543212',
-      password: hashedPassword,
+      password: receptionistPassword,
       role: 'RECEPTIONIST',
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Receptionist: ${receptionist.name}`);
+  console.log(`   ✅ Receptionist: ${receptionist.name} (receptionist@demo.com / Recept!0n@Demo24)`);
 
   const pharmacist = await prisma.user.create({
     data: {
       name: 'Amit Verma',
       email: 'pharmacist@demo.com',
       phone: '9876543213',
-      password: hashedPassword,
+      password: pharmacistPassword,
       role: 'PHARMACIST',
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Pharmacist: ${pharmacist.name}`);
+  console.log(`   ✅ Pharmacist: ${pharmacist.name} (pharmacist@demo.com / Pharm@c1st!Demo24)`);
 
   const accountant = await prisma.user.create({
     data: {
       name: 'Neha Gupta',
       email: 'accountant@demo.com',
       phone: '9876543214',
-      password: hashedPassword,
+      password: accountantPassword,
       role: 'ACCOUNTANT',
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Accountant: ${accountant.name}`);
+  console.log(`   ✅ Accountant: ${accountant.name} (accountant@demo.com / Acc0unt@Demo!2024)`);
 
   // Create Staff profiles
   await prisma.staff.create({

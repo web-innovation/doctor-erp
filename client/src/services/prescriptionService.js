@@ -100,6 +100,17 @@ const prescriptionService = {
     const response = await api.get('/prescriptions/lab-tests/search', { params: { q: query } });
     return response.data;
   },
+
+  /**
+   * Get prescriptions for a specific patient
+   * @param {string} patientId - Patient ID
+   * @param {Object} [params] - Additional query parameters
+   * @returns {Promise} - Patient's prescriptions
+   */
+  getByPatientId: async (patientId, params = {}) => {
+    const response = await api.get('/prescriptions', { params: { patientId, ...params } });
+    return response.data?.data || response.data;
+  },
 };
 
 export { prescriptionService };

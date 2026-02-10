@@ -34,12 +34,60 @@ function getDateRange(period, startDate, endDate) {
   return { gte: start, lte: new Date() };
 }
 
+// Helper to generate chart labels and date buckets
+function generateDateBuckets(startDate, endDate, groupBy = 'day') {
+  const labels = [];
+  const dateKeys = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const current = new Date(start);
+
+  while (current <= end) {
+    const dateKey = current.toISOString().split('T')[0];
+    if (groupBy === 'day') {
+      labels.push(current.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }));
+      dateKeys.push(dateKey);
+      current.setDate(current.getDate() + 1);
+    } else if (groupBy === 'week') {
+      labels.push(`Week ${Math.ceil(current.getDate() / 7)}`);
+      dateKeys.push(dateKey);
+      current.setDate(current.getDate() + 7);
+    } else {
+      labels.push(current.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }));
+      dateKeys.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
+      current.setMonth(current.getMonth() + 1);
+    }
+  }
+  return { labels: labels.slice(0, 31), dateKeys: dateKeys.slice(0, 31) };
+}
+
 // GET /sales - Sales report
 router.get('/sales', checkPermission('reports', 'sales'), async (req, res, next) => {
   try {
-    const { period = 'month', startDate, endDate } = req.query;
+    const { period = 'month', startDate, endDate, groupBy = 'day' } = req.query;
     const clinicId = req.user.clinicId;
     const dateRange = getDateRange(period, startDate, endDate);
+
+    // Generate date buckets for chart
+    const { labels, dateKeys } = generateDateBuckets(dateRange.gte, dateRange.lte, groupBy);
+
+    // Get daily bills data for chart
+    const dailyBills = await prisma.bill.findMany({
+      where: { clinicId, createdAt: dateRange },
+      select: { createdAt: true, totalAmount: true }
+    });
+
+    // Aggregate by date
+    const revenueByDate = {};
+    dateKeys.forEach(key => revenueByDate[key] = 0);
+    dailyBills.forEach(bill => {
+      const dateKey = groupBy === 'month' 
+        ? `${bill.createdAt.getFullYear()}-${String(bill.createdAt.getMonth() + 1).padStart(2, '0')}`
+        : bill.createdAt.toISOString().split('T')[0];
+      if (revenueByDate[dateKey] !== undefined) {
+        revenueByDate[dateKey] += bill.totalAmount || 0;
+      }
+    });
 
     const [billsSummary, billsByType, paymentsByMethod, topPatients] = await Promise.all([
       prisma.bill.aggregate({
@@ -69,18 +117,28 @@ router.get('/sales', checkPermission('reports', 'sales'), async (req, res, next)
       })
     ]);
 
+    const totalRevenue = billsSummary._sum.totalAmount || 0;
+    const totalBills = billsSummary._count || 0;
+    const avgBill = totalBills > 0 ? Math.round(totalRevenue / totalBills) : 0;
+
     res.json({
       success: true,
       data: {
         period,
         dateRange,
-        summary: {
-          totalBills: billsSummary._count,
-          totalRevenue: billsSummary._sum.totalAmount || 0,
-          totalCollected: billsSummary._sum.paidAmount || 0,
-          totalDue: billsSummary._sum.dueAmount || 0,
-          totalTax: billsSummary._sum.taxAmount || 0
+        // Summary stats for cards
+        totalRevenue,
+        totalTransactions: totalBills,
+        avgBill,
+        outstanding: billsSummary._sum.dueAmount || 0,
+        totalCollected: billsSummary._sum.paidAmount || 0,
+        totalTax: billsSummary._sum.taxAmount || 0,
+        // Chart data
+        chartData: {
+          labels,
+          revenue: dateKeys.map(key => revenueByDate[key] || 0)
         },
+        // Breakdown data
         byType: billsByType,
         byPaymentMethod: paymentsByMethod,
         topPatients
@@ -94,9 +152,50 @@ router.get('/sales', checkPermission('reports', 'sales'), async (req, res, next)
 // GET /opd - OPD report
 router.get('/opd', checkPermission('reports', 'opd'), async (req, res, next) => {
   try {
-    const { period = 'month', startDate, endDate } = req.query;
+    const { period = 'month', startDate, endDate, groupBy = 'day' } = req.query;
     const clinicId = req.user.clinicId;
     const dateRange = getDateRange(period, startDate, endDate);
+
+    // Generate date buckets for chart
+    const { labels, dateKeys } = generateDateBuckets(dateRange.gte, dateRange.lte, groupBy);
+
+    // Get daily appointments data
+    const dailyAppointments = await prisma.appointment.findMany({
+      where: { clinicId, date: dateRange },
+      select: { date: true, status: true }
+    });
+
+    // Count new patients per day
+    const dailyPatients = await prisma.patient.findMany({
+      where: { clinicId, createdAt: dateRange },
+      select: { createdAt: true }
+    });
+
+    // Aggregate by date
+    const appointmentsByDate = {};
+    const patientsByDate = {};
+    dateKeys.forEach(key => {
+      appointmentsByDate[key] = 0;
+      patientsByDate[key] = 0;
+    });
+
+    dailyAppointments.forEach(apt => {
+      const dateKey = groupBy === 'month'
+        ? `${apt.date.getFullYear()}-${String(apt.date.getMonth() + 1).padStart(2, '0')}`
+        : apt.date.toISOString().split('T')[0];
+      if (appointmentsByDate[dateKey] !== undefined) {
+        appointmentsByDate[dateKey]++;
+      }
+    });
+
+    dailyPatients.forEach(p => {
+      const dateKey = groupBy === 'month'
+        ? `${p.createdAt.getFullYear()}-${String(p.createdAt.getMonth() + 1).padStart(2, '0')}`
+        : p.createdAt.toISOString().split('T')[0];
+      if (patientsByDate[dateKey] !== undefined) {
+        patientsByDate[dateKey]++;
+      }
+    });
 
     const [appointmentsSummary, byStatus, byType] = await Promise.all([
       prisma.appointment.aggregate({
@@ -116,15 +215,28 @@ router.get('/opd', checkPermission('reports', 'opd'), async (req, res, next) => 
       })
     ]);
 
+    // Count new vs returning patients
+    const totalPatients = await prisma.patient.count({ where: { clinicId } });
+    const newPatients = dailyPatients.length;
+    const completedCount = byStatus.find(s => s.status === 'COMPLETED')?._count || 0;
+
     res.json({
       success: true,
       data: {
         period,
         dateRange,
-        summary: {
-          totalAppointments: appointmentsSummary._count,
-          totalConsultationFees: appointmentsSummary._sum.consultationFee || 0
+        // Summary stats for cards
+        totalPatients,
+        totalConsultations: appointmentsSummary._count || 0,
+        newPatients,
+        revisits: (appointmentsSummary._count || 0) - newPatients,
+        // Chart data
+        chartData: {
+          labels,
+          patients: dateKeys.map(key => patientsByDate[key] || 0),
+          consultations: dateKeys.map(key => appointmentsByDate[key] || 0)
         },
+        // Breakdown data
         byStatus,
         byType
       }
@@ -137,9 +249,33 @@ router.get('/opd', checkPermission('reports', 'opd'), async (req, res, next) => 
 // GET /pharmacy - Pharmacy report
 router.get('/pharmacy', checkPermission('reports', 'pharmacy'), async (req, res, next) => {
   try {
-    const { period = 'month', startDate, endDate } = req.query;
+    const { period = 'month', startDate, endDate, groupBy = 'day' } = req.query;
     const clinicId = req.user.clinicId;
     const dateRange = getDateRange(period, startDate, endDate);
+
+    // Generate date buckets for chart
+    const { labels, dateKeys } = generateDateBuckets(dateRange.gte, dateRange.lte, groupBy);
+
+    // Get pharmacy sales from bills with PHARMACY type
+    const pharmacyBills = await prisma.bill.findMany({
+      where: { clinicId, type: 'PHARMACY', createdAt: dateRange },
+      select: { createdAt: true, totalAmount: true }
+    });
+
+    // Aggregate pharmacy sales by date
+    const salesByDate = {};
+    dateKeys.forEach(key => salesByDate[key] = 0);
+    pharmacyBills.forEach(bill => {
+      const dateKey = groupBy === 'month'
+        ? `${bill.createdAt.getFullYear()}-${String(bill.createdAt.getMonth() + 1).padStart(2, '0')}`
+        : bill.createdAt.toISOString().split('T')[0];
+      if (salesByDate[dateKey] !== undefined) {
+        salesByDate[dateKey] += bill.totalAmount || 0;
+      }
+    });
+
+    // Calculate total sales from pharmacy bills
+    const totalSales = pharmacyBills.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
     const [stockSummary, lowStock, stockMovement] = await Promise.all([
       prisma.pharmacyProduct.aggregate({
@@ -166,10 +302,18 @@ router.get('/pharmacy', checkPermission('reports', 'pharmacy'), async (req, res,
       data: {
         period,
         dateRange,
-        summary: {
-          totalProducts: stockSummary._count,
-          totalStock: stockSummary._sum.quantity || 0
+        // Summary stats
+        totalSales,
+        totalTransactions: pharmacyBills.length,
+        totalProducts: stockSummary._count || 0,
+        totalStock: stockSummary._sum.quantity || 0,
+        lowStockCount: lowStock.length,
+        // Chart data
+        chartData: {
+          labels,
+          sales: dateKeys.map(key => salesByDate[key] || 0)
         },
+        // Detailed data
         lowStock,
         stockMovement
       }

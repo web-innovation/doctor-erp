@@ -1,0 +1,60 @@
+# ==============================================
+# DocClinic ERP - Production Docker Compose
+# HIPAA-Compliant Configuration
+# ==============================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # API Server
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: docclinic-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "127.0.0.1:3001:3001"  # Only localhost access (Nginx will proxy)
+    volumes:
+      - ./server/logs:/app/server/logs
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 768M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - docclinic-network
+
+volumes:
+  uploads:
+    driver: local
+
+networks:
+  docclinic-network:
+    driver: bridge

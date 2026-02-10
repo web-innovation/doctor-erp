@@ -256,7 +256,7 @@ export default function Pharmacy() {
   };
 
   const isLowStock = (product) => {
-    return product.quantity <= (product.minStock || 10);
+    return product.quantity < (product.minStock || 10);
   };
 
   const isExpiringSoon = (product) => {
