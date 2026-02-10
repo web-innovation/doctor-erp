@@ -5,6 +5,8 @@ FROM node:20-alpine AS client-builder
 
 WORKDIR /app/client
 COPY client/package*.json ./
+# Copy root lockfile so `npm ci` can install reproducibly in the client context
+COPY package-lock.json ./
 RUN npm ci
 COPY client/ ./
 RUN npm run build
@@ -15,7 +17,9 @@ RUN npm run build
 FROM node:20-alpine AS server-builder
 
 WORKDIR /app/server
+# Copy server package metadata and root lockfile for reproducible install
 COPY server/package*.json ./
+COPY package-lock.json ./
 RUN npm ci
 COPY server/ ./
 # Generate Prisma client (use installed prisma devDependency)
