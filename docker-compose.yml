@@ -2,11 +2,15 @@ version: '3.8'
 
 services:
   # ==========================================
-  # PostgreSQL Database
+  # PostgreSQL Database (optional)
+  # Start with local Postgres by enabling the profile: `docker-compose --profile postgres up`
+  # When not using the postgres profile, services should use `DATABASE_URL` from env or fall back to SQLite.
   # ==========================================
   postgres:
     image: postgres:15-alpine
     container_name: docclinic-db
+    profiles:
+      - postgres
     environment:
       POSTGRES_USER: ${DB_USER:-docclinic}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-docclinic123}
@@ -34,7 +38,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://${DB_USER:-docclinic}:${DB_PASSWORD:-docclinic123}@postgres:5432/${DB_NAME:-docclinic}
+      # Use explicit DATABASE_URL env var if provided; otherwise fall back to local sqlite file for development.
+      DATABASE_URL: ${DATABASE_URL:-file:./prisma/dev.db}
       JWT_SECRET: ${JWT_SECRET:-change-this-secret}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       SMTP_HOST: ${SMTP_HOST}
@@ -43,9 +48,8 @@ services:
       SMTP_PASS: ${SMTP_PASS}
     ports:
       - "3001:3001"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # Note: Do not require a local Postgres by default. To start Postgres locally run:
+    # `docker-compose --profile postgres up postgres`
     volumes:
       - uploads:/app/server/uploads
       - logs:/app/server/logs

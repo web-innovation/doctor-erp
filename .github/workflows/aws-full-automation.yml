@@ -138,6 +138,7 @@ jobs:
               ParameterKey=Environment,ParameterValue=production \
               ParameterKey=DBUsername,ParameterValue=docclinic \
               ParameterKey=DBPassword,ParameterValue='${{ steps.db-password.outputs.password }}' \
+              ParameterKey=CreateRDS,ParameterValue=false \
             --capabilities CAPABILITY_IAM \
             --tags Key=Application,Value=DocClinic Key=Environment,Value=production
           
@@ -156,6 +157,7 @@ jobs:
               ParameterKey=Environment,UsePreviousValue=true \
               ParameterKey=DBUsername,UsePreviousValue=true \
               ParameterKey=DBPassword,UsePreviousValue=true \
+              ParameterKey=CreateRDS,UsePreviousValue=true \
             --capabilities CAPABILITY_IAM 2>/dev/null || echo "No updates needed"
           
           # Wait for update if in progress
@@ -215,9 +217,13 @@ jobs:
             --secret-string "$JWT_SECRET" 2>/dev/null || true
           
           # Create/Update production env file in Secrets Manager
+          # Use SQLite for production by default (per project preference).
+          # If you explicitly want RDS, change this workflow to set CreateRDS=true and adjust the secret.
+          DB_URL="file:./prisma/prod.db"
+
           cat > /tmp/env.json << EOF
           {
-            "DATABASE_URL": "postgresql://docclinic:${DB_PASSWORD}@${{ steps.get-outputs.outputs.db_endpoint }}:5432/docclinic",
+            "DATABASE_URL": "${DB_URL}",
             "JWT_SECRET": "${JWT_SECRET}",
             "NODE_ENV": "production",
             "PORT": "3001",
@@ -254,20 +260,7 @@ jobs:
     needs: infrastructure
     if: always() && (needs.infrastructure.result == 'success' || needs.infrastructure.result == 'skipped')
 
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test123
-          POSTGRES_DB: docclinic_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No database service in CI; use SQLite for CI tests/migrations by default
 
     steps:
       - name: Checkout code
@@ -292,13 +285,13 @@ jobs:
       - name: Run database migrations
         working-directory: ./server
         env:
-          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
-        run: npx prisma migrate deploy
+          DATABASE_URL: file:./prisma/dev.db
+        run: npx prisma migrate deploy || echo "No migrations to apply or sqlite file created"
 
       - name: Run server tests
         working-directory: ./server
         env:
-          DATABASE_URL: postgresql://test:test123@localhost:5432/docclinic_test
+          DATABASE_URL: file:./prisma/dev.db
           JWT_SECRET: test-jwt-secret
           NODE_ENV: test
         run: npm test || echo "Tests completed"

@@ -9,7 +9,7 @@ This guide covers deploying DocClinic ERP to AWS using **Free Tier** resources w
 | Service | Free Tier Allocation | Our Usage |
 |---------|---------------------|-----------|
 | EC2 | 750 hrs/month t2.micro | 1 instance (24/7) |
-| RDS | 750 hrs/month db.t3.micro | 1 PostgreSQL instance |
+| RDS | - | Not used by default (project uses file-based SQLite)
 | S3 | 5GB storage | File uploads & backups |
 | CloudWatch | 10 custom metrics, 5GB logs | Monitoring & logging |
 | Secrets Manager | 30 days free trial, then $0.40/secret/month | 3 secrets |
@@ -48,7 +48,7 @@ chmod 600 ~/.ssh/docclinic-key.pem
 # Navigate to project
 cd docclinic-erp
 
-# Deploy infrastructure
+# Deploy infrastructure (no managed DB is created by default).
 aws cloudformation create-stack \
     --stack-name docclinic-production \
     --template-body file://aws/cloudformation-secure.yml \
@@ -56,9 +56,7 @@ aws cloudformation create-stack \
     --parameters \
         ParameterKey=Environment,ParameterValue=production \
         ParameterKey=KeyPairName,ParameterValue=docclinic-key-production \
-        ParameterKey=SSHAllowedIP,ParameterValue=YOUR_IP/32 \
-        ParameterKey=DBUsername,ParameterValue=docclinic \
-        ParameterKey=DBPassword,ParameterValue=YOUR_SECURE_DB_PASSWORD
+        ParameterKey=SSHAllowedIP,ParameterValue=YOUR_IP/32
 
 # Wait for completion (10-15 minutes)
 aws cloudformation wait stack-create-complete --stack-name docclinic-production
@@ -79,9 +77,9 @@ chmod +x scripts/setup-aws-secrets.sh
 ```
 
 When prompted, enter:
-- RDS endpoint (from CloudFormation outputs)
-- Database password (same as used in CloudFormation)
 - Domain name (if you have one)
+
+The deployment defaults to a file-based SQLite database (`prisma/prod.db`). If you require an external RDS instance, manage its credentials separately and provide a `DATABASE_URL` secret.
 
 ### Step 4: Configure GitHub Secrets
 
@@ -237,7 +235,7 @@ curl http://localhost:3001/api/health
 - [ ] JWT_SECRET is unique and strong
 - [ ] Security groups only allow necessary ports
 - [ ] CloudWatch alarms are configured
-- [ ] Backup retention is enabled on RDS
+- [ ] Ensure database file backups are configured (SQLite file backed up to S3)
 - [ ] S3 bucket is private
 
 ### Security Group Rules
@@ -302,22 +300,20 @@ aws sns subscribe \
 
 ## Backup & Recovery
 
-### Database Backups
+### Database Backups (SQLite)
 
-RDS automatically creates daily backups (7-day retention).
+The production service uses a file-based SQLite database by default (`prisma/prod.db`). Back up the file to S3 regularly.
 
 **Manual backup:**
 ```bash
-aws rds create-db-snapshot \
-    --db-instance-identifier docclinic-db-production \
-    --db-snapshot-identifier docclinic-manual-backup-$(date +%Y%m%d)
+# Copy the sqlite file to S3 (from EC2)
+aws s3 cp /path/to/current/prisma/prod.db s3://your-docclinic-backups/prod-db-$(date +%Y%m%d%H%M%S).db
 ```
 
 **Restore from backup:**
 ```bash
-aws rds restore-db-instance-from-db-snapshot \
-    --db-instance-identifier docclinic-db-restored \
-    --db-snapshot-identifier docclinic-manual-backup-20260210
+# Copy the desired backup back to the app directory on EC2
+aws s3 cp s3://your-docclinic-backups/prod-db-20260210120000.db /path/to/current/prisma/prod.db
 ```
 
 ### Application Rollback
@@ -370,13 +366,14 @@ sudo nginx -t
 
 ### Database Connection Issues
 
-```bash
-# Test connection from EC2
-psql -h RDS_ENDPOINT -U docclinic -d docclinic
+If using the default SQLite DB, ensure the sqlite file exists and is readable by the app user:
 
-# Check security groups
-aws ec2 describe-security-groups --group-ids sg-xxx
+```bash
+ls -la /path/to/current/prisma/prod.db
+file /path/to/current/prisma/prod.db
 ```
+
+If you configured an external `DATABASE_URL`, verify the secret and environment variable are set correctly and that the application can reach the host.
 
 ### Out of Memory
 

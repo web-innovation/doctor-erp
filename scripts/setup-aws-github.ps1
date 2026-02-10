@@ -105,9 +105,9 @@ Write-Host ""
 Write-Host "AWS Resources that will be created:" -ForegroundColor White
 Write-Host "  - VPC with public subnets" -ForegroundColor Gray
 Write-Host "  - EC2 t2.micro instance (Free Tier)" -ForegroundColor Gray
-Write-Host "  - RDS PostgreSQL db.t3.micro (Free Tier)" -ForegroundColor Gray
 Write-Host "  - S3 bucket for uploads" -ForegroundColor Gray
 Write-Host "  - Security groups" -ForegroundColor Gray
 Write-Host "  - IAM roles" -ForegroundColor Gray
+Write-Host "  - Note: This deployment uses a file-based SQLite DB by default; external DBs can be configured separately" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Estimated monthly cost: `$0 (Free Tier) to `$25" -ForegroundColor Green

@@ -62,13 +62,8 @@ HIPAA_HASH_SALT=$(openssl rand -hex 16)
 # ==============================================
 echo -e "\n${GREEN}Please provide the following information:${NC}"
 
-read -p "Database Host (RDS endpoint): " DB_HOST
-read -p "Database Name [docclinic]: " DB_NAME
-DB_NAME=${DB_NAME:-"docclinic"}
-read -p "Database Username [docclinic]: " DB_USER
-DB_USER=${DB_USER:-"docclinic"}
-read -sp "Database Password: " DB_PASSWORD
-echo
+echo -e "Using SQLite for production environment by default (file: ./prisma/prod.db)."
+DB_LINE="DATABASE_URL=file:./prisma/prod.db"
 read -p "Your domain name (optional, press Enter to skip): " DOMAIN_NAME
 
 # ==============================================
@@ -81,7 +76,7 @@ NODE_ENV=production
 PORT=3001
 
 # Database
-DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}
+${DB_LINE}
 
 # Security - Auto-generated secure keys
 JWT_SECRET=${JWT_SECRET}
@@ -141,21 +136,7 @@ fi
 # ==============================================
 echo -e "\n${GREEN}Creating database credentials secret...${NC}"
 
-DB_SECRET=$(cat << EOF
-{
-  "host": "${DB_HOST}",
-  "port": 5432,
-  "database": "${DB_NAME}",
-  "username": "${DB_USER}",
-  "password": "${DB_PASSWORD}"
-}
-EOF
-)
-
-create_or_update_secret \
-    "docclinic/production/database" \
-    "$DB_SECRET" \
-    "DocClinic production database credentials"
+# No production DB secret created for SQLite fallback. If you provision RDS manually, add its credentials to Secrets Manager.
 
 # ==============================================
 # 6. Summary

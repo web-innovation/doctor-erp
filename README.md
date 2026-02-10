@@ -48,7 +48,7 @@ A comprehensive Doctor Consultation & Pharmacy Management System with WhatsApp i
 
 ### Backend
 - **Node.js** + Express.js
-- **PostgreSQL** with Prisma ORM
+- **SQLite (file-based) with Prisma ORM** for local development and production fallback
 - **JWT** Authentication
 - **Google Gemini AI** for image processing
 
@@ -65,15 +65,14 @@ A comprehensive Doctor Consultation & Pharmacy Management System with WhatsApp i
 
 ### Infrastructure
 - **Docker** containers
-- **AWS** EC2 (t2.micro), RDS PostgreSQL
+- **AWS** EC2 (t2.micro), S3, and CloudWatch (no managed DB provisioned by default)
 - **GitHub Actions** CI/CD
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Node.js 20+
-- PostgreSQL 15+
-- Google Gemini API key
+- Google Gemini API key (optional)
 
 ### Installation
 
@@ -209,9 +208,9 @@ docker-compose up -d
 ### AWS Deployment (Fully Automated - Zero Touch)
 
 The CI/CD pipeline handles **everything automatically**:
-- ✅ Infrastructure provisioning (VPC, EC2, RDS, S3)
-- ✅ SSH key generation and secure storage
-- ✅ Database password generation
+-- ✅ Infrastructure provisioning (VPC, EC2, S3)
+-- ✅ SSH key generation and secure storage
+-- ✅ Application secrets management (DB is file-based by default)
 - ✅ Application secrets management
 - ✅ Build, test, and deploy
 - ✅ Database migrations
@@ -231,8 +230,7 @@ Add these in your repo **Settings → Secrets → Actions**:
 #### IAM Permissions Required
 
 Your IAM user needs these permissions:
-- `AmazonEC2FullAccess`
-- `AmazonRDSFullAccess`
+	- `AmazonEC2FullAccess`
 - `AmazonS3FullAccess`
 - `AmazonVPCFullAccess`
 - `IAMFullAccess`
@@ -263,7 +261,6 @@ Go to **Actions → AWS Full Automation** → **Run workflow**:
 
 #### Estimated AWS Costs (Free Tier Eligible)
 - EC2 t2.micro: Free (750 hrs/month for 12 months)
-- RDS db.t3.micro: Free (750 hrs/month for 12 months)
 - S3: Free (5GB storage)
 - Data Transfer: Free (15GB/month)
 

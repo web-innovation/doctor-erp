@@ -1,6 +1,6 @@
 # ==============================================
 # DocClinic ERP - Production Docker Compose
-# For AWS deployment with RDS (no local postgres)
+# Production Docker Compose (expects a valid `DATABASE_URL` in `.env`; defaults to SQLite file fallback)
 # ==============================================
 
 version: '3.8'
@@ -19,6 +19,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+    # Ensure `.env` contains a valid `DATABASE_URL` for production.
+    # For a file-based setup: DATABASE_URL=file:./prisma/prod.db
     ports:
       - "80:3001"  # Expose on port 80 for direct access
       - "3001:3001"  # Also keep 3001 for health checks

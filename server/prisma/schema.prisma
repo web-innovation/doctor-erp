@@ -1,5 +1,5 @@
 // DocClinic ERP Database Schema
-// SQLite for development, PostgreSQL for production
+// SQLite is the default provider (development and production single-node fallback)
 
 generator client {
   provider = "prisma-client-js"

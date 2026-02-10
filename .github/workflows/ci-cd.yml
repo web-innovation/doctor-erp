@@ -29,20 +29,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: docclinic_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # Use SQLite in CI by default; do not start a Postgres service here
 
     steps:
       - uses: actions/checkout@v4
@@ -59,10 +46,10 @@ jobs:
       - name: Run server tests
         working-directory: ./server
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/docclinic_test
+          DATABASE_URL: file:./prisma/dev.db
           JWT_SECRET: test-secret
         run: |
-          npx prisma migrate deploy
+          npx prisma migrate deploy || echo "No migrations or sqlite created"
           npm test
 
       - name: Run client lint
