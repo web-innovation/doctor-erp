@@ -7,9 +7,9 @@ name: AWS Full Automation (Zero Touch)
 
 on:
   push:
-    branches: [master]
+    branches: [dev]
   pull_request:
-    branches: [master]
+    branches: [dev]
   workflow_dispatch:
     inputs:
       action:
