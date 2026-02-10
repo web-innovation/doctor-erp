@@ -24,11 +24,12 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install dependencies (root)</n        run: npm ci
+      - name: Install dependencies (root)
+        run: npm ci
 
-      - name: Generate Prisma client (server workspace)
+      - name: Generate Prisma client (server workspace, pinned)
         working-directory: server
-        run: npx prisma generate --schema=./prisma/schema.prisma
+        run: npx --yes prisma@5.10.0 generate --schema=./prisma/schema.prisma
 
       - name: Run tests (all workspaces)
         run: npm test

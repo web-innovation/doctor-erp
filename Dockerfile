@@ -16,9 +16,12 @@ FROM node:20-alpine AS server-builder
 
 WORKDIR /app/server
 COPY server/package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 COPY server/ ./
-RUN npx prisma generate
+# Generate Prisma client (use installed prisma devDependency)
+RUN npx --yes prisma@5.10.0 generate --schema=./prisma/schema.prisma
+# Remove devDependencies to keep image lean (leaves generated client / production deps)
+RUN npm prune --production || true
 
 # ==========================================
 # PRODUCTION STAGE

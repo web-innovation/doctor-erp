@@ -278,15 +278,15 @@ jobs:
           cd server && npm ci
           cd ../client && npm ci
 
-      - name: Generate Prisma client
+      - name: Generate Prisma client (pinned)
         working-directory: ./server
-        run: npx prisma generate
+        run: npx --yes prisma@5.10.0 generate --schema=./prisma/schema.prisma
 
-      - name: Run database migrations
+      - name: Run database migrations (pinned)
         working-directory: ./server
         env:
           DATABASE_URL: file:./prisma/dev.db
-        run: npx prisma migrate deploy || echo "No migrations to apply or sqlite file created"
+        run: npx --yes prisma@5.10.0 migrate deploy || echo "No migrations to apply or sqlite file created"
 
       - name: Run server tests
         working-directory: ./server
