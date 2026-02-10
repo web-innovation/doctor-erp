@@ -1,7 +1,7 @@
 # ==========================================
 # BUILD STAGE - CLIENT
 # ==========================================
-FROM node:20-alpine AS client-builder
+FROM node:20-bullseye-slim AS client-builder
 
 WORKDIR /app/client
 COPY client/package*.json ./
@@ -13,7 +13,7 @@ RUN npm run build
 # ==========================================
 # BUILD STAGE - SERVER
 # ==========================================
-FROM node:20-alpine AS server-builder
+FROM node:20-bullseye-slim AS server-builder
 
 WORKDIR /app/server
 # Copy server package metadata and root lockfile for reproducible install
