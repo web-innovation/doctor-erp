@@ -364,7 +364,7 @@ jobs:
           echo "Waiting for EC2 instance to be ready..."
           
           for i in {1..30}; do
-            if ssh -i ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$EC2_IP "echo 'ready'" 2>/dev/null; then
+            if ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$EC2_IP "echo 'ready'" 2>/dev/null; then
               echo "EC2 instance is ready!"
               break
             fi
@@ -394,8 +394,8 @@ jobs:
           # Upload deployment package
           scp -i ec2-key.pem deploy.tar.gz ec2-user@$EC2_IP:/tmp/
           
-          # Execute deployment
-          ssh -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
+          # Execute deployment (use SSH keepalive to avoid broken pipes during long builds)
+          ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -i ec2-key.pem ec2-user@$EC2_IP << 'DEPLOY_SCRIPT'
           set -e
 
           # Ensure AWS region is set on the remote host so aws cli calls work
