@@ -29,7 +29,7 @@ const AuthLayout = () => {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white">DocClinic ERP</h1>
+          <h1 className="text-3xl font-bold text-white">Docsy</h1>
           <p className="text-blue-100 mt-2">Healthcare Management System</p>
         </div>
 
@@ -40,7 +40,7 @@ const AuthLayout = () => {
 
         {/* Footer */}
         <p className="text-center text-blue-100 text-sm mt-6">
-          © {new Date().getFullYear()} DocClinic ERP. All rights reserved.
+          © {new Date().getFullYear()} Docsy. All rights reserved.
         </p>
       </div>
     </div>

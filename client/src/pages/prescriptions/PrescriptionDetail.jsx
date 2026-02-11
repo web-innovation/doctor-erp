@@ -310,7 +310,7 @@ export default function PrescriptionDetail() {
         <body>
           <div class="prescription-container">
             <div class="header">
-              <div class="clinic-name">DocClinic</div>
+              <div class="clinic-name">Docsy</div>
               <div class="clinic-info">Your Trusted Healthcare Partner | Phone: +91 9876543210</div>
             </div>
             <div class="content">

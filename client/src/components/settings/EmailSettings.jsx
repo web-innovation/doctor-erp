@@ -42,7 +42,7 @@ export default function EmailSettings() {
     defaultValues: {
       provider: 'gmail-app-password',
       userEmail: '',
-      fromName: 'DocClinic',
+      fromName: 'Docsy',
       appPassword: '',
       clientId: '',
       clientSecret: '',
@@ -70,7 +70,7 @@ export default function EmailSettings() {
       setSelectedProvider(emailConfig.provider);
       setValue('provider', emailConfig.provider);
       setValue('userEmail', emailConfig.userEmail || '');
-      setValue('fromName', emailConfig.fromName || 'DocClinic');
+      setValue('fromName', emailConfig.fromName || 'Docsy');
     }
   }, [emailConfig, setValue]);
 
@@ -220,7 +220,7 @@ export default function EmailSettings() {
               type="text"
               {...register('fromName')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent"
-              placeholder="DocClinic"
+              placeholder="Docsy"
             />
           </div>
         </div>

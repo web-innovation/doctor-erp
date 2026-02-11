@@ -155,7 +155,7 @@ export default function Billing() {
       </head>
       <body>
         <div class="header">
-          <h1>DocClinic ERP</h1>
+          <h1>Docsy ERP</h1>
           <p>Tax Invoice</p>
         </div>
         

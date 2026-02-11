@@ -62,7 +62,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     enabled: !isAdminRoute && userRole !== 'SUPER_ADMIN',
   });
   
-  const clinicName = clinicSettings?.clinicName || 'DocClinic';
+  const clinicName = clinicSettings?.clinicName || 'Docsy';
   
   // Fetch today's OPD count from dashboard stats (only if not on admin routes)
   const { data: dashboardStats } = useQuery({

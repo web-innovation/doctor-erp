@@ -46,9 +46,9 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center space-x-2">
+            <Link to="/" className="inline-flex items-center space-x-2">
             <FaHospital className="h-10 w-10 text-blue-600" />
-            <span className="text-2xl font-bold text-gray-900">DocClinic</span>
+            <span className="text-2xl font-bold text-gray-900">Docsy</span>
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 mt-6">Welcome back</h1>
           <p className="text-gray-500 mt-2">Sign in to your account to continue</p>
@@ -180,7 +180,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-gray-400 text-sm mt-8">
-          © {new Date().getFullYear()} DocClinic. All rights reserved.
+          © {new Date().getFullYear()} Docsy. All rights reserved.
         </p>
       </div>
     </div>
