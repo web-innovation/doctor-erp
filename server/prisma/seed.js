@@ -197,8 +197,10 @@ async function main() {
   console.log('\n👨‍👩‍👧‍👦 Creating patients...');
   
   const patients = await Promise.all([
-    prisma.patient.create({
-      data: {
+    prisma.patient.upsert({
+      where: { patientId: 'P-0001' },
+      update: {},
+      create: {
         patientId: 'P-0001',
         name: 'Rahul Mehta',
         phone: '9898989801',
@@ -218,8 +220,10 @@ async function main() {
         clinicId: clinic.id
       }
     }),
-    prisma.patient.create({
-      data: {
+    prisma.patient.upsert({
+      where: { patientId: 'P-0002' },
+      update: {},
+      create: {
         patientId: 'P-0002',
         name: 'Sunita Devi',
         phone: '9898989802',
@@ -233,8 +237,10 @@ async function main() {
         clinicId: clinic.id
       }
     }),
-    prisma.patient.create({
-      data: {
+    prisma.patient.upsert({
+      where: { patientId: 'P-0003' },
+      update: {},
+      create: {
         patientId: 'P-0003',
         name: 'Vikram Singh',
         phone: '9898989803',
@@ -252,8 +258,10 @@ async function main() {
         clinicId: clinic.id
       }
     }),
-    prisma.patient.create({
-      data: {
+    prisma.patient.upsert({
+      where: { patientId: 'P-0004' },
+      update: {},
+      create: {
         patientId: 'P-0004',
         name: 'Anjali Kapoor',
         phone: '9898989804',
@@ -266,8 +274,10 @@ async function main() {
         clinicId: clinic.id
       }
     }),
-    prisma.patient.create({
-      data: {
+    prisma.patient.upsert({
+      where: { patientId: 'P-0005' },
+      update: {},
+      create: {
         patientId: 'P-0005',
         name: 'Mohan Lal',
         phone: '9898989805',
@@ -286,7 +296,7 @@ async function main() {
       }
     })
   ]);
-  console.log(`   ✅ Created ${patients.length} patients`);
+  console.log(`   ✅ Ensured ${patients.length} patients`);
 
   // Add vitals for patients
   for (const patient of patients) {
