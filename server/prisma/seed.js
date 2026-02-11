@@ -88,8 +88,10 @@ async function main() {
   const pharmacistPassword = await bcrypt.hash('Pharm@c1st!Demo24', 10);
   const accountantPassword = await bcrypt.hash('Acc0unt@Demo!2024', 10);
 
-  const doctor = await prisma.user.create({
-    data: {
+  const doctor = await prisma.user.upsert({
+    where: { phone: '9876543211' },
+    update: {},
+    create: {
       name: 'Dr. Rajesh Kumar',
       email: 'doctor@demo.com',
       phone: '9876543211',
@@ -102,10 +104,12 @@ async function main() {
       })
     }
   });
-  console.log(`   ✅ Doctor: ${doctor.name} (doctor@demo.com / D0ct0r@Demo!2024)`);
+  console.log(`   ✅ Doctor ensured: ${doctor.email}`);
 
-  const receptionist = await prisma.user.create({
-    data: {
+  const receptionist = await prisma.user.upsert({
+    where: { phone: '9876543212' },
+    update: {},
+    create: {
       name: 'Priya Sharma',
       email: 'receptionist@demo.com',
       phone: '9876543212',
@@ -114,10 +118,12 @@ async function main() {
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Receptionist: ${receptionist.name} (receptionist@demo.com / Recept!0n@Demo24)`);
+  console.log(`   ✅ Receptionist ensured: ${receptionist.email}`);
 
-  const pharmacist = await prisma.user.create({
-    data: {
+  const pharmacist = await prisma.user.upsert({
+    where: { phone: '9876543213' },
+    update: {},
+    create: {
       name: 'Amit Verma',
       email: 'pharmacist@demo.com',
       phone: '9876543213',
@@ -126,10 +132,12 @@ async function main() {
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Pharmacist: ${pharmacist.name} (pharmacist@demo.com / Pharm@c1st!Demo24)`);
+  console.log(`   ✅ Pharmacist ensured: ${pharmacist.email}`);
 
-  const accountant = await prisma.user.create({
-    data: {
+  const accountant = await prisma.user.upsert({
+    where: { phone: '9876543214' },
+    update: {},
+    create: {
       name: 'Neha Gupta',
       email: 'accountant@demo.com',
       phone: '9876543214',
@@ -138,7 +146,7 @@ async function main() {
       clinicId: clinic.id
     }
   });
-  console.log(`   ✅ Accountant: ${accountant.name} (accountant@demo.com / Acc0unt@Demo!2024)`);
+  console.log(`   ✅ Accountant ensured: ${accountant.email}`);
 
   // Create Staff profiles
   await prisma.staff.create({
