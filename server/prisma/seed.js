@@ -1,4 +1,44 @@
 // DocClinic ERP - Demo Data Seed Script
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  // Helper to ensure an entry exists (findFirst by `where`, otherwise create)
+  async function ensure(modelName, where, createData) {
+    const model = prisma[modelName];
+    if (!model) throw new Error(`Unknown model: ${modelName}`);
+    const existing = await model.findFirst({ where });
+    if (existing) return existing;
+    return await model.create({ data: createData });
+  }
+
+  // Ensure a demo clinic exists before creating clinic-scoped data
+  const clinic = await ensure('clinic', { name: 'HealthCare Plus Clinic', phone: '9876543210' }, {
+    name: 'HealthCare Plus Clinic',
+    address: '123 Medical Street, Sector 15',
+    city: 'Noida',
+    state: 'Uttar Pradesh',
+    pincode: '201301',
+    phone: '9876543210',
+    email: 'info@healthcareplus.com',
+    gstNumber: '09AAACH1234F1ZH',
+    licenseNumber: 'DL-2024-12345',
+    slotDuration: 15,
+    workingHours: JSON.stringify({
+      monday: { start: '09:00', end: '18:00' },
+      tuesday: { start: '09:00', end: '18:00' },
+      wednesday: { start: '09:00', end: '18:00' },
+      thursday: { start: '09:00', end: '18:00' },
+      friday: { start: '09:00', end: '18:00' },
+      saturday: { start: '09:00', end: '14:00' },
+      sunday: { closed: true }
+    }),
+    taxConfig: JSON.stringify({ gstEnabled: true, cgstRate: 9, sgstRate: 9, igstRate: 18 })
+  });
+
+  // Begin seeding data scoped to `clinic`
   const products = await Promise.all([
     ensure('pharmacyProduct', { clinicId: clinic.id, code: 'PAR500' }, {
       code: 'PAR500',
@@ -676,6 +716,7 @@
   
   console.log('\n✅ Ready for demo!\n');
 
+}
 
 main()
   .catch((e) => {
