@@ -132,18 +132,38 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       if (computed !== undefined) ageValue = computed;
     }
 
-    const patient = await prisma.patient.create({
-      data: {
-        patientId, name, phone, email, gender,
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-        age: typeof ageValue === 'number' ? ageValue : undefined,
-        bloodGroup, address, city, emergencyContact,
-        allergies: allergies ? JSON.stringify(allergies) : null,
-        medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
-        insurance: insurance || null,
-        clinicId
+    // Build create data and only include `insurance` if Prisma client knows about it
+    const createData = {
+      patientId,
+      name,
+      phone,
+      email,
+      gender,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      age: typeof ageValue === 'number' ? ageValue : undefined,
+      bloodGroup,
+      address,
+      city,
+      emergencyContact,
+      allergies: allergies ? JSON.stringify(allergies) : null,
+      medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
+      clinicId
+    };
+
+    try {
+      // Detect if `insurance` field exists in Prisma datamodel at runtime
+      const dmmf = prisma._dmmf;
+      let hasInsurance = false;
+      if (dmmf && dmmf.datamodel && Array.isArray(dmmf.datamodel.models)) {
+        const model = dmmf.datamodel.models.find((m) => m.name === 'Patient');
+        hasInsurance = !!(model && Array.isArray(model.fields) && model.fields.some((f) => f.name === 'insurance'));
       }
-    });
+      if (hasInsurance && insurance) createData.insurance = insurance;
+    } catch (e) {
+      // ignore detection errors - proceed without insurance
+    }
+
+    const patient = await prisma.patient.create({ data: createData });
 
     res.status(201).json({ success: true, data: patient });
   } catch (error) {
@@ -170,18 +190,35 @@ router.put('/:id', checkPermission('patients', 'update'), async (req, res, next)
       if (computed !== undefined) ageValue = computed;
     }
 
-    const patient = await prisma.patient.update({
-      where: { id: req.params.id },
-      data: {
-        name, phone, email, gender,
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-        age: typeof ageValue === 'number' ? ageValue : undefined,
-        bloodGroup, address, city, emergencyContact,
-        allergies: allergies ? JSON.stringify(allergies) : undefined,
-        medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined,
-        insurance: insurance !== undefined ? insurance : undefined
+    // Build update object and only include `insurance` if Prisma client knows about it
+    const updateData = {
+      name,
+      phone,
+      email,
+      gender,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      age: typeof ageValue === 'number' ? ageValue : undefined,
+      bloodGroup,
+      address,
+      city,
+      emergencyContact,
+      allergies: allergies ? JSON.stringify(allergies) : undefined,
+      medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined,
+    };
+
+    try {
+      const dmmf = prisma._dmmf;
+      let hasInsurance = false;
+      if (dmmf && dmmf.datamodel && Array.isArray(dmmf.datamodel.models)) {
+        const model = dmmf.datamodel.models.find((m) => m.name === 'Patient');
+        hasInsurance = !!(model && Array.isArray(model.fields) && model.fields.some((f) => f.name === 'insurance'));
       }
-    });
+      if (hasInsurance && insurance !== undefined) updateData.insurance = insurance;
+    } catch (e) {
+      // ignore detection errors - proceed without insurance
+    }
+
+    const patient = await prisma.patient.update({ where: { id: req.params.id }, data: updateData });
 
     res.json({ success: true, data: patient });
   } catch (error) {
