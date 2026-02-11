@@ -148,9 +148,11 @@ async function main() {
   });
   console.log(`   ✅ Accountant ensured: ${accountant.email}`);
 
-  // Create Staff profiles
-  await prisma.staff.create({
-    data: {
+  // Create or ensure Staff profiles
+  await prisma.staff.upsert({
+    where: { userId: receptionist.id },
+    update: {},
+    create: {
       employeeId: 'EMP-001',
       userId: receptionist.id,
       clinicId: clinic.id,
@@ -161,8 +163,10 @@ async function main() {
     }
   });
 
-  await prisma.staff.create({
-    data: {
+  await prisma.staff.upsert({
+    where: { userId: pharmacist.id },
+    update: {},
+    create: {
       employeeId: 'EMP-002',
       userId: pharmacist.id,
       clinicId: clinic.id,
@@ -173,8 +177,10 @@ async function main() {
     }
   });
 
-  await prisma.staff.create({
-    data: {
+  await prisma.staff.upsert({
+    where: { userId: accountant.id },
+    update: {},
+    create: {
       employeeId: 'EMP-003',
       userId: accountant.id,
       clinicId: clinic.id,
