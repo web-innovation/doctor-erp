@@ -40,7 +40,7 @@ export default function PatientDetails() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm();
 
   // Open edit modal when URL ends with /edit
   useEffect(() => {
@@ -77,6 +77,16 @@ export default function PatientDetails() {
       });
     }
   }, [patient, reset]);
+
+  // Auto-fill age when dateOfBirth changes
+  const dobValue = watch('dateOfBirth');
+  useEffect(() => {
+    if (!dobValue) return;
+    const computed = calculateAge(dobValue);
+    if (typeof computed === 'number' && !Number.isNaN(computed)) {
+      setValue('age', computed, { shouldValidate: true, shouldDirty: true });
+    }
+  }, [dobValue, setValue]);
 
   // Fetch patient prescriptions
   const { data: prescriptions } = useQuery({

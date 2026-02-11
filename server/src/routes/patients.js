@@ -17,6 +17,20 @@ async function generatePatientId(clinicId) {
   return `P-${(lastNum + 1).toString().padStart(4, '0')}`;
 }
 
+// Compute age in years from a date string (returns undefined for invalid input)
+function computeAgeFromDOB(dobStr) {
+  if (!dobStr) return undefined;
+  const d = new Date(dobStr);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 // GET / - List patients
 router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
   try {
@@ -84,11 +98,23 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
     const patientId = await generatePatientId(clinicId);
     const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory } = req.body;
 
+    // Determine numeric age: prefer explicit `age` coerced to int, otherwise compute from dateOfBirth
+    let ageValue;
+    if (age !== undefined && age !== null && age !== '') {
+      const parsed = parseInt(age, 10);
+      if (!Number.isNaN(parsed)) ageValue = parsed;
+    }
+    if (ageValue === undefined) {
+      const computed = computeAgeFromDOB(dateOfBirth);
+      if (computed !== undefined) ageValue = computed;
+    }
+
     const patient = await prisma.patient.create({
       data: {
         patientId, name, phone, email, gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-        age, bloodGroup, address, city, emergencyContact,
+        age: typeof ageValue === 'number' ? ageValue : undefined,
+        bloodGroup, address, city, emergencyContact,
         allergies: allergies ? JSON.stringify(allergies) : null,
         medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
         clinicId
@@ -108,13 +134,25 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
 router.put('/:id', checkPermission('patients', 'update'), async (req, res, next) => {
   try {
     const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory } = req.body;
-    
+
+    // Coerce age to integer if provided, otherwise compute from dateOfBirth when present
+    let ageValue;
+    if (age !== undefined && age !== null && age !== '') {
+      const parsed = parseInt(age, 10);
+      if (!Number.isNaN(parsed)) ageValue = parsed;
+    }
+    if (ageValue === undefined && dateOfBirth) {
+      const computed = computeAgeFromDOB(dateOfBirth);
+      if (computed !== undefined) ageValue = computed;
+    }
+
     const patient = await prisma.patient.update({
       where: { id: req.params.id },
       data: {
         name, phone, email, gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-        age, bloodGroup, address, city, emergencyContact,
+        age: typeof ageValue === 'number' ? ageValue : undefined,
+        bloodGroup, address, city, emergencyContact,
         allergies: allergies ? JSON.stringify(allergies) : undefined,
         medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined
       }
