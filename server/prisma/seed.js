@@ -675,7 +675,7 @@
   console.log('   Accountant:   accountant@demo.com / demo123');
   
   console.log('\n✅ Ready for demo!\n');
-}
+
 
 main()
   .catch((e) => {
