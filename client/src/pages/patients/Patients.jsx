@@ -74,9 +74,20 @@ export default function Patients() {
   });
 
   const onSubmit = (data) => {
+    // Transform allergies (comma-separated) and medicalHistory (lines) into arrays
+    const allergiesArr = data.allergies
+      ? data.allergies.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const medHistArr = data.medicalHistory
+      ? data.medicalHistory.split('\n').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
     createMutation.mutate({
       ...data,
-      age: data.age ? parseInt(data.age, 10) : undefined,
+      dateOfBirth: data.dateOfBirth || undefined,
+      allergies: allergiesArr,
+      medicalHistory: medHistArr,
+      insurance: data.insurance || undefined,
     });
   };
 
@@ -119,6 +130,19 @@ export default function Patients() {
       month: 'short',
       year: 'numeric',
     });
+  };
+
+  const calculateAge = (dob) => {
+    if (!dob) return null;
+    const birth = new Date(dob);
+    if (Number.isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   return (
@@ -331,7 +355,7 @@ export default function Patients() {
                       </td>
                       <td className="px-6 py-4 text-gray-600">{patient.phone || '-'}</td>
                       <td className="px-6 py-4 text-gray-600">
-                        {patient.age ? `${patient.age} yrs` : '-'}
+                        {patient.age ? `${patient.age} yrs` : (patient.dateOfBirth ? `${calculateAge(patient.dateOfBirth)} yrs` : '-')}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -450,12 +474,11 @@ export default function Patients() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
               <input
-                type="number"
-                {...register('age')}
+                type="date"
+                {...register('dateOfBirth')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Age in years"
               />
             </div>
             <div>
@@ -495,6 +518,36 @@ export default function Patients() {
               rows={2}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Full address"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Allergies (comma separated)</label>
+            <input
+              type="text"
+              {...register('allergies')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. Penicillin, Pollen"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Insurance</label>
+            <input
+              type="text"
+              {...register('insurance')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Insurance provider / policy"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Medical History (one per line)</label>
+            <textarea
+              {...register('medicalHistory')}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Describe medical history entries, one per line"
             />
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t">

@@ -50,18 +50,32 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
       ];
     }
 
-    const [patients, total] = await Promise.all([
+    const [patientsRaw, total] = await Promise.all([
       prisma.patient.findMany({
         where, skip, take: limitNum,
         orderBy: { [sortBy]: sortOrder },
-        select: {
-          id: true, patientId: true, name: true, phone: true, email: true,
-          gender: true, dateOfBirth: true, age: true, bloodGroup: true, createdAt: true,
-          _count: { select: { appointments: true } }
+        include: {
+          appointments: { take: 1, orderBy: { date: 'desc' }, select: { date: true } }
         }
       }),
       prisma.patient.count({ where })
     ]);
+
+    // Map and normalize fields for frontend convenience
+    const patients = patientsRaw.map((p) => ({
+      id: p.id,
+      patientId: p.patientId,
+      name: p.name,
+      phone: p.phone,
+      email: p.email,
+      gender: p.gender,
+      dateOfBirth: p.dateOfBirth,
+      age: p.age,
+      bloodGroup: p.bloodGroup,
+      createdAt: p.createdAt,
+      // lastVisit derived from latest appointment if available
+      lastVisit: p.appointments && p.appointments.length > 0 ? p.appointments[0].date : null
+    }));
 
     res.json({
       success: true, data: patients,
@@ -85,7 +99,16 @@ router.get('/:id', checkPermission('patients', 'read'), async (req, res, next) =
       }
     });
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
-    res.json({ success: true, data: patient });
+
+    // Parse JSON fields and normalize names for frontend
+    const parsed = {
+      ...patient,
+      allergies: patient.allergies ? JSON.parse(patient.allergies) : [],
+      medicalHistory: patient.medicalHistory ? JSON.parse(patient.medicalHistory) : [],
+      insurance: patient.insurance || null,
+    };
+
+    res.json({ success: true, data: parsed });
   } catch (error) {
     next(error);
   }
@@ -96,7 +119,7 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
   try {
     const clinicId = req.user.clinicId;
     const patientId = await generatePatientId(clinicId);
-    const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory } = req.body;
+    const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory, insurance } = req.body;
 
     // Determine numeric age: prefer explicit `age` coerced to int, otherwise compute from dateOfBirth
     let ageValue;
@@ -117,6 +140,7 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
         bloodGroup, address, city, emergencyContact,
         allergies: allergies ? JSON.stringify(allergies) : null,
         medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
+        insurance: insurance || null,
         clinicId
       }
     });
@@ -133,7 +157,7 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
 // PUT /:id - Update patient
 router.put('/:id', checkPermission('patients', 'update'), async (req, res, next) => {
   try {
-    const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory } = req.body;
+    const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory, insurance } = req.body;
 
     // Coerce age to integer if provided, otherwise compute from dateOfBirth when present
     let ageValue;
@@ -154,7 +178,8 @@ router.put('/:id', checkPermission('patients', 'update'), async (req, res, next)
         age: typeof ageValue === 'number' ? ageValue : undefined,
         bloodGroup, address, city, emergencyContact,
         allergies: allergies ? JSON.stringify(allergies) : undefined,
-        medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined
+        medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined,
+        insurance: insurance !== undefined ? insurance : undefined
       }
     });
 

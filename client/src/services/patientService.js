@@ -25,7 +25,20 @@ const patientService = {
    */
   getPatient: async (id) => {
     const response = await api.get(`/patients/${id}`);
-    return response.data?.data || response.data;
+    const payload = response.data?.data || response.data;
+    // Normalize server response: parse allergies and medicalHistory if strings
+    if (payload) {
+      const parsed = {
+        ...payload,
+        allergies: typeof payload.allergies === 'string' ? JSON.parse(payload.allergies) : (payload.allergies || []),
+        medicalHistory: typeof payload.medicalHistory === 'string' ? JSON.parse(payload.medicalHistory) : (payload.medicalHistory || []),
+        // ensure dateOfBirth exists (server uses dateOfBirth)
+        dateOfBirth: payload.dateOfBirth || null,
+        insurance: payload.insurance || null,
+      };
+      return parsed;
+    }
+    return payload;
   },
 
   /**

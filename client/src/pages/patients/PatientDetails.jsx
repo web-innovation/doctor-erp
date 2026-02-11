@@ -69,11 +69,15 @@ export default function PatientDetails() {
         email: patient.email || '',
         gender: patient.gender || '',
         dateOfBirth: patient.dateOfBirth ? patient.dateOfBirth.split('T')[0] : '',
+        // Age is auto-calculated from DOB on the client; do not require manual input
         age: patient.age || '',
         bloodGroup: patient.bloodGroup || '',
         address: patient.address || '',
         city: patient.city || '',
         emergencyContact: patient.emergencyContact || '',
+        allergies: (patient.allergies && Array.isArray(patient.allergies)) ? patient.allergies.join(', ') : '',
+        medicalHistory: (patient.medicalHistory && Array.isArray(patient.medicalHistory)) ? patient.medicalHistory.join('\n') : '',
+        insurance: patient.insurance || '',
       });
     }
   }, [patient, reset]);
@@ -149,7 +153,20 @@ export default function PatientDetails() {
   };
 
   const onEditSubmit = (data) => {
-    updatePatientMutation.mutate(data);
+    const allergiesArr = data.allergies
+      ? data.allergies.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    const medHistArr = data.medicalHistory
+      ? data.medicalHistory.split('\n').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+    updatePatientMutation.mutate({
+      ...data,
+      dateOfBirth: data.dateOfBirth || undefined,
+      allergies: allergiesArr,
+      medicalHistory: medHistArr,
+      insurance: data.insurance || undefined,
+    });
   };
 
   const formatDate = (dateString) => {
@@ -244,7 +261,7 @@ export default function PatientDetails() {
                 </div>
                 <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
                 <p className="text-gray-500">
-                  {patient.age || calculateAge(patient.dob)} years • {patient.gender || 'N/A'}
+                  {patient.age || calculateAge(patient.dateOfBirth)} years • {patient.gender || 'N/A'}
                 </p>
               </div>
 
@@ -325,7 +342,7 @@ export default function PatientDetails() {
                       </div>
                       <div className="p-4 bg-gray-50 rounded-lg">
                         <p className="text-sm text-gray-500">Date of Birth</p>
-                        <p className="font-medium text-gray-900">{formatDate(patient.dob)}</p>
+                        <p className="font-medium text-gray-900">{formatDate(patient.dateOfBirth)}</p>
                       </div>
                       <div className="p-4 bg-gray-50 rounded-lg">
                         <p className="text-sm text-gray-500">Emergency Contact</p>
@@ -346,7 +363,7 @@ export default function PatientDetails() {
                         Allergies
                       </h3>
                     </div>
-                    {patient.allergies?.length > 0 ? (
+                    {patient.allergies && patient.allergies.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {patient.allergies.map((allergy, index) => (
                           <span
@@ -365,7 +382,7 @@ export default function PatientDetails() {
                   {/* Medical History */}
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Medical History</h3>
-                    {patient.medicalHistory?.length > 0 ? (
+                    {patient.medicalHistory && patient.medicalHistory.length > 0 ? (
                       <ul className="space-y-2">
                         {patient.medicalHistory.map((item, index) => (
                           <li key={index} className="flex items-start gap-2">
@@ -665,13 +682,32 @@ export default function PatientDetails() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Age
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Allergies (comma separated)</label>
               <input
-                type="number"
-                {...register('age')}
+                type="text"
+                {...register('allergies')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g. Penicillin, Pollen"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Insurance</label>
+              <input
+                type="text"
+                {...register('insurance')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Insurance provider / policy"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Medical History (one per line)</label>
+              <textarea
+                {...register('medicalHistory')}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Describe medical history entries, one per line"
               />
             </div>
             <div>

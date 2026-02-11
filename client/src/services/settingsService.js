@@ -92,15 +92,66 @@ const settingsService = {
   getWorkingHours: async () => {
     const response = await api.get('/clinic/working-hours');
     const data = response.data?.data || response.data;
+    // Normalize server shape (object with lowercase day keys) to UI array shape
+    const serverHours = data?.workingHours || null;
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    let hours = null;
+    if (Array.isArray(serverHours)) {
+      hours = serverHours;
+    } else if (serverHours && typeof serverHours === 'object') {
+      hours = DAYS.map((day) => {
+        const key = day.toLowerCase();
+        const entry = serverHours[key] || {};
+        if (entry.closed) {
+          return {
+            day,
+            isOpen: false,
+            openTime: '09:00',
+            closeTime: '18:00',
+            breakStart: '13:00',
+            breakEnd: '14:00',
+          };
+        }
+        return {
+          day,
+          isOpen: true,
+          openTime: entry.start || '09:00',
+          closeTime: entry.end || '18:00',
+          breakStart: entry.breakStart || '13:00',
+          breakEnd: entry.breakEnd || '14:00',
+        };
+      });
+    }
+
     return {
-      hours: data?.workingHours || null,
+      hours,
       slotDuration: data?.slotDuration || 15,
     };
   },
 
   updateWorkingHours: async (data) => {
+    // Convert UI array shape back to server object shape (lowercase day keys)
+    const serverHours = {};
+    if (Array.isArray(data.hours)) {
+      data.hours.forEach((h) => {
+        const key = (h.day || '').toLowerCase();
+        if (!key) return;
+        if (!h.isOpen) {
+          serverHours[key] = { closed: true };
+        } else {
+          serverHours[key] = {
+            start: h.openTime,
+            end: h.closeTime,
+            breakStart: h.breakStart,
+            breakEnd: h.breakEnd,
+          };
+        }
+      });
+    }
+
     const response = await api.put('/clinic/working-hours', {
-      workingHours: data.hours,
+      workingHours: serverHours,
       slotDuration: data.slotDuration,
     });
     return response.data;
