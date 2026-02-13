@@ -27,7 +27,7 @@ router.get('/', checkPermission('staff', 'read'), async (req, res, next) => {
     const [staff, total] = await Promise.all([
       prisma.staff.findMany({
         where, skip, take: limitNum,
-        include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true } } },
+        include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true } }, assignments: { include: { doctor: { select: { id: true, name: true, email: true } } } } },
         orderBy: { user: { name: 'asc' } }
       }),
       prisma.staff.count({ where })
@@ -323,6 +323,46 @@ router.get('/departments', checkPermission('staff', 'read'), async (req, res, ne
       distinct: ['department']
     });
     res.json({ success: true, data: departments.map(d => d.department).filter(Boolean) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /:id/assign-doctor - Assign a staff member to a specific doctor
+router.post('/:id/assign-doctor', checkPermission('staff', 'update'), async (req, res, next) => {
+  try {
+    const staffId = req.params.id;
+    const { doctorId } = req.body;
+    if (!doctorId) return res.status(400).json({ success: false, message: 'doctorId is required' });
+
+    // Validate staff and doctor belong to same clinic
+    const staff = await prisma.staff.findUnique({ where: { id: staffId } });
+    const doctorUser = await prisma.user.findUnique({ where: { id: doctorId } });
+    if (!staff || !doctorUser || staff.clinicId !== req.user.clinicId || doctorUser.clinicId !== req.user.clinicId) {
+      return res.status(404).json({ success: false, message: 'Staff or doctor not found in clinic' });
+    }
+
+    const assignment = await prisma.staffAssignment.upsert({
+      where: { staffId_doctorId: { staffId, doctorId } },
+      create: { staffId, doctorId, clinicId: req.user.clinicId },
+      update: { }
+    });
+
+    res.json({ success: true, data: assignment, message: 'Staff assigned to doctor' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /:id/assign-doctor - Remove assignment
+router.delete('/:id/assign-doctor', checkPermission('staff', 'update'), async (req, res, next) => {
+  try {
+    const staffId = req.params.id;
+    const { doctorId } = req.body;
+    if (!doctorId) return res.status(400).json({ success: false, message: 'doctorId is required' });
+
+    await prisma.staffAssignment.delete({ where: { staffId_doctorId: { staffId, doctorId } } });
+    res.json({ success: true, message: 'Assignment removed' });
   } catch (error) {
     next(error);
   }

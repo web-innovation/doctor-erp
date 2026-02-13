@@ -716,6 +716,150 @@ async function main() {
   
   console.log('\n✅ Ready for demo!\n');
 
+  // ==========================================
+  // 11. CREATE CORE USERS & STAFF ASSIGNMENTS
+  // ==========================================
+  console.log('\n👥 Ensuring demo users and staff assignments...');
+
+  const hashedDemoPass = await bcrypt.hash('D0ct0r@Demo!2024', 10);
+
+  const doctorUser = await ensure('user', { email: 'doctor@demo.com' }, {
+    email: 'doctor@demo.com', phone: '9001000100', name: 'Dr. Demo', role: 'DOCTOR', password: hashedDemoPass, clinicId: clinic.id
+  });
+
+  const receptionistUser = await ensure('user', { email: 'receptionist@demo.com' }, {
+    email: 'receptionist@demo.com', phone: '9001000101', name: 'Reception Demo', role: 'RECEPTIONIST', password: await bcrypt.hash('Recept!0n@Demo24', 10), clinicId: clinic.id
+  });
+
+  const pharmacistUser = await ensure('user', { email: 'pharmacist@demo.com' }, {
+    email: 'pharmacist@demo.com', phone: '9001000102', name: 'Pharma Demo', role: 'PHARMACIST', password: await bcrypt.hash('Pharm@c1st!Demo24', 10), clinicId: clinic.id
+  });
+
+  const accountantUser = await ensure('user', { email: 'accountant@demo.com' }, {
+    email: 'accountant@demo.com', phone: '9001000103', name: 'Accounts Demo', role: 'ACCOUNTANT', password: await bcrypt.hash('Acc0unt@Demo!2024', 10), clinicId: clinic.id
+  });
+
+  // Create staff records linked to these users
+  const staffDoctor = await ensure('staff', { userId: doctorUser.id }, {
+    userId: doctorUser.id, employeeId: 'EMP-DR-001', designation: 'Doctor', department: 'Medical', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  const staffReception = await ensure('staff', { userId: receptionistUser.id }, {
+    userId: receptionistUser.id, employeeId: 'EMP-RC-001', designation: 'Receptionist', department: 'Reception', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  const staffPharma = await ensure('staff', { userId: pharmacistUser.id }, {
+    userId: pharmacistUser.id, employeeId: 'EMP-PH-001', designation: 'Pharmacist', department: 'Pharmacy', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  const staffAccount = await ensure('staff', { userId: accountantUser.id }, {
+    userId: accountantUser.id, employeeId: 'EMP-AC-001', designation: 'Accountant', department: 'Accounts', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  // Create two nurse staff and assign them to the doctor (doctor-specific staff)
+  const nurse1User = await ensure('user', { email: 'nurse1@demo.com' }, {
+    email: 'nurse1@demo.com', phone: '9001000104', name: 'Nurse One', role: 'STAFF', password: await bcrypt.hash('Nurse@Demo1', 10), clinicId: clinic.id
+  });
+  const nurse2User = await ensure('user', { email: 'nurse2@demo.com' }, {
+    email: 'nurse2@demo.com', phone: '9001000105', name: 'Nurse Two', role: 'STAFF', password: await bcrypt.hash('Nurse@Demo2', 10), clinicId: clinic.id
+  });
+
+  const nurse1Staff = await ensure('staff', { userId: nurse1User.id }, {
+    userId: nurse1User.id, employeeId: 'EMP-NS-001', designation: 'Nurse', department: 'Nursing', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+  const nurse2Staff = await ensure('staff', { userId: nurse2User.id }, {
+    userId: nurse2User.id, employeeId: 'EMP-NS-002', designation: 'Nurse', department: 'Nursing', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  // Assign nurses to doctor (doctor-specific staff). Receptionist remains shared (no assignment).
+  await prisma.staffAssignment.upsert({
+    where: { staffId_doctorId: { staffId: nurse1Staff.id, doctorId: doctorUser.id } },
+    create: { staffId: nurse1Staff.id, doctorId: doctorUser.id, clinicId: clinic.id },
+    update: {}
+  });
+  await prisma.staffAssignment.upsert({
+    where: { staffId_doctorId: { staffId: nurse2Staff.id, doctorId: doctorUser.id } },
+    create: { staffId: nurse2Staff.id, doctorId: doctorUser.id, clinicId: clinic.id },
+    update: {}
+  });
+
+  // Set primaryDoctor for some patients and link doctorId for prescriptions, bills and appointments
+  await prisma.patient.updateMany({ where: { patientId: { in: ['P-0001','P-0003'] }, clinicId: clinic.id }, data: { primaryDoctorId: doctorUser.id } });
+
+  await prisma.prescription.updateMany({ where: { prescriptionNo: { in: ['RX-0001','RX-0002'] }, clinicId: clinic.id }, data: { doctorId: doctorUser.id } });
+
+  await prisma.bill.updateMany({ where: { billNo: { in: ['BILL-0001','BILL-0002'] }, clinicId: clinic.id }, data: { doctorId: doctorUser.id } });
+
+  await prisma.appointment.updateMany({ where: { appointmentNo: { in: ['A-0001','A-0003'] }, clinicId: clinic.id }, data: { doctorId: doctorUser.id } });
+
+  // Ensure clinic rolePermissions has sensible defaults (doctors can manage clinical features, receptionist can bill)
+  const defaultRolePerms = {
+    DOCTOR: ['patients:read','patients:create','patients:update','prescriptions:create','prescriptions:read','appointments:read','appointments:create'],
+    RECEPTIONIST: ['patients:read','patients:create','appointments:create','billing:create'],
+    PHARMACIST: ['pharmacy:read','pharmacy:create','billing:create'],
+    ACCOUNTANT: ['billing:read','reports:opd','reports:collections']
+  };
+  await prisma.clinic.update({ where: { id: clinic.id }, data: { rolePermissions: JSON.stringify(defaultRolePerms) } });
+
+  console.log('   ✅ Created demo users, staff and assignments.');
+
+  // ==========================================
+  // Create a second doctor and demonstrate shared vs exclusive staff
+  // ==========================================
+  const hashedDoctorB = await bcrypt.hash('D0ct0rB@Demo!2024', 10);
+  const doctorBUser = await ensure('user', { email: 'doctorb@demo.com' }, {
+    email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Beta', role: 'DOCTOR', password: hashedDoctorB, clinicId: clinic.id
+  });
+
+  const staffLabUser = await ensure('user', { email: 'lab1@demo.com' }, {
+    email: 'lab1@demo.com', phone: '9001000111', name: 'Lab Assistant', role: 'STAFF', password: await bcrypt.hash('Lab@Demo1', 10), clinicId: clinic.id
+  });
+  const staffLab = await ensure('staff', { userId: staffLabUser.id }, {
+    userId: staffLabUser.id, employeeId: 'EMP-LB-001', designation: 'Lab Assistant', department: 'Lab', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  // Create a nurse exclusively for doctorB
+  const nurse3User = await ensure('user', { email: 'nurse3@demo.com' }, {
+    email: 'nurse3@demo.com', phone: '9001000112', name: 'Nurse Three', role: 'STAFF', password: await bcrypt.hash('Nurse@Demo3', 10), clinicId: clinic.id
+  });
+  const nurse3Staff = await ensure('staff', { userId: nurse3User.id }, {
+    userId: nurse3User.id, employeeId: 'EMP-NS-003', designation: 'Nurse', department: 'Nursing', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  // Assign nurse3 to doctorB (exclusive)
+  await prisma.staffAssignment.upsert({
+    where: { staffId_doctorId: { staffId: nurse3Staff.id, doctorId: doctorBUser.id } },
+    create: { staffId: nurse3Staff.id, doctorId: doctorBUser.id, clinicId: clinic.id },
+    update: {}
+  });
+
+  // Leave `staffReception` unassigned to demonstrate shared staff
+
+  // Create some patients and prescriptions for doctorB to demonstrate doctor-scoped data
+  const patientB = await prisma.patient.upsert({
+    where: { patientId: 'P-0100' },
+    update: {},
+    create: {
+      patientId: 'P-0100', name: 'Rajan Kumar', phone: '9898901000', gender: 'MALE', age: 52, clinicId: clinic.id, primaryDoctorId: doctorBUser.id
+    }
+  });
+
+  const apB = await ensure('appointment', { appointmentNo: 'A-1001' }, {
+    appointmentNo: 'A-1001', date: today, timeSlot: '12:00-12:15', type: 'CONSULTATION', status: 'SCHEDULED', consultationFee: 500, patientId: patientB.id, clinicId: clinic.id, bookedVia: 'WEB', doctorId: doctorBUser.id
+  });
+
+  await ensure('prescription', { prescriptionNo: 'RX-1001' }, {
+    prescriptionNo: 'RX-1001', patientId: patientB.id, clinicId: clinic.id, appointmentId: apB.id, doctorId: doctorBUser.id,
+    diagnosis: JSON.stringify(['Hypertension']), symptoms: JSON.stringify(['Headache']), medicines: { create: [{ medicineName: 'Amlodipine 5mg', dosage: '5mg', frequency: '1-0-0', duration: '30 days', quantity: 30, productId: products[6].id }] }
+  });
+
+  await ensure('bill', { billNo: 'BILL-1001' }, {
+    billNo: 'BILL-1001', type: 'CONSULTATION', patientId: patientB.id, clinicId: clinic.id, subtotal: 500, totalAmount: 500, paidAmount: 0, dueAmount: 500, paymentStatus: 'UNPAID', doctorId: doctorBUser.id,
+    items: { create: [{ description: 'Consultation Fee', quantity: 1, unitPrice: 500, amount: 500 }] }
+  });
+
+  console.log('   ✅ Added second doctor, exclusive and shared staff, and doctorB-scoped demo data');
+
 }
 
 main()

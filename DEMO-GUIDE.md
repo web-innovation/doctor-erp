@@ -17,6 +17,7 @@ This guide walks through all features for recording a demo/KT video.
 | Receptionist | receptionist@demo.com | `Recept!0n@Demo24` |
 | Pharmacist | pharmacist@demo.com | `Pharm@c1st!Demo24` |
 | Accountant | accountant@demo.com | `Acc0unt@Demo!2024` |
+| Second Doctor | doctorb@demo.com | `D0ct0rB@Demo!2024` |
 
 ---
 
@@ -30,6 +31,11 @@ This guide walks through all features for recording a demo/KT video.
 ### 2. Login as Doctor (30 sec)
 - [ ] Enter: doctor@demo.com / D0ct0r@Demo!2024
 - [ ] Click Login
+- [ ] Enter: doctor@demo.com / D0ct0r@Demo!2024
+- [ ] Click Login
+
+> Tip: You can also login as the second doctor to demo multi-doctor behavior:
+> - `doctorb@demo.com` / `D0ct0rB@Demo!2024`
 
 ### 3. Dashboard Overview (2 min)
 - [ ] Show today's statistics:
@@ -205,6 +211,10 @@ Go to GitHub **Actions → AWS Full Automation → Run workflow**:
 ```bash
 # Terminal 1 - Start Backend
 cd server
+npm install
+# Apply dev migrations and seed (development only)
+npx prisma migrate dev --name init
+node prisma/seed.js
 npm run dev
 
 # Terminal 2 - Start Frontend

@@ -80,6 +80,17 @@ const staffService = {
     const response = await api.get('/staff/designations');
     return response.data;
   },
+
+  // Staff assignments to doctors
+  assignToDoctor: async (staffId, doctorId) => {
+    const response = await api.post(`/staff/${staffId}/assign-doctor`, { doctorId });
+    return response.data;
+  },
+
+  unassignFromDoctor: async (staffId, doctorId) => {
+    const response = await api.delete(`/staff/${staffId}/assign-doctor`, { data: { doctorId } });
+    return response.data;
+  }
 };
 
 export { staffService };

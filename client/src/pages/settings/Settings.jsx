@@ -19,6 +19,7 @@ import settingsService from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
 import EmailSettings from '../../components/settings/EmailSettings';
 import WhatsAppSettings from '../../components/settings/WhatsAppSettings';
+import RolePermissions from '../../components/settings/RolePermissions';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
@@ -625,6 +626,7 @@ export default function Settings() {
         <div className="space-y-4">
           <div className="overflow-x-auto">
             <table className="w-full">
+            <RolePermissions />
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Day</th>

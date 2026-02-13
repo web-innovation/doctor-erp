@@ -71,6 +71,11 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     if (status) where.paymentStatus = status;
     if (type) where.type = type;
     if (patientId) where.patientId = patientId;
+
+    // If requester is a DOCTOR, restrict to their own bills
+    if (req.user.role === 'DOCTOR') {
+      where.doctorId = req.user.id;
+    }
     
     if (startDate || endDate) {
       where.date = {};
@@ -175,6 +180,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
       data: {
         billNo,
         clinicId: req.user.clinicId,
+        doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined),
         patientId,
         type,
         subtotal,

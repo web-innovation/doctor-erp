@@ -176,6 +176,30 @@ router.get('/tax-config', async (req, res, next) => {
   }
 });
 
+// GET /role-permissions - Get role permission overrides for the clinic
+router.get('/role-permissions', checkPermission('settings', 'clinic'), async (req, res, next) => {
+  try {
+    const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
+    if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
+    const data = clinic.rolePermissions ? JSON.parse(clinic.rolePermissions) : null;
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /role-permissions - Update role permission overrides for the clinic
+router.put('/role-permissions', checkPermission('settings', 'clinic'), async (req, res, next) => {
+  try {
+    const { rolePermissions } = req.body;
+    const updateData = { rolePermissions: rolePermissions ? JSON.stringify(rolePermissions) : null };
+    const clinic = await prisma.clinic.update({ where: { id: req.user.clinicId }, data: updateData });
+    res.json({ success: true, data: clinic.rolePermissions ? JSON.parse(clinic.rolePermissions) : null, message: 'Role permissions updated' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // PUT /tax-config - Update tax configuration
 router.put('/tax-config', checkPermission('settings', 'clinic'), async (req, res, next) => {
   try {

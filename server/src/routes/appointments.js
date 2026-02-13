@@ -43,6 +43,11 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     if (status) where.status = status;
     if (patientId) where.patientId = patientId;
 
+    // Restrict to doctor's own appointments if requester is DOCTOR
+    if (req.user.role === 'DOCTOR') {
+      where.doctorId = req.user.id;
+    }
+
     const [appointments, total] = await Promise.all([
       prisma.appointment.findMany({
         where, skip, take: limitNum,
@@ -116,6 +121,11 @@ router.get('/:id', checkPermission('appointments', 'read'), async (req, res, nex
       }
     });
     if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
+    // Enforce doctor-only access for appointment detail
+    if (req.user.role === 'DOCTOR' && appointment.doctorId && appointment.doctorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
     res.json({ success: true, data: appointment });
   } catch (error) {
     next(error);
@@ -136,7 +146,8 @@ router.post('/', checkPermission('appointments', 'create'), async (req, res, nex
         type: type || 'CONSULTATION',
         symptoms, notes, consultationFee,
         bookedVia: bookedVia || 'CLINIC',
-        status: 'SCHEDULED'
+        status: 'SCHEDULED',
+        doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined)
       },
       include: { patient: { select: { id: true, name: true, phone: true } } }
     });

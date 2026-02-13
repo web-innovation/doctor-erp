@@ -196,10 +196,12 @@ export default function NewPrescription() {
         frequency: m.dosage?.value || m.dosage,
         instructions: m.instructions,
         quantity: m.quantity ? parseInt(m.quantity) : 1,
+        isExternal: !!m.isExternal,
       })),
       labTests: data.labTests.map((lt) => ({
         testName: lt.name,
         instructions: lt.instructions,
+        isExternal: !!lt.isExternal,
       })),
     };
 
@@ -215,6 +217,7 @@ export default function NewPrescription() {
       mealTiming: null,
       instructions: '',
       quantity: '',
+      isExternal: false,
     });
     setMedicineSearch('');
     setShowMedicineDropdown(false);
@@ -225,6 +228,7 @@ export default function NewPrescription() {
       testId: test.id,
       name: test.name,
       instructions: '',
+      isExternal: false,
     });
     setLabTestSearch('');
     setShowLabTestDropdown(false);
@@ -495,6 +499,17 @@ export default function NewPrescription() {
                       </button>
                     </div>
 
+                    <div className="flex items-center gap-3 mb-3">
+                      <label className="inline-flex items-center text-sm">
+                        <input
+                          type="checkbox"
+                          {...register(`medicines.${index}.isExternal`)}
+                          className="form-checkbox h-4 w-4 text-blue-600"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Patient will buy externally</span>
+                      </label>
+                    </div>
+
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                       <Controller
                         name={`medicines.${index}.dosage`}
@@ -628,6 +643,14 @@ export default function NewPrescription() {
                       placeholder="Special instructions..."
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
+                    <label className="inline-flex items-center ml-3">
+                      <input
+                        type="checkbox"
+                        {...register(`labTests.${index}.isExternal`)}
+                        className="form-checkbox h-4 w-4 text-blue-600"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Patient will buy externally</span>
+                    </label>
                     <button
                       type="button"
                       onClick={() => removeLabTest(index)}

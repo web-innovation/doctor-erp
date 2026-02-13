@@ -71,6 +71,7 @@ model Clinic {
   licenseNumber String?
   taxConfig     String?  // JSON string
   workingHours  String?  // JSON string
+  rolePermissions String? // JSON string mapping roles to allowed permission keys
   slotDuration  Int      @default(15)
   
   createdAt     DateTime @default(now())
@@ -114,6 +115,7 @@ model Staff {
   clinicId         String
   attendance       Attendance[]
   leaves           Leave[]
+  assignments      StaffAssignment[]
 
   @@index([clinicId])
 }
@@ -176,6 +178,8 @@ model Patient {
   allergies        String?  // JSON array string
   medicalHistory   String?  // JSON string
   insurance        String?
+  primaryDoctor    User?    @relation("PatientPrimaryDoctor", fields: [primaryDoctorId], references: [id])
+  primaryDoctorId  String?
   
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -235,6 +239,8 @@ model Appointment {
   patientId       String
   clinic          Clinic   @relation(fields: [clinicId], references: [id])
   clinicId        String
+  doctor          User?    @relation(fields: [doctorId], references: [id])
+  doctorId        String?
   prescription    Prescription?
 
   @@index([clinicId, date])
@@ -272,6 +278,8 @@ model Prescription {
   appointmentId   String?  @unique
   medicines       PrescriptionMedicine[]
   labTests        PrescriptionLabTest[]
+  doctor          User?    @relation(fields: [doctorId], references: [id])
+  doctorId        String?
 
   @@index([clinicId])
   @@index([patientId])
@@ -288,6 +296,7 @@ model PrescriptionMedicine {
   timing        String?
   quantity      Int
   instructions  String?
+  isExternal    Boolean  @default(false)
   
   prescription  Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   prescriptionId String
@@ -301,6 +310,7 @@ model PrescriptionLabTest {
   id            String   @id @default(uuid())
   testName      String
   instructions  String?
+  isExternal    Boolean  @default(false)
   
   prescription  Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   prescriptionId String
@@ -369,6 +379,21 @@ model StockHistory {
   @@index([createdAt])
 }
 
+// Assign staff members to specific doctors (optional). If absent, staff is considered shared.
+model StaffAssignment {
+  id         String   @id @default(uuid())
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId    String
+  doctor     User     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  doctorId   String
+  clinic     Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId   String
+  createdAt  DateTime @default(now())
+
+  @@unique([staffId, doctorId])
+  @@index([clinicId])
+}
+
 // ==========================================
 // BILLING
 // ==========================================
@@ -403,6 +428,8 @@ model Bill {
   labId           String?
   agentCommission Agent?   @relation(fields: [agentId], references: [id])
   agentId         String?
+  doctorId        String?
+  doctor          User?    @relation(fields: [doctorId], references: [id])
 
   @@index([clinicId])
   @@index([patientId])

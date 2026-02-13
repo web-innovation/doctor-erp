@@ -101,9 +101,15 @@ cp whatsapp-bot/.env.example whatsapp-bot/.env
 4. **Setup database**
 ```bash
 cd server
-npx prisma migrate dev
-npx prisma db seed
+# Run migrations (development)
+npx prisma migrate dev --name init
+# Generate Prisma client
+npx prisma generate
+# Seed demo data (development)
+node prisma/seed.js
 ```
+
+Production note: when deploying to production use `prisma migrate deploy` (not `migrate dev`) and run the seed script only if you want demo/test data. Example production commands below.
 
 5. **Start development servers**
 ```bash
@@ -237,6 +243,17 @@ Your IAM user needs these permissions:
 - `SecretsManagerReadWrite`
 - `CloudFormationFullAccess`
 - `CloudWatchLogsFullAccess`
+
+### Production DB migration & seed (example)
+Run these on the server/CI where the production database is accessible. DO NOT run `migrate dev` in production.
+```bash
+# Apply migrations (idempotent)
+npx prisma migrate deploy --schema=./prisma/schema.prisma
+# Generate client
+npx prisma generate --schema=./prisma/schema.prisma
+# Optional: run seed script only to populate demo/test data (skip in real production)
+node prisma/seed.js
+```
 
 #### Deploy
 

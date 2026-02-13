@@ -37,6 +37,7 @@ import notificationRoutes from './routes/notifications.js';
 
 const app = express();
 export const prisma = new PrismaClient();
+export default app;
 
 // ===========================================
 // MIDDLEWARE

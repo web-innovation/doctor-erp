@@ -85,25 +85,25 @@ export const PERMISSIONS = {
   'dashboard:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST', 'PHARMACIST', 'STAFF'],
   
   // Patient Management
-  'patients': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
-  'patients:read': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
+  'patients': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
+  'patients:read': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
   'patients:create': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
   'patients:update': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
   'patients:delete': ['SUPER_ADMIN'],
-  PATIENT_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
+  PATIENT_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
   PATIENT_CREATE: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
   PATIENT_EDIT: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
   PATIENT_DELETE: ['SUPER_ADMIN'],
 
   // Appointments
-  'appointments': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
-  'appointments:read': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
-  'appointments:create': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
-  'appointments:update': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+  'appointments': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
+  'appointments:read': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
+  'appointments:create': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST'],
+  'appointments:update': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST'],
   'appointments:delete': ['SUPER_ADMIN', 'DOCTOR'],
-  APPOINTMENT_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
-  APPOINTMENT_CREATE: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
-  APPOINTMENT_EDIT: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+  APPOINTMENT_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF', 'PHARMACIST'],
+  APPOINTMENT_CREATE: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST'],
+  APPOINTMENT_EDIT: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST'],
   APPOINTMENT_DELETE: ['SUPER_ADMIN', 'DOCTOR'],
 
   // Prescriptions
@@ -170,24 +170,53 @@ export const PERMISSIONS = {
 
 // Check permission middleware
 export function checkPermission(resource, action) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return next(new AppError('Not authenticated', 401));
-    }
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next(new AppError('Not authenticated', 401));
+      }
 
-    // Support both single string and two-arg formats
-    // e.g., checkPermission('dashboard:read') or checkPermission('pharmacy', 'read')
-    let permission = resource;
-    if (action) {
-      permission = `${resource}:${action}`;
-    }
+      // Support both single string and two-arg formats
+      // e.g., checkPermission('dashboard:read') or checkPermission('pharmacy', 'read')
+      let permission = resource;
+      if (action) {
+        permission = `${resource}:${action}`;
+      }
 
-    const allowedRoles = PERMISSIONS[permission] || [];
-    
-    if (!allowedRoles.includes(req.user.role)) {
-      return next(new AppError(`Permission denied: ${permission}`, 403));
-    }
+      // Start with global permission definitions
+      const allowedRolesSet = new Set(PERMISSIONS[permission] || []);
 
-    next();
+      // Try to fetch clinic-level overrides (additive)
+      try {
+        if (req.user && req.user.clinicId) {
+          const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
+          if (clinic && clinic.rolePermissions) {
+            try {
+              const overrides = JSON.parse(clinic.rolePermissions);
+              // Expected format: { ROLE_NAME: [ 'permission:key', ... ], ... }
+              Object.entries(overrides).forEach(([role, perms]) => {
+                if (Array.isArray(perms) && (perms.includes(permission) || perms.includes('*'))) {
+                  allowedRolesSet.add(role);
+                }
+              });
+            } catch (err) {
+              // Invalid JSON - ignore clinic overrides
+              console.warn('Invalid clinic.rolePermissions JSON', err);
+            }
+          }
+        }
+      } catch (err) {
+        // If clinic lookup fails, fall back to global permissions
+        console.warn('Failed to load clinic rolePermissions', err);
+      }
+
+      if (!allowedRolesSet.has(req.user.role)) {
+        return next(new AppError(`Permission denied: ${permission}`, 403));
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }

@@ -50,6 +50,11 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
       ];
     }
 
+    // Restrict patients to doctor's own patients if requester is a DOCTOR
+    if (req.user.role === 'DOCTOR') {
+      where.primaryDoctorId = req.user.id;
+    }
+
     const [patientsRaw, total] = await Promise.all([
       prisma.patient.findMany({
         where, skip, take: limitNum,
@@ -100,6 +105,11 @@ router.get('/:id', checkPermission('patients', 'read'), async (req, res, next) =
     });
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
+    // Enforce doctor-only access: doctors can view only their own patients
+    if (req.user.role === 'DOCTOR' && patient.primaryDoctorId && patient.primaryDoctorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
     // Parse JSON fields and normalize names for frontend
     const parsed = {
       ...patient,
@@ -147,7 +157,8 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       emergencyContact,
       allergies: allergies ? JSON.stringify(allergies) : null,
       medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
-      clinicId
+      clinicId,
+      primaryDoctorId: req.body.primaryDoctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined)
     };
 
     try {

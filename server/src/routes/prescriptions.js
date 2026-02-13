@@ -51,6 +51,11 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
       if (endDate) where.date.lte = new Date(endDate);
     }
 
+    // Restrict to doctor's own prescriptions when the requester is a DOCTOR
+    if (req.user.role === 'DOCTOR') {
+      where.doctorId = req.user.id;
+    }
+
     const [prescriptions, total] = await Promise.all([
       prisma.prescription.findMany({
         where,
@@ -117,6 +122,11 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
 
+    // Enforce doctor-only access: doctors can view only their own prescriptions
+    if (req.user.role === 'DOCTOR' && prescription.doctorId && prescription.doctorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
     // Parse JSON fields
     const result = {
       ...prescription,
@@ -167,6 +177,7 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
         prescriptionNo,
         clinicId: req.user.clinicId,
         patientId,
+        doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined),
         appointmentId: appointmentId || undefined,
         diagnosis: diagnosis ? JSON.stringify(diagnosis) : null,
         symptoms: symptoms ? JSON.stringify(symptoms) : null,
@@ -184,14 +195,16 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
             timing: med.timing,
             quantity: parseInt(med.quantity) || 1,
             instructions: med.instructions,
-            productId: med.productId || null
+            productId: med.productId || null,
+            isExternal: med.isExternal || false
           }))
         },
         labTests: {
           create: labTests.map(test => ({
             testName: test.testName,
             instructions: test.instructions,
-            labId: test.labId || null
+            labId: test.labId || null,
+            isExternal: test.isExternal || false
           }))
         }
       },
@@ -267,7 +280,7 @@ router.put('/:id', checkPermission('prescriptions', 'create'), async (req, res, 
 router.post('/:id/medicines', checkPermission('prescriptions', 'create'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { medicineName, genericName, dosage, frequency, duration, timing, quantity, instructions, productId } = req.body;
+    const { medicineName, genericName, dosage, frequency, duration, timing, quantity, instructions, productId, isExternal } = req.body;
 
     const existing = await prisma.prescription.findFirst({
       where: { id, clinicId: req.user.clinicId }
@@ -288,7 +301,8 @@ router.post('/:id/medicines', checkPermission('prescriptions', 'create'), async 
         timing,
         quantity: parseInt(quantity) || 1,
         instructions,
-        productId: productId || null
+        productId: productId || null,
+        isExternal: isExternal || false
       }
     });
 
@@ -325,7 +339,7 @@ router.delete('/:id/medicines/:medicineId', checkPermission('prescriptions', 'cr
 router.post('/:id/lab-tests', checkPermission('prescriptions', 'create'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { testName, instructions, labId } = req.body;
+    const { testName, instructions, labId, isExternal } = req.body;
 
     const existing = await prisma.prescription.findFirst({
       where: { id, clinicId: req.user.clinicId }
@@ -340,7 +354,8 @@ router.post('/:id/lab-tests', checkPermission('prescriptions', 'create'), async 
         prescriptionId: id,
         testName,
         instructions,
-        labId: labId || null
+        labId: labId || null,
+        isExternal: isExternal || false
       }
     });
 
@@ -380,7 +395,7 @@ router.get('/patient/:patientId', checkPermission('prescriptions', 'read'), asyn
     const { limit = 10 } = req.query;
 
     const prescriptions = await prisma.prescription.findMany({
-      where: { patientId, clinicId: req.user.clinicId },
+        where: Object.assign({ patientId, clinicId: req.user.clinicId }, req.user.role === 'DOCTOR' ? { doctorId: req.user.id } : {}),
       take: parseInt(limit),
       orderBy: { date: 'desc' },
       include: {

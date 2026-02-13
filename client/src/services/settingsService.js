@@ -180,6 +180,17 @@ const settingsService = {
     const response = await api.put('/settings/dashboard-widgets', data);
     return response.data;
   },
+
+  // Role permissions per clinic
+  getRolePermissions: async () => {
+    const response = await api.get('/clinic/role-permissions');
+    return response.data;
+  },
+
+  updateRolePermissions: async (data) => {
+    const response = await api.put('/clinic/role-permissions', { rolePermissions: data });
+    return response.data;
+  },
 };
 
 export { settingsService };
