@@ -17,6 +17,7 @@ import {
   FaFilter,
 } from 'react-icons/fa';
 import Modal from '../../components/common/Modal';
+import { useHasPerm } from '../../context/AuthContext';
 import staffService from '../../services/staffService';
 
 const LEAVE_TYPES = [
@@ -65,6 +66,11 @@ export default function Leave() {
 
   const staffList = staffData?.data || [];
 
+  // Permissions
+  const canRead = useHasPerm('leaves:read');
+  const canCreate = useHasPerm('leaves:create');
+  const canUpdate = useHasPerm('leaves:update');
+
   // Fetch leaves with pagination - also calculate summary from this
   const { data: leavesData, isLoading, error } = useQuery({
     queryKey: ['leaves-list', currentPage, pageSize, filterStatus],
@@ -98,6 +104,20 @@ export default function Leave() {
     approved: allLeaves.filter(l => l.status === 'APPROVED').length,
     rejected: allLeaves.filter(l => l.status === 'REJECTED').length,
   };
+
+  // If user doesn't have read access, show access denied state
+  if (!canRead) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl p-8 border border-gray-100 text-center">
+            <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
+            <p className="text-gray-600 mt-2">You don't have permission to view Leave Management.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Apply for leave mutation
   const applyMutation = useMutation({
@@ -138,12 +158,20 @@ export default function Leave() {
   };
 
   const handleApprove = (leave) => {
+    if (!canUpdate) {
+      toast.error("You don't have permission to update leave status");
+      return;
+    }
     if (window.confirm(`Approve leave for ${getStaffName(leave)}?`)) {
       updateStatusMutation.mutate({ id: leave.id, status: 'APPROVED' });
     }
   };
 
   const handleReject = (leave) => {
+    if (!canUpdate) {
+      toast.error("You don't have permission to update leave status");
+      return;
+    }
     if (window.confirm(`Reject leave for ${getStaffName(leave)}?`)) {
       updateStatusMutation.mutate({ id: leave.id, status: 'REJECTED' });
     }
@@ -184,13 +212,17 @@ export default function Leave() {
             <h1 className="text-2xl font-bold text-gray-900">Leave Management</h1>
             <p className="text-gray-500 mt-1">Review and manage staff leave requests</p>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            <FaPlus />
-            Apply Leave
-          </button>
+          {canCreate ? (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              <FaPlus />
+              Apply Leave
+            </button>
+          ) : (
+            <div className="text-sm text-gray-500">You don't have permission to apply for leave.</div>
+          )}
         </div>
 
         {/* Summary Cards */}

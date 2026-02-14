@@ -335,7 +335,7 @@ router.put('/attendance/:id', checkPermission('staff', 'update'), async (req, re
 // =====================
 
 // GET /leaves - Leave requests
-router.get('/leaves', checkPermission('staff', 'read'), async (req, res, next) => {
+router.get('/leaves', checkPermission('leaves', 'read'), async (req, res, next) => {
   try {
     const { staffId, status, page = 1, limit = 20 } = req.query;
     const pageNum = parseInt(page, 10);
@@ -366,7 +366,7 @@ router.get('/leaves', checkPermission('staff', 'read'), async (req, res, next) =
 });
 
 // POST /leaves - Apply for leave
-router.post('/leaves', checkPermission('staff', 'create'), async (req, res, next) => {
+router.post('/leaves', checkPermission('leaves', 'create'), async (req, res, next) => {
   try {
     const { staffId, startDate, endDate, type, reason } = req.body;
     const leave = await prisma.leave.create({
@@ -382,7 +382,7 @@ router.post('/leaves', checkPermission('staff', 'create'), async (req, res, next
 });
 
 // PUT /leaves/:id - Approve/Reject leave
-router.put('/leaves/:id', checkPermission('staff', 'update'), async (req, res, next) => {
+router.put('/leaves/:id', checkPermission('leaves', 'update'), async (req, res, next) => {
   try {
     const { status } = req.body;
     const leave = await prisma.leave.update({

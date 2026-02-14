@@ -14,6 +14,9 @@ const DEFAULT_PERMISSIONS = [
   'pharmacy:read','pharmacy:create','billing:read','billing:create','reports:opd'
 ];
 
+// Add leave permissions to default set so Access Management can control Leave access
+DEFAULT_PERMISSIONS.push('leaves:read', 'leaves:create', 'leaves:update');
+
 // Grouped permissions for better UI
 const LAB_PERMISSIONS = [
   'labs:read','labs:create','labs:update','labs:tests'
@@ -68,6 +71,9 @@ export default function RolePermissions() {
     'agents:create': ['agents:read'],
     'agents:update': ['agents:read'],
     'commissions:pay': ['commissions:read'],
+    // Leave create/update should imply read
+    'leaves:create': ['leaves:read'],
+    'leaves:update': ['leaves:read'],
   };
 
   // Build reverse map for dependents: if A implies B, then B -> [A]

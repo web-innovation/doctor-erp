@@ -142,6 +142,12 @@ export const PERMISSIONS = {
   ATTENDANCE_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'],
   ATTENDANCE_MARK: ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
 
+  // Leaves (Leave Management)
+  'leaves:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST'],
+  'leaves:create': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'STAFF'],
+  'leaves:update': ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+  LEAVES_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'RECEPTIONIST'],
+
   // Reports
   'reports:sales': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
   'reports:patients': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
