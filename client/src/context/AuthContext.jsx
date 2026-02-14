@@ -78,6 +78,14 @@ const useAuthStore = create(
 
         set({ isLoading: true, token });
         try {
+          // If there's a stale `activeViewUserId` in localStorage but impersonation
+          // is not active, remove it so API requests are not accidentally forwarded
+          // as `viewUserId` for GETs (this caused initial dashboard to load as
+          // a previously-viewed staff user until refresh).
+          if (!impersonationActive) {
+            try { localStorage.removeItem('activeViewUserId'); } catch (e) { /* ignore */ }
+          }
+
           const response = await authService.getProfile();
           const userData = response.data || {};
           // Compute clinic-admin flag: prefer server-provided flag, fall back to known clinic-owner/demo emails
