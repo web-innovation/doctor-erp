@@ -47,14 +47,14 @@ const adminMenuItems = [
 
 const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const location = useLocation();
-  const { user, activeViewUser } = useAuth();
+  const { user, activeViewUser, normalizeRole } = useAuth();
   
   // Check if we're on admin routes
   const isAdminRoute = location.pathname.startsWith('/admin');
   
   // Get user role from AuthContext — if viewing as another staff, use their role
-  const userRole = activeViewUser?.role || user?.role || 'DOCTOR';
-  const normalizedRole = (userRole || '').toString().toUpperCase();
+  const userRoleRaw = activeViewUser?.role || user?.role || 'DOCTOR';
+  const normalizedRole = normalizeRole ? normalizeRole(userRoleRaw) : (userRoleRaw || 'DOCTOR').toString().toUpperCase();
 
   // Determine if current real user is a clinic admin (some doctor users act as clinic admin)
   const isClinicAdmin = user?.role === 'SUPER_ADMIN' || user?.isClinicAdmin === true || user?.clinicRole === 'ADMIN' || user?.isOwner === true;

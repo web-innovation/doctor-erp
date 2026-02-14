@@ -96,7 +96,7 @@ const AlertItem = ({ type, message, time }) => {
 };
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, normalizeRole } = useAuth();
   const [dateRange] = useState('7days');
   const { activeViewUser } = useAuth();
 
@@ -109,7 +109,9 @@ export default function Dashboard() {
   const rolePermissions = rolePermResp?.data || rolePermResp || null;
 
   // Effective role: when viewing as another user, use their role; else use logged-in user's role
-  const effectiveRole = (activeViewUser && activeViewUser.role) || (user && user.role) || 'STAFF';
+  const effectiveRole = normalizeRole
+    ? normalizeRole(activeViewUser?.role || user?.role || 'STAFF')
+    : (activeViewUser && activeViewUser.role) || (user && user.role) || 'STAFF';
   const isViewingAsAnother = !!(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id);
 
   const hasPerm = (permKey) => {

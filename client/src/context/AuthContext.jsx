@@ -206,6 +206,7 @@ export const useAuth = () => {
     clearError: store.clearError,
     setActiveViewUser: store.setActiveViewUser,
     clearActiveViewUser: store.clearActiveViewUser,
+    normalizeRole: store.normalizeRole,
   };
 };
 
