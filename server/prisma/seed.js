@@ -224,103 +224,83 @@ async function main() {
   console.log(`   ✅ Ensured ${products.length} pharmacy products`);
   
   const patients = await Promise.all([
-    prisma.patient.upsert({
-      where: { patientId: 'P-0001' },
-      update: {},
-      create: {
-        patientId: 'P-0001',
-        name: 'Rahul Mehta',
-        phone: '9898989801',
-        email: 'rahul.mehta@email.com',
-        gender: 'MALE',
-        dateOfBirth: new Date('1985-05-15'),
-        age: 40,
-        bloodGroup: 'B+',
-        address: '45, Green Park, Sector 22',
-        city: 'Noida',
-        allergies: JSON.stringify(['Penicillin']),
-        medicalHistory: JSON.stringify({
-          conditions: ['Hypertension'],
-          surgeries: [],
-          familyHistory: ['Diabetes (Father)']
-        }),
-        clinicId: clinic.id
-      }
+    ensure('patient', { patientId: 'P-0001' }, {
+      patientId: 'P-0001',
+      name: 'Rahul Mehta',
+      phone: '9898989801',
+      email: 'rahul.mehta@email.com',
+      gender: 'MALE',
+      dateOfBirth: new Date('1985-05-15'),
+      age: 40,
+      bloodGroup: 'B+',
+      address: '45, Green Park, Sector 22',
+      city: 'Noida',
+      allergies: JSON.stringify(['Penicillin']),
+      medicalHistory: JSON.stringify({
+        conditions: ['Hypertension'],
+        surgeries: [],
+        familyHistory: ['Diabetes (Father)']
+      }),
+      clinicId: clinic.id
     }),
-    prisma.patient.upsert({
-      where: { patientId: 'P-0002' },
-      update: {},
-      create: {
-        patientId: 'P-0002',
-        name: 'Sunita Devi',
-        phone: '9898989802',
-        gender: 'FEMALE',
-        dateOfBirth: new Date('1990-08-20'),
-        age: 35,
-        bloodGroup: 'O+',
-        address: '12, Vasant Kunj',
-        city: 'Delhi',
-        allergies: JSON.stringify([]),
-        clinicId: clinic.id
-      }
+    ensure('patient', { patientId: 'P-0002' }, {
+      patientId: 'P-0002',
+      name: 'Sunita Devi',
+      phone: '9898989802',
+      gender: 'FEMALE',
+      dateOfBirth: new Date('1990-08-20'),
+      age: 35,
+      bloodGroup: 'O+',
+      address: '12, Vasant Kunj',
+      city: 'Delhi',
+      allergies: JSON.stringify([]),
+      clinicId: clinic.id
     }),
-    prisma.patient.upsert({
-      where: { patientId: 'P-0003' },
-      update: {},
-      create: {
-        patientId: 'P-0003',
-        name: 'Vikram Singh',
-        phone: '9898989803',
-        gender: 'MALE',
-        dateOfBirth: new Date('1978-12-10'),
-        age: 47,
-        bloodGroup: 'A+',
-        address: '78, Model Town',
-        city: 'Ghaziabad',
-        allergies: JSON.stringify(['Sulfa drugs']),
-        medicalHistory: JSON.stringify({
-          conditions: ['Type 2 Diabetes', 'High Cholesterol'],
-          medications: ['Metformin 500mg']
-        }),
-        clinicId: clinic.id
-      }
+    ensure('patient', { patientId: 'P-0003' }, {
+      patientId: 'P-0003',
+      name: 'Vikram Singh',
+      phone: '9898989803',
+      gender: 'MALE',
+      dateOfBirth: new Date('1978-12-10'),
+      age: 47,
+      bloodGroup: 'A+',
+      address: '78, Model Town',
+      city: 'Ghaziabad',
+      allergies: JSON.stringify(['Sulfa drugs']),
+      medicalHistory: JSON.stringify({
+        conditions: ['Type 2 Diabetes', 'High Cholesterol'],
+        medications: ['Metformin 500mg']
+      }),
+      clinicId: clinic.id
     }),
-    prisma.patient.upsert({
-      where: { patientId: 'P-0004' },
-      update: {},
-      create: {
-        patientId: 'P-0004',
-        name: 'Anjali Kapoor',
-        phone: '9898989804',
-        gender: 'FEMALE',
-        dateOfBirth: new Date('1995-03-25'),
-        age: 30,
-        bloodGroup: 'AB+',
-        address: '23, Raj Nagar',
-        city: 'Noida',
-        clinicId: clinic.id
-      }
+    ensure('patient', { patientId: 'P-0004' }, {
+      patientId: 'P-0004',
+      name: 'Anjali Kapoor',
+      phone: '9898989804',
+      gender: 'FEMALE',
+      dateOfBirth: new Date('1995-03-25'),
+      age: 30,
+      bloodGroup: 'AB+',
+      address: '23, Raj Nagar',
+      city: 'Noida',
+      clinicId: clinic.id
     }),
-    prisma.patient.upsert({
-      where: { patientId: 'P-0005' },
-      update: {},
-      create: {
-        patientId: 'P-0005',
-        name: 'Mohan Lal',
-        phone: '9898989805',
-        gender: 'MALE',
-        dateOfBirth: new Date('1960-07-08'),
-        age: 65,
-        bloodGroup: 'B-',
-        address: '56, Sector 18',
-        city: 'Noida',
-        allergies: JSON.stringify(['Aspirin']),
-        medicalHistory: JSON.stringify({
-          conditions: ['Arthritis', 'Hypertension'],
-          surgeries: ['Knee replacement (2020)']
-        }),
-        clinicId: clinic.id
-      }
+    ensure('patient', { patientId: 'P-0005' }, {
+      patientId: 'P-0005',
+      name: 'Mohan Lal',
+      phone: '9898989805',
+      gender: 'MALE',
+      dateOfBirth: new Date('1960-07-08'),
+      age: 65,
+      bloodGroup: 'B-',
+      address: '56, Sector 18',
+      city: 'Noida',
+      allergies: JSON.stringify(['Aspirin']),
+      medicalHistory: JSON.stringify({
+        conditions: ['Arthritis', 'Hypertension'],
+        surgeries: ['Knee replacement (2020)']
+      }),
+      clinicId: clinic.id
     })
   ]);
   console.log(`   ✅ Ensured ${patients.length} patients`);
