@@ -226,17 +226,25 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
 };
 
 // AuthProvider component for initialization
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export const AuthProvider = ({ children }) => {
   const loadUser = useAuthStore((state) => state.loadUser);
-  const isLoading = useAuthStore((state) => state.isLoading);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    loadUser();
+    let mounted = true;
+    (async () => {
+      try {
+        await loadUser();
+      } finally {
+        if (mounted) setInitialized(true);
+      }
+    })();
+    return () => { mounted = false; };
   }, [loadUser]);
 
-  if (isLoading) {
+  if (!initialized) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
