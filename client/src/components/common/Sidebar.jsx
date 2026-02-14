@@ -128,11 +128,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     // If clinic-level overrides are configured, they are authoritative for mapped permissions.
     if (rolePermissions) {
       if (requiredPerm) {
-        // If clinic-level overrides exist but this specific role has no entry,
-        // fall back to static role membership to avoid hiding everything for
-        // roles that haven't been configured yet.
-        if (permsForRole === undefined) return roleMatch;
-        return Array.isArray(permsForRole) && permsForRole.includes(requiredPerm);
+        // If clinic-level overrides exist but this specific role has no
+        // non-empty entry, fall back to static role membership so users
+        // (e.g., STAFF) don't lose all menu items unexpectedly.
+        const hasNonEmptyOverride = Array.isArray(permsForRole) && permsForRole.length > 0;
+        if (!hasNonEmptyOverride) return roleMatch;
+        return permsForRole.includes(requiredPerm);
       }
       return roleMatch;
     }
