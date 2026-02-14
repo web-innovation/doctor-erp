@@ -19,8 +19,13 @@ const useAuthStore = create(
 
       // Simple setter for when login is done externally (e.g., via mutation)
       setAuth: (user, token) => {
-        localStorage.setItem('token', token);
-        set({ user, token, isLoading: false, error: null });
+        try { localStorage.setItem('token', token); } catch (e) { /* ignore */ }
+        // Compute clinic-admin flag consistently so UI immediately reflects admin role
+        const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+        const isClinicAdminFlag = !!(
+          user?.isClinicAdmin || user?.clinicRole === 'ADMIN' || user?.isOwner || demoAdminEmails.includes(user?.email)
+        );
+        set({ user: { ...user, isClinicAdmin: isClinicAdminFlag }, token, isLoading: false, error: null });
       },
 
       login: async (email, password) => {
