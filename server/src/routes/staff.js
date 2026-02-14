@@ -1,6 +1,8 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import { logAuthEvent } from '../middleware/hipaaAudit.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -45,15 +47,19 @@ router.get('/', checkPermission('staff', 'read'), async (req, res, next) => {
 // POST / - Create staff member  
 router.post('/', checkPermission('staff', 'create'), async (req, res, next) => {
   try {
-    const { name, email, phone, employeeId, department, designation, joinDate, salary, role = 'STAFF' } = req.body;
+    const { name, email, phone, employeeId, department, designation, joinDate, salary, role = 'STAFF', password } = req.body;
     const clinicId = req.user.clinicId;
 
     // Create user and staff in transaction
     const result = await prisma.$transaction(async (tx) => {
+      let pw = '$2b$10$EpRnTzVlUpcdirVHxERBgOiXa6Dz2i5bPcZlRVe.JeDGh2oOKz8Dm';
+      if (password) {
+        pw = await bcrypt.hash(password, 10);
+      }
       const user = await tx.user.create({
         data: {
           name, email, phone: phone || null, role,
-          password: '$2b$10$EpRnTzVlUpcdirVHxERBgOiXa6Dz2i5bPcZlRVe.JeDGh2oOKz8Dm', // default: password123
+          password: pw,
           clinicId
         }
       });
@@ -73,6 +79,90 @@ router.post('/', checkPermission('staff', 'create'), async (req, res, next) => {
     if (error.code === 'P2002') {
       return res.status(400).json({ success: false, message: 'Email or Employee ID already exists' });
     }
+    next(error);
+  }
+});
+
+// POST /link-user - Convert an existing user into a staff record (link by userId)
+router.post('/link-user', checkPermission('staff', 'create'), async (req, res, next) => {
+  try {
+    const { userId, employeeId, department, designation, joinDate, salary } = req.body;
+    const clinicId = req.user.clinicId;
+
+    if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+
+    // Verify user exists and belongs to the clinic
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (user.clinicId !== clinicId) return res.status(403).json({ success: false, message: 'User does not belong to your clinic' });
+
+    // If a staff record already exists for this user, return it
+    const existing = await prisma.staff.findUnique({ where: { userId } });
+    if (existing) return res.status(200).json({ success: true, data: existing, message: 'Staff record already exists for this user' });
+
+    const staff = await prisma.staff.create({
+      data: {
+        userId: user.id,
+        clinicId,
+        employeeId: employeeId || null,
+        department: department || null,
+        designation: designation || null,
+        joinDate: joinDate ? new Date(joinDate) : new Date(),
+        salary: salary ? parseFloat(salary) : null
+      },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true } } }
+    });
+
+    res.status(201).json({ success: true, data: staff });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ success: false, message: 'Employee ID already exists' });
+    }
+    next(error);
+  }
+});
+
+// POST /ensure-staff - Ensure a user exists (by email) and is linked to a staff record.
+// If the user doesn't exist, creates the user (with provided password) and then creates staff.
+router.post('/ensure-staff', checkPermission('staff', 'create'), async (req, res, next) => {
+  try {
+    const { email, name, phone, role = 'STAFF', password, employeeId, department, designation, joinDate, salary } = req.body;
+    const clinicId = req.user.clinicId;
+
+    if (!email) return res.status(400).json({ success: false, message: 'email is required' });
+
+    // Find or create user
+    let user = await prisma.user.findFirst({ where: { email } });
+    if (!user) {
+      if (!password) return res.status(400).json({ success: false, message: 'User not found; provide `password` to create one' });
+      const hashed = await bcrypt.hash(password, 10);
+      user = await prisma.user.create({
+        data: { email, name: name || email.split('@')[0], phone: phone || null, role, password: hashed, clinicId }
+      });
+    }
+
+    if (user.clinicId !== clinicId) return res.status(403).json({ success: false, message: 'User belongs to a different clinic' });
+
+    // Create staff if missing
+    const existing = await prisma.staff.findUnique({ where: { userId: user.id } });
+    if (existing) return res.status(200).json({ success: true, data: existing, message: 'Staff already exists for this user' });
+
+    const staff = await prisma.staff.create({
+      data: {
+        userId: user.id,
+        clinicId,
+        employeeId: employeeId || null,
+        department: department || null,
+        designation: designation || null,
+        joinDate: joinDate ? new Date(joinDate) : new Date(),
+        salary: salary ? parseFloat(salary) : null
+      },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true, role: true } } }
+    });
+
+    res.status(201).json({ success: true, data: staff });
+  } catch (error) {
+    if (error.code === 'P2002') return res.status(400).json({ success: false, message: 'Unique constraint failed' });
     next(error);
   }
 });
@@ -408,15 +498,19 @@ router.get('/:id', checkPermission('staff', 'read'), async (req, res, next) => {
 // PUT /:id - Update staff
 router.put('/:id', checkPermission('staff', 'update'), async (req, res, next) => {
   try {
-    const { name, email, phone, employeeId, department, designation, joinDate, salary } = req.body;
+    const { name, email, phone, employeeId, department, designation, joinDate, salary, password } = req.body;
     
     const staff = await prisma.staff.findUnique({ where: { id: req.params.id }, include: { user: true } });
     if (!staff) return res.status(404).json({ success: false, message: 'Staff not found' });
+    let hashedPassword;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: staff.userId },
-        data: { name, email, phone: phone || null }
+        data: Object.assign({ name, email, phone: phone || null }, hashedPassword ? { password: hashedPassword } : {})
       });
       return tx.staff.update({
         where: { id: req.params.id },
@@ -428,6 +522,19 @@ router.put('/:id', checkPermission('staff', 'update'), async (req, res, next) =>
         include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true } } }
       });
     });
+
+    // If password was changed, log audit
+    if (password) {
+      try {
+        await logAuthEvent('PASSWORD_SET', result.user.id, {
+          performedBy: req.user.id,
+          ipAddress: req.headers['x-forwarded-for'] || req.ip || 'unknown',
+          userAgent: req.headers['user-agent'] || 'unknown'
+        });
+      } catch (err) {
+        console.error('Failed to log password set event', err);
+      }
+    }
 
     res.json({ success: true, data: result });
   } catch (error) {
@@ -459,6 +566,38 @@ router.patch('/:id/activate', checkPermission('staff', 'update'), async (req, re
     
     await prisma.user.update({ where: { id: staff.userId }, data: { isActive: true } });
     res.json({ success: true, message: 'Staff activated' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /:id/reset-password - Reset or set password for a staff user's linked account
+router.post('/:id/reset-password', checkPermission('staff', 'update'), async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    const staff = await prisma.staff.findUnique({ where: { id: req.params.id } });
+    if (!staff) return res.status(404).json({ success: false, message: 'Staff not found' });
+    if (staff.clinicId !== req.user.clinicId) return res.status(403).json({ success: false, message: 'Not allowed to manage this staff' });
+
+    // Generate temporary password if not provided
+    const tempPassword = newPassword || (Math.random().toString(36).slice(-8) + 'Aa1!');
+    const hashed = await bcrypt.hash(tempPassword, 10);
+
+    await prisma.user.update({ where: { id: staff.userId }, data: { password: hashed } });
+
+    // Audit: log password reset event
+    try {
+      await logAuthEvent('PASSWORD_RESET', staff.userId, {
+        performedBy: req.user.id,
+        ipAddress: req.headers['x-forwarded-for'] || req.ip || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown'
+      });
+    } catch (err) {
+      // don't fail the request if audit logging fails
+      console.error('Failed to log password reset event', err);
+    }
+
+    res.json({ success: true, message: 'Password updated', tempPassword: newPassword ? undefined : tempPassword });
   } catch (error) {
     next(error);
   }

@@ -19,6 +19,7 @@ import {
 import { patientService } from '../../services/patientService';
 import { pharmacyService } from '../../services/pharmacyService';
 import { prescriptionService } from '../../services/prescriptionService';
+import { useHasPerm, useAuth } from '../../context/AuthContext';
 import Select from '../../components/common/Select';
 import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
@@ -57,7 +58,21 @@ const mealTimingOptions = [
 ];
 
 export default function NewPrescription() {
+  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+  if (!canCreate) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold">Access denied</h2>
+            <p className="text-sm text-gray-500 mt-2">You do not have permission to create prescriptions.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const navigate = useNavigate();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [medicineSearch, setMedicineSearch] = useState('');
   const [labTestSearch, setLabTestSearch] = useState('');
@@ -202,6 +217,7 @@ export default function NewPrescription() {
         testName: lt.name,
         instructions: lt.instructions,
         isExternal: !!lt.isExternal,
+        labId: lt.labId || null,
       })),
     };
 
@@ -225,11 +241,20 @@ export default function NewPrescription() {
 
   const handleAddLabTest = (test) => {
     appendLabTest({
-      testId: test.id,
+      testId: test.id || null,
+      labId: test.labId || null,
       name: test.name,
+      price: test.price || null,
+      labName: test.labName || null,
       instructions: '',
-      isExternal: false,
+      isExternal: !!test.isCatalog ? false : false,
     });
+    setLabTestSearch('');
+    setShowLabTestDropdown(false);
+  };
+
+  const handleAddExternalLabTest = (name) => {
+    appendLabTest({ testId: null, labId: null, name, price: null, labName: null, instructions: '', isExternal: true });
     setLabTestSearch('');
     setShowLabTestDropdown(false);
   };
@@ -250,6 +275,7 @@ export default function NewPrescription() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">New Prescription</h1>
             <p className="text-gray-500 mt-1">Create a new prescription for a patient</p>
+            <p className="text-sm text-gray-600 mt-2">Doctor: <strong className="text-gray-900">{user?.name || 'You'}</strong></p>
           </div>
         </div>
 
@@ -611,17 +637,40 @@ export default function NewPrescription() {
                   ) : (
                     labTestResults.map((test) => (
                       <button
-                        key={test.id}
+                        key={test.id || test.name}
                         type="button"
                         onClick={() => handleAddLabTest(test)}
                         className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-0"
                       >
-                        <p className="font-medium text-gray-900">{test.name}</p>
-                        {test.category && (
-                          <p className="text-sm text-gray-500">{test.category}</p>
-                        )}
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-900">{test.name}</p>
+                            {test.category && (
+                              <p className="text-sm text-gray-500">{test.category}</p>
+                            )}
+                            {test.labName && (
+                              <p className="text-xs text-gray-400">From: {test.labName}</p>
+                            )}
+                          </div>
+                          {test.price != null && (
+                            <div className="text-sm font-medium text-gray-800">{test.price} {test.currency || 'INR'}</div>
+                          )}
+                        </div>
                       </button>
                     ))
+                  )}
+
+                  {/* Allow quick add as external test */}
+                  {labTestResults.length === 0 && labTestSearch.length >= 2 && (
+                    <div className="px-4 py-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => handleAddExternalLabTest(labTestSearch)}
+                        className="w-full text-left px-3 py-2 bg-yellow-50 text-yellow-900 rounded-md"
+                      >
+                        Add "{labTestSearch}" as external lab test
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

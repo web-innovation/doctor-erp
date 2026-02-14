@@ -33,7 +33,8 @@ const menuItems = [
   { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Leave', path: '/staff/leave', icon: CalendarIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Reports', path: '/reports', icon: ChartBarIcon, roles: ['admin', 'doctor', 'accountant', 'DOCTOR', 'ACCOUNTANT', 'SUPER_ADMIN'] },
-  { name: 'Labs & Agents', path: '/labs-agents', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Labs', path: '/labs', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Agents & Commissions', path: '/agents', icon: UsersIcon, roles: ['admin', 'accountant', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Settings', path: '/settings', icon: Cog6ToothIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN'] },
 ];
 
@@ -46,20 +47,28 @@ const adminMenuItems = [
 
 const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, activeViewUser } = useAuth();
   
   // Check if we're on admin routes
   const isAdminRoute = location.pathname.startsWith('/admin');
   
-  // Get user role from AuthContext
-  const userRole = user?.role || 'DOCTOR';
-  
+  // Get user role from AuthContext — if viewing as another staff, use their role
+  const userRole = activeViewUser?.role || user?.role || 'DOCTOR';
+  const normalizedRole = (userRole || '').toString().toUpperCase();
+
+  // Determine if current real user is a clinic admin (some doctor users act as clinic admin)
+  const isClinicAdmin = user?.role === 'SUPER_ADMIN' || user?.isClinicAdmin === true || user?.clinicRole === 'ADMIN' || user?.isOwner === true;
+  // If viewing as another user, check if that viewed user should be treated as clinic admin
+  const viewingAsClinicAdmin = activeViewUser && (activeViewUser.role === 'SUPER_ADMIN' || activeViewUser.isClinicAdmin === true || activeViewUser.clinicRole === 'ADMIN' || activeViewUser.isOwner === true);
+
+  // Determine if admin is actively viewing as another staff user
+  const isViewingAsAnother = !!(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id);
   // Fetch clinic name from settings (only if not on admin routes)
   const { data: clinicSettings } = useQuery({
     queryKey: ['clinic-settings'],
     queryFn: () => settingsService.getClinicSettings(),
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    enabled: !isAdminRoute && userRole !== 'SUPER_ADMIN',
+    enabled: !isAdminRoute && normalizedRole !== 'SUPER_ADMIN',
   });
   
   const clinicName = clinicSettings?.clinicName || 'Docsy';
@@ -67,7 +76,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   // Fetch today's OPD count from dashboard stats (only if not on admin routes)
   const { data: dashboardStats } = useQuery({
     queryKey: ['dashboard-stats-sidebar'],
-    queryFn: dashboardService.getStats,
+    queryFn: () => dashboardService.getStats(),
     staleTime: 60000, // Cache for 1 minute
     refetchInterval: 60000, // Refetch every minute
     enabled: !isAdminRoute,
@@ -75,10 +84,61 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   
   const todayOPDCount = dashboardStats?.data?.appointments?.total || 0;
   
-  // Filter menu items based on user role
-  const filteredMenuItems = menuItems.filter((item) =>
-    item.roles.includes(userRole)
-  );
+  // Fetch clinic role permissions (if configured)
+  const { data: rolePermResp } = useQuery({
+    queryKey: ['rolePermissions'],
+    queryFn: () => settingsService.getRolePermissions(),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && !isAdminRoute,
+  });
+
+  const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || null;
+
+  // Map menu paths to permission keys used in rolePermissions
+  const menuPermissionMap = {
+    '/dashboard': 'dashboard:view',
+    '/patients': 'patients:read',
+    '/appointments': 'appointments:read',
+    '/prescriptions': 'prescriptions:read',
+    '/pharmacy': 'pharmacy:read',
+    '/billing': 'billing:read',
+    '/staff': 'staff:read',
+    '/reports': 'reports:opd',
+    '/settings': 'settings:clinic',
+    // granular mappings for labs and agents
+    '/labs-agents': 'labs:read',
+    '/labs': 'labs:read',
+    '/agents': 'agents:read'
+  };
+
+  // Admin should only bypass clinic-level role permissions when NOT viewing-as another staff.
+  // When a clinic admin selects a staff to "view as", the UI should respect that staff's permissions/role.
+  const bypassPermissions = (isClinicAdmin && !isViewingAsAnother) || user?.role === 'SUPER_ADMIN';
+
+  // Filter menu items based on user role and clinic-level rolePermissions (if present)
+  const filteredMenuItems = menuItems.filter((item) => {
+    // Admin clinic doctor or super admin can always see everything
+    if (bypassPermissions) return true;
+
+    const roleMatch = item.roles.some(r => r.toString().toUpperCase() === normalizedRole);
+    const roleKey = normalizedRole;
+    const requiredPerm = menuPermissionMap[item.path];
+    const permsForRole = rolePermissions && rolePermissions[roleKey];
+
+    // If clinic-level overrides are configured, they are authoritative for mapped permissions.
+    if (rolePermissions) {
+      if (requiredPerm) {
+        return Array.isArray(permsForRole) && permsForRole.includes(requiredPerm);
+      }
+      return roleMatch;
+    }
+
+    // If there are NO clinic-level overrides, hide any menu item that has a mapped permission
+    // (require explicit Access Management entry). If no mapped permission exists, fall back
+    // to static role membership.
+    if (requiredPerm) return false;
+    return roleMatch;
+  });
 
   const sidebarClasses = `
     fixed top-0 left-0 h-full bg-white shadow-xl z-50

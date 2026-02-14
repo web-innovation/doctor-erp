@@ -93,6 +93,33 @@ router.post('/products', checkPermission('pharmacy', 'create'), async (req, res,
         clinicId: req.user.clinicId
       }
     });
+    // If an initial quantity or batch info is provided, create an initial stock batch and stock history
+    if (quantity && parseInt(quantity, 10) > 0) {
+      const qty = parseInt(quantity, 10);
+      const batch = await prisma.stockBatch.create({
+        data: {
+          productId: product.id,
+          batchNumber: batchNumber || null,
+          quantity: qty,
+          expiryDate: expiryDate ? new Date(expiryDate) : null,
+          costPrice: purchasePrice || undefined
+        }
+      });
+      await prisma.stockHistory.create({
+        data: {
+          productId: product.id,
+          batchId: batch.id,
+          type: 'PURCHASE',
+          quantity: qty,
+          previousQty: 0,
+          newQty: qty,
+          notes: 'Initial stock',
+          createdBy: req.user.id
+        }
+      });
+      // Update product aggregate fields
+      await prisma.pharmacyProduct.update({ where: { id: product.id }, data: { quantity: qty, expiryDate: batch.expiryDate || null } });
+    }
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     if (error.code === 'P2002') return res.status(400).json({ success: false, message: 'Product code already exists' });
@@ -122,23 +149,81 @@ router.put('/products/:id', checkPermission('pharmacy', 'update'), async (req, r
 // POST /products/:id/stock - Update stock
 router.post('/products/:id/stock', checkPermission('pharmacy', 'update'), async (req, res, next) => {
   try {
-    const { type, quantity, reference, notes } = req.body;
+    const { type, quantity, reference, notes, expiryDate, batchNumber, costPrice } = req.body;
     const product = await prisma.pharmacyProduct.findUnique({ where: { id: req.params.id } });
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    const qty = parseInt(quantity, 10);
+    if (isNaN(qty) || qty <= 0) return res.status(400).json({ success: false, message: 'Invalid quantity' });
 
-    const previousQty = product.quantity;
-    let newQty = previousQty;
-    if (type === 'PURCHASE' || type === 'ADJUSTMENT') newQty += quantity;
-    else if (type === 'SALE' || type === 'RETURN' || type === 'EXPIRED' || type === 'DAMAGED') newQty -= quantity;
+    // PURCHASE or ADJUSTMENT -> create a new batch
+    if (type === 'PURCHASE' || type === 'ADJUSTMENT') {
+      const batch = await prisma.stockBatch.create({
+        data: {
+          productId: req.params.id,
+          batchNumber: batchNumber || null,
+          quantity: qty,
+          expiryDate: expiryDate ? new Date(expiryDate) : null,
+          costPrice: costPrice || undefined
+        }
+      });
 
-    const [updatedProduct, history] = await prisma.$transaction([
-      prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { quantity: newQty } }),
-      prisma.stockHistory.create({
-        data: { productId: req.params.id, type, quantity, previousQty, newQty, reference, notes, createdBy: req.user.id }
-      })
-    ]);
+      const previousQty = product.quantity;
+      const newQty = previousQty + qty;
+      const [updatedProduct, history] = await prisma.$transaction([
+        prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { quantity: newQty } }),
+        prisma.stockHistory.create({ data: { productId: req.params.id, batchId: batch.id, type, quantity: qty, previousQty, newQty, reference, notes, createdBy: req.user.id } })
+      ]);
 
-    res.json({ success: true, data: { product: updatedProduct, history } });
+      // Update product expiryDate to earliest non-null batch expiry
+      const agg = await prisma.stockBatch.findFirst({ where: { productId: req.params.id, expiryDate: { not: null } }, orderBy: { expiryDate: 'asc' } });
+      if (agg && agg.expiryDate) {
+        await prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { expiryDate: agg.expiryDate } });
+      }
+
+      return res.json({ success: true, data: { product: updatedProduct, history } });
+    }
+
+    // SALE / RETURN / EXPIRED / DAMAGED -> consume from batches using FEFO (earliest expiry first)
+    if (type === 'SALE' || type === 'EXPIRED' || type === 'DAMAGED' || type === 'RETURN') {
+      let remaining = qty;
+      const batches = await prisma.stockBatch.findMany({ where: { productId: req.params.id, quantity: { gt: 0 } }, orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }] });
+      const historyEntries = [];
+      let changed = false;
+
+      for (const b of batches) {
+        if (remaining <= 0) break;
+        const take = Math.min(b.quantity, remaining);
+        if (take <= 0) continue;
+        // update batch quantity
+        await prisma.stockBatch.update({ where: { id: b.id }, data: { quantity: b.quantity - take } });
+        // record history per batch
+        const prevQty = (await prisma.pharmacyProduct.findUnique({ where: { id: req.params.id } })).quantity;
+        const newQty = prevQty - take;
+        const h = await prisma.stockHistory.create({ data: { productId: req.params.id, batchId: b.id, type, quantity: take, previousQty: prevQty, newQty, reference, notes, createdBy: req.user.id } });
+        historyEntries.push(h);
+        remaining -= take;
+        changed = true;
+      }
+
+      if (remaining > 0) return res.status(400).json({ success: false, message: 'Insufficient stock to complete this operation' });
+
+      // Recalculate total product quantity from batches
+      const total = await prisma.stockBatch.aggregate({ _sum: { quantity: true }, where: { productId: req.params.id } });
+      const totalQty = total._sum.quantity || 0;
+      const upd = await prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { quantity: totalQty } });
+
+      // Update product expiryDate to earliest non-null batch expiry
+      const agg2 = await prisma.stockBatch.findFirst({ where: { productId: req.params.id, expiryDate: { not: null } }, orderBy: { expiryDate: 'asc' } });
+      if (agg2 && agg2.expiryDate) {
+        await prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { expiryDate: agg2.expiryDate } });
+      } else {
+        await prisma.pharmacyProduct.update({ where: { id: req.params.id }, data: { expiryDate: null } });
+      }
+
+      return res.json({ success: true, data: { product: upd, history: historyEntries } });
+    }
+
+    return res.status(400).json({ success: false, message: 'Unsupported stock transaction type' });
   } catch (error) {
     next(error);
   }

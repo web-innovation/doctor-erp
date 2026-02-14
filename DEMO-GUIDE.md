@@ -21,6 +21,12 @@ This guide walks through all features for recording a demo/KT video.
 
 ---
 
+**Clinic Admin (Doctor) credentials (demo):**
+
+- Primary Clinic Doctor: `doctor@demo.com` / `D0ct0r@Demo!2024`
+- Second Doctor (multi-doctor demo): `doctorb@demo.com` / `D0ct0rB@Demo!2024`
+
+
 ## 📋 Demo Flow (15-20 mins)
 
 ### 1. Landing Page (1 min)
@@ -128,6 +134,34 @@ This guide walks through all features for recording a demo/KT video.
 - [ ] Go to Labs & Agents
 - [ ] Show lab list with commission
 - [ ] Show pending commissions
+  - [ ] Open a lab and navigate to "Manage Tests" to show the per-lab test catalog (CBC, HbA1c, Lipid panel are seeded for demo).
+  - [ ] Show that selecting a lab test on a bill attaches lab metadata to the bill item.
+
+### 12. Settings (30 sec)
+- [ ] Go to Settings
+- [ ] Show clinic configuration
+- [ ] Show GST settings
+- [ ] Show working hours
+
+---
+
+## 🔁 Testing Permissions & "View As" (quick)
+
+1. Open `Settings → Access Management → Role Permissions`.
+  - Toggle `labs:create` or `agents:create` for a role and observe that the Add button appears/disappears on the `Labs & Agents` page.
+  - Note: `manage`/`create` permissions will auto-select `read` to avoid giving partial access.
+
+2. Test impersonation (View As):
+  - As a clinic admin (e.g., `doctor@demo.com`), use the "View As" feature to impersonate another staff user.
+  - While impersonating, navigate to `Labs & Agents` to verify the UI and buttons match the impersonated user's permissions.
+
+3. Seed verification:
+  - Ensure demo lab tests are present after seeding: `cd server && node prisma/seed.js`.
+  - If migrations changed, run `npx prisma migrate dev --name <name>` before seeding in development.
+
+4. Quick troubleshooting:
+  - If the Add/Edit/Delete buttons still appear for a role, check `Settings → Role Permissions` and confirm the role does not include `labs:create`, `labs:update`, `agents:create`, or `agents:update`.
+  - Server-side permission enforcement exists; if UI hides a control but the API returns 403 on mutation, the backend is correctly enforcing permissions.
 
 ### 12. Settings (30 sec)
 - [ ] Go to Settings

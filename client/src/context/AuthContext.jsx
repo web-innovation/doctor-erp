@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import authService from '../services/authService';
+import { useQuery } from '@tanstack/react-query';
+import { settingsService } from '../services/settingsService';
 
 const useAuthStore = create(
   persist(
     (set, get) => ({
       user: null,
       token: null,
+      activeViewUser: null,
       isLoading: false,
       error: null,
 
@@ -69,10 +72,34 @@ const useAuthStore = create(
           return;
         }
 
+        // If impersonation is active, let api use impersonation token to fetch profile
+        const impersonationActive = localStorage.getItem('impersonationActive') === 'true';
+        const impersonationToken = localStorage.getItem('impersonationToken');
+
         set({ isLoading: true, token });
         try {
           const response = await authService.getProfile();
-          set({ user: response.data, isLoading: false });
+          const userData = response.data || {};
+          // Compute clinic-admin flag: prefer server-provided flag, fall back to known clinic-owner/demo emails
+          const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+          const isClinicAdminFlag = !!(
+            userData.isClinicAdmin ||
+            userData.clinicRole === 'ADMIN' ||
+            userData.isOwner ||
+            demoAdminEmails.includes(userData.email)
+          );
+
+          set({ user: { ...userData, isClinicAdmin: isClinicAdminFlag }, isLoading: false });
+
+          // If impersonation active, store that separately and mark admin flag if applicable
+          if (impersonationActive && impersonationToken) {
+            const viewed = { ...userData };
+            const viewedIsClinicAdmin = !!(
+              viewed.isClinicAdmin || viewed.clinicRole === 'ADMIN' || viewed.isOwner || demoAdminEmails.includes(viewed.email)
+            );
+            // Use the store setter to normalize role
+            get().setActiveViewUser({ ...viewed, isClinicAdmin: viewedIsClinicAdmin });
+          }
         } catch (error) {
           localStorage.removeItem('token');
           set({ user: null, token: null, isLoading: false });
@@ -107,6 +134,36 @@ const useAuthStore = create(
           throw error;
         }
       },
+
+      // Helper to normalize role strings across the app
+      normalizeRole: (role) => {
+        if (!role) return 'STAFF';
+        const r = role.toString().toLowerCase();
+        if (r.includes('super')) return 'SUPER_ADMIN';
+        if (r.includes('doctor')) return 'DOCTOR';
+        if (r.includes('pharm')) return 'PHARMACIST';
+        if (r.includes('recept') || r.includes('reception')) return 'RECEPTIONIST';
+        if (r.includes('account')) return 'ACCOUNTANT';
+        if (r.includes('nurse')) return 'NURSE';
+        if (r.includes('lab')) return 'LAB_TECHNICIAN';
+        return r.toUpperCase();
+      },
+
+      // Allow admin/doctor to view dashboard as another staff/user
+      setActiveViewUser: (viewUser) => {
+        if (!viewUser) {
+          localStorage.removeItem('activeViewUserId');
+          return set({ activeViewUser: null });
+        }
+        const role = get().normalizeRole(viewUser.role);
+        // persist the id so api layer can forward viewUserId on requests
+        try { localStorage.setItem('activeViewUserId', viewUser.id); } catch (e) { /* ignore */ }
+        set({ activeViewUser: { ...viewUser, role } });
+      },
+      clearActiveViewUser: () => {
+        try { localStorage.removeItem('activeViewUserId'); } catch (e) { /* ignore */ }
+        return set({ activeViewUser: null });
+      },
     }),
     {
       name: 'auth-storage',
@@ -121,6 +178,7 @@ export const useAuth = () => {
   return {
     user: store.user,
     token: store.token,
+    activeViewUser: store.activeViewUser,
     isLoading: store.isLoading,
     error: store.error,
     isAuthenticated: !!store.user,
@@ -133,7 +191,38 @@ export const useAuth = () => {
     updateProfile: store.updateProfile,
     updatePreferences: store.updatePreferences,
     clearError: store.clearError,
+    setActiveViewUser: store.setActiveViewUser,
+    clearActiveViewUser: store.clearActiveViewUser,
   };
+};
+
+// Centralized permission check hook for components
+export const useHasPerm = (permKey, fallbackRoles = []) => {
+  const store = useAuthStore();
+  const user = store.user;
+  const activeViewUser = store.activeViewUser;
+  const normalizeRole = store.normalizeRole;
+
+  // Fetch clinic role permissions (cached via react-query)
+  const { data: rolePermResp } = useQuery({
+    queryKey: ['rolePermissions'],
+    queryFn: () => settingsService.getRolePermissions(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const rolePermissions = rolePermResp?.data || rolePermResp || null;
+
+  const effectiveRole = (activeViewUser && activeViewUser.role) || (user && normalizeRole(user.role)) || 'STAFF';
+
+  // Clinic admin (primary clinic doctor) should be able to see most things when NOT viewing-as
+  if (user?.isClinicAdmin && !(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id)) return true;
+
+  if (!rolePermissions) {
+    return fallbackRoles.includes((effectiveRole || '').toString().toUpperCase());
+  }
+
+  const perms = rolePermissions[effectiveRole?.toString().toUpperCase()];
+  if (!perms) return false;
+  return perms.includes(permKey);
 };
 
 // AuthProvider component for initialization

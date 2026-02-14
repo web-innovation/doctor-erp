@@ -155,8 +155,15 @@ export const PERMISSIONS = {
   // Labs & Agents
   'labs:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
   'labs:manage': ['SUPER_ADMIN', 'DOCTOR'],
+  'labs:create': ['SUPER_ADMIN', 'DOCTOR'],
+  'labs:update': ['SUPER_ADMIN', 'DOCTOR'],
+  'labs:tests': ['SUPER_ADMIN', 'DOCTOR', 'LAB_TECHNICIAN'],
   'agents:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
   'agents:manage': ['SUPER_ADMIN', 'DOCTOR'],
+  'agents:create': ['SUPER_ADMIN', 'DOCTOR'],
+  'agents:update': ['SUPER_ADMIN', 'DOCTOR'],
+  'commissions:read': ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
+  'commissions:pay': ['SUPER_ADMIN', 'ACCOUNTANT'],
   LABS_AGENTS_VIEW: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT'],
   LABS_AGENTS_MANAGE: ['SUPER_ADMIN', 'DOCTOR'],
 

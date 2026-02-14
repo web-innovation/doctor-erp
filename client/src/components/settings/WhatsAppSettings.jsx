@@ -77,7 +77,7 @@ export default function WhatsAppSettings() {
   // Fetch current WhatsApp configuration
   const { data: whatsappConfig, isLoading } = useQuery({
     queryKey: ['whatsappConfig'],
-    queryFn: notificationService.getWhatsAppConfig,
+    queryFn: () => notificationService.getWhatsAppConfig(),
   });
 
   // Update form when config is loaded

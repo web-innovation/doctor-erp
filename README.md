@@ -35,6 +35,13 @@ A comprehensive Doctor Consultation & Pharmacy Management System with WhatsApp i
 - **Panel Labs**: Manage partner labs with commission settings
 - **Agents**: Track referrals, commissions, discounts
 - **Commission Payouts**: Track pending and paid commissions
+	- **Lab Tests Catalog**: Maintain per-lab test catalog (codes are unique per lab). Admins and lab staff can manage lab tests; lab tests can be selected on bills to persist lab metadata on bill items.
+
+### 👥 Impersonation / "View As"
+- **View As (Impersonation)**: Clinic admins can temporarily view the app as another staff member using the "View As" feature. This is useful when validating role-specific UI and permissions. Impersonation persists the viewed user id and forwards it to the API for accurate authorization checks.
+
+### 🔐 Access Management & Permissions
+- **Role Permissions UI**: Settings → Access Management exposes grouped permissions (General / Labs / Agents). Enabling `manage`/`create` permissions will auto-select the required `read` permissions to avoid accidental partial grants. Sidebar/menu visibility and page-level controls respect clinic-level role permissions; admins may still bypass clinic-level restrictions.
 
 ### 📱 WhatsApp Integration
 - **Appointment Booking**: Book appointments via WhatsApp
@@ -109,6 +116,8 @@ npx prisma generate
 node prisma/seed.js
 ```
 
+Note: The seed script now inserts default lab tests (e.g., CBC, HbA1c, Lipid panel) for demo labs. If you change `LabTest.code` uniqueness in `prisma/schema.prisma`, re-run migrations and seed in development.
+
 Production note: when deploying to production use `prisma migrate deploy` (not `migrate dev`) and run the seed script only if you want demo/test data. Example production commands below.
 
 5. **Start development servers**
@@ -174,6 +183,12 @@ docclinic-erp/
 | Receptionist | receptionist@demo.com | `Recept!0n@Demo24` |
 | Pharmacist | pharmacist@demo.com | `Pharm@c1st!Demo24` |
 | Accountant | accountant@demo.com | `Acc0unt@Demo!2024` |
+| Second Doctor | doctorb@demo.com | `D0ct0rB@Demo!2024` |
+
+**Clinic Admin / Demo Doctors:**
+
+- `doctor@demo.com` / `D0ct0r@Demo!2024` (primary clinic doctor)
+- `doctorb@demo.com` / `D0ct0rB@Demo!2024` (second doctor for multi-doctor demo)
 
 ## 📱 WhatsApp Commands
 

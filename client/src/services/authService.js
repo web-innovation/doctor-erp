@@ -41,8 +41,10 @@ const authService = {
    * @returns {Promise} - User profile data
    */
   getProfile: async () => {
-    const response = await api.get('/auth/profile');
-    return response.data;
+    // Server exposes current user at /auth/me
+    const response = await api.get('/auth/me');
+    // Normalize to { data: user } shape so callers expecting response.data === user work
+    return { data: response.data.user };
   },
 
   /**
@@ -55,8 +57,10 @@ const authService = {
    * @returns {Promise} - Updated user data
    */
   updateProfile: async (data) => {
-    const response = await api.put('/auth/profile', data);
-    return response.data;
+    // Server expects PATCH for profile updates
+    const response = await api.patch('/auth/profile', data);
+    // Normalize to { data: user }
+    return { data: response.data.user };
   },
 
   /**
@@ -71,6 +75,16 @@ const authService = {
       newPassword,
     });
     return response.data;
+  },
+  
+  impersonate: async (targetUserId) => {
+    const response = await api.post('/auth/impersonate', { targetUserId });
+    return response.data;
+  },
+
+  stopImpersonation: async () => {
+    // client-side only: remove impersonation token
+    return { success: true };
   },
 };
 

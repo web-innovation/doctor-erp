@@ -1,6 +1,7 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import { logImpersonation } from '../middleware/hipaaAudit.js';
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ router.get('/stats', authenticate, checkPermission('dashboard:read'), async (req
     yesterday.setDate(yesterday.getDate() - 1);
     
     const clinicId = req.user.clinicId;
+    const staffId = req.query.staffId || null; // optional: view stats for specific staff/doctor (user id)
     
     const [
       todayAppointments,
@@ -29,34 +31,34 @@ router.get('/stats', authenticate, checkPermission('dashboard:read'), async (req
       completedAppointments
     ] = await Promise.all([
       prisma.appointment.count({
-        where: { clinicId, date: { gte: today, lt: tomorrow } }
+        where: Object.assign({ clinicId, date: { gte: today, lt: tomorrow } }, staffId ? { doctorId: staffId } : {})
       }),
       prisma.appointment.count({
-        where: { clinicId, date: { gte: yesterday, lt: today } }
+        where: Object.assign({ clinicId, date: { gte: yesterday, lt: today } }, staffId ? { doctorId: staffId } : {})
       }),
       prisma.bill.aggregate({
-        where: { clinicId, createdAt: { gte: today, lt: tomorrow } },
+        where: Object.assign({ clinicId, createdAt: { gte: today, lt: tomorrow } }, staffId ? { doctorId: staffId } : {}),
         _sum: { totalAmount: true }
       }),
       prisma.bill.aggregate({
-        where: { clinicId, createdAt: { gte: yesterday, lt: today } },
+        where: Object.assign({ clinicId, createdAt: { gte: yesterday, lt: today } }, staffId ? { doctorId: staffId } : {}),
         _sum: { totalAmount: true }
       }),
       prisma.payment.aggregate({
-        where: { clinicId, createdAt: { gte: today, lt: tomorrow } },
+        where: Object.assign({ clinicId, createdAt: { gte: today, lt: tomorrow } }, staffId ? { staffId } : {}),
         _sum: { amount: true }
       }),
       prisma.patient.count({
-        where: { clinicId, createdAt: { gte: today, lt: tomorrow } }
+        where: Object.assign({ clinicId, createdAt: { gte: today, lt: tomorrow } }, staffId ? { primaryDoctorId: staffId } : {})
       }),
       prisma.bill.count({
-        where: { clinicId, createdAt: { gte: today, lt: tomorrow } }
+        where: Object.assign({ clinicId, createdAt: { gte: today, lt: tomorrow } }, staffId ? { doctorId: staffId } : {})
       }),
       prisma.appointment.count({
-        where: { clinicId, date: { gte: today, lt: tomorrow }, status: 'SCHEDULED' }
+        where: Object.assign({ clinicId, date: { gte: today, lt: tomorrow }, status: 'SCHEDULED' }, staffId ? { doctorId: staffId } : {})
       }),
       prisma.appointment.count({
-        where: { clinicId, date: { gte: today, lt: tomorrow }, status: 'COMPLETED' }
+        where: Object.assign({ clinicId, date: { gte: today, lt: tomorrow }, status: 'COMPLETED' }, staffId ? { doctorId: staffId } : {})
       })
     ]);
     
@@ -93,6 +95,7 @@ router.get('/charts', authenticate, checkPermission('dashboard:read'), async (re
   try {
     const { period = '7days' } = req.query;
     const clinicId = req.user.clinicId;
+    const staffId = req.query.staffId || null;
     const days = period === '30days' ? 30 : period === '90days' ? 90 : 7;
     
     const startDate = new Date();
@@ -102,20 +105,25 @@ router.get('/charts', authenticate, checkPermission('dashboard:read'), async (re
     const [appointmentsByStatus, collectionsByMethod, billsSummary] = await Promise.all([
       prisma.appointment.groupBy({
         by: ['status'],
-        where: { clinicId, date: { gte: startDate } },
+        where: Object.assign({ clinicId, date: { gte: startDate } }, staffId ? { doctorId: staffId } : {}),
         _count: true
       }),
       prisma.payment.groupBy({
         by: ['method'],
-        where: { clinicId, createdAt: { gte: startDate } },
+        where: Object.assign({ clinicId, createdAt: { gte: startDate } }, staffId ? { staffId } : {}),
         _sum: { amount: true }
       }),
       prisma.bill.aggregate({
-        where: { clinicId, createdAt: { gte: startDate } },
+        where: Object.assign({ clinicId, createdAt: { gte: startDate } }, staffId ? { doctorId: staffId } : {}),
         _sum: { totalAmount: true, paidAmount: true },
         _count: true
       })
     ]);
+
+    if (staffId && staffId !== req.user.id) {
+      // Record audit that current user viewed dashboard charts as another staff
+      await logImpersonation(req.user.id, staffId, { path: req.originalUrl, ipAddress: req.ip || 'unknown', userAgent: req.headers['user-agent'] });
+    }
     
     res.json({
       success: true,
@@ -139,6 +147,7 @@ router.get('/charts', authenticate, checkPermission('dashboard:read'), async (re
 router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (req, res) => {
   try {
     const clinicId = req.user.clinicId;
+    const staffId = req.query.staffId || null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -146,19 +155,22 @@ router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (re
     
     const [pendingBills, allPharmacyItems, upcomingAppointments] = await Promise.all([
       prisma.bill.count({
-        where: { clinicId, paymentStatus: { in: ['PENDING', 'PARTIAL'] }, dueAmount: { gt: 0 } }
+        where: Object.assign({ clinicId, paymentStatus: { in: ['PENDING', 'PARTIAL'] }, dueAmount: { gt: 0 } }, staffId ? { doctorId: staffId } : {})
       }),
       prisma.pharmacyProduct.findMany({
         where: { clinicId, isActive: true },
         select: { id: true, name: true, quantity: true, minStock: true },
       }),
       prisma.appointment.findMany({
-        where: { clinicId, date: { gte: today, lt: tomorrow }, status: 'SCHEDULED' },
+        where: Object.assign({ clinicId, date: { gte: today, lt: tomorrow }, status: 'SCHEDULED' }, staffId ? { doctorId: staffId } : {}),
         include: { patient: { select: { id: true, name: true } } },
         orderBy: { timeSlot: 'asc' },
         take: 5
       })
     ]);
+    if (staffId && staffId !== req.user.id) {
+      await logImpersonation(req.user.id, staffId, { path: req.originalUrl, ipAddress: req.ip || 'unknown', userAgent: req.headers['user-agent'] });
+    }
     
     // Filter items where quantity is strictly less than minStock
     const lowStockItems = allPharmacyItems.filter(item => item.quantity < (item.minStock || 10)).slice(0, 10);
@@ -179,21 +191,25 @@ router.get('/recent', authenticate, checkPermission('dashboard:read'), async (re
   try {
     const clinicId = req.user.clinicId;
     const limit = parseInt(req.query.limit) || 10;
-    
+    const staffId = req.query.staffId || null;
+
     const [recentAppointments, recentPatients, recentBills] = await Promise.all([
       prisma.appointment.findMany({
-        where: { clinicId }, orderBy: { createdAt: 'desc' }, take: limit,
+        where: Object.assign({ clinicId }, staffId ? { doctorId: staffId } : {}), orderBy: { createdAt: 'desc' }, take: limit,
         include: { patient: { select: { id: true, name: true } } }
       }),
       prisma.patient.findMany({
-        where: { clinicId }, orderBy: { createdAt: 'desc' }, take: limit,
+        where: Object.assign({ clinicId }, staffId ? { primaryDoctorId: staffId } : {}), orderBy: { createdAt: 'desc' }, take: limit,
         select: { id: true, patientId: true, name: true, phone: true, createdAt: true }
       }),
       prisma.bill.findMany({
-        where: { clinicId }, orderBy: { createdAt: 'desc' }, take: limit,
+        where: Object.assign({ clinicId }, staffId ? { doctorId: staffId } : {}), orderBy: { createdAt: 'desc' }, take: limit,
         include: { patient: { select: { id: true, name: true } } }
       })
     ]);
+    if (staffId && staffId !== req.user.id) {
+      await logImpersonation(req.user.id, staffId, { path: req.originalUrl, ipAddress: req.ip || 'unknown', userAgent: req.headers['user-agent'] });
+    }
     
     res.json({ success: true, data: { recentAppointments, recentPatients, recentBills } });
   } catch (error) {

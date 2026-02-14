@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -14,6 +14,7 @@ import {
   FaUserInjured,
 } from 'react-icons/fa';
 import { appointmentService } from '../../services/appointmentService';
+import { useHasPerm } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
 import Modal from '../../components/common/Modal';
 import Button from '../../components/common/Button';
@@ -45,7 +46,10 @@ const appointmentTypes = [
 export default function Appointments() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [showNewModal, setShowNewModal] = useState(searchParams.get('action') === 'new');
+  const location = useLocation();
+  const [showNewModal, setShowNewModal] = useState(
+    searchParams.get('action') === 'new' || location.pathname.endsWith('/new')
+  );
   const [activeStatus, setActiveStatus] = useState('all');
   const [dateFilter, setDateFilter] = useState('today');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
@@ -57,11 +61,11 @@ export default function Appointments() {
   // Handle URL params changes
   useEffect(() => {
     const action = searchParams.get('action');
-    if (action === 'new') {
+    if (action === 'new' || location.pathname.endsWith('/new')) {
       setShowNewModal(true);
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, location.pathname]);
 
   const {
     register,
@@ -185,6 +189,8 @@ export default function Appointments() {
     });
   };
 
+  const canCreate = useHasPerm('appointments:create', ['DOCTOR', 'SUPER_ADMIN', 'RECEPTIONIST']);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -194,9 +200,11 @@ export default function Appointments() {
             <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
             <p className="text-gray-500 mt-1">Manage and schedule patient appointments</p>
           </div>
-          <Button iconLeft={FaPlus} onClick={() => setShowNewModal(true)}>
-            New Appointment
-          </Button>
+          {canCreate && (
+            <Button iconLeft={FaPlus} onClick={() => setShowNewModal(true)}>
+              New Appointment
+            </Button>
+          )}
         </div>
 
         {/* Filters */}
@@ -466,12 +474,18 @@ export default function Appointments() {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleSubmit(onSubmit)}
-                loading={createMutation.isPending}
-              >
-                Create Appointment
-              </Button>
+                  {canCreate ? (
+                    <Button
+                      onClick={handleSubmit(onSubmit)}
+                      loading={createMutation.isPending}
+                    >
+                      Create Appointment
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" disabled>
+                      Permission required
+                    </Button>
+                  )}
             </>
           }
         >

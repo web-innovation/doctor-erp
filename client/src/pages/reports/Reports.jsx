@@ -27,6 +27,7 @@ import {
   FaArrowDown,
 } from 'react-icons/fa';
 import reportService from '../../services/reportService';
+import { useHasPerm } from '../../context/AuthContext';
 
 ChartJS.register(
   CategoryScale,
@@ -69,12 +70,49 @@ const SummaryCard = ({ title, value, change, changeType, icon: Icon, color }) =>
 );
 
 export default function Reports() {
+  // Hook calls must be unconditional — declare state and permission hooks first
   const [activeTab, setActiveTab] = useState('sales');
   const [dateRange, setDateRange] = useState({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
   });
   const [groupBy, setGroupBy] = useState('day');
+
+  // Tab-level permissions (hooks called unconditionally)
+  const canViewSales = useHasPerm('reports:sales', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+  const canViewOPD = useHasPerm('reports:opd', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+  const canViewPharmacy = useHasPerm('reports:pharmacy', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+  const canViewCommissions = useHasPerm('reports:commissions', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+  const canViewReportsGlobal = useHasPerm('reports:view', ['DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT']);
+
+  const canViewReports = canViewReportsGlobal || canViewSales || canViewOPD || canViewPharmacy || canViewCommissions;
+
+  if (!canViewReports) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold">Reports not available</h2>
+            <p className="text-sm text-gray-500 mt-2">Your role does not have access to reports. Contact the clinic administrator if you need access.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const allowedTabs = TABS.filter((t) => {
+    switch (t.id) {
+      case 'sales':
+        return canViewSales;
+      case 'opd':
+        return canViewOPD;
+      case 'pharmacy':
+        return canViewPharmacy;
+      case 'commissions':
+        return canViewCommissions;
+      default:
+        return false;
+    }
+  });
 
   // Fetch report data based on active tab
   const { data: reportData, isLoading } = useQuery({
@@ -578,7 +616,7 @@ export default function Reports() {
         {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-100">
-            {TABS.map((tab) => (
+            {allowedTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}

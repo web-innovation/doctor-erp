@@ -4,7 +4,29 @@ const staffService = {
   // Staff CRUD operations
   getAll: async (params = {}) => {
     const response = await api.get('/staff', { params });
-    return response.data;
+    const payload = response.data;
+
+    // Normalize staff list so each entry has a `user` object with `role` and `email` where possible
+    const normalizeList = (list) => list.map((s) => {
+      const userObj = s.user || (s.email || s.role ? {
+        id: s.userId || s.id || null,
+        email: s.email || (s.user && s.user.email) || '',
+        role: s.role || (s.user && s.user.role) || 'STAFF',
+        name: s.name || (s.user && s.user.name) || ''
+      } : null);
+
+      return { ...s, user: userObj };
+    });
+
+    if (Array.isArray(payload)) {
+      return normalizeList(payload);
+    }
+
+    if (payload && Array.isArray(payload.data)) {
+      return { ...payload, data: normalizeList(payload.data) };
+    }
+
+    return payload;
   },
 
   getById: async (id) => {

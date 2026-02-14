@@ -15,6 +15,8 @@ import {
   FaTimes,
 } from 'react-icons/fa';
 import pharmacyService from '../../services/pharmacyService';
+import { useAuth, useHasPerm } from '../../context/AuthContext';
+import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
 
 const TABS = [
@@ -64,6 +66,8 @@ export default function Pharmacy() {
       type: 'addition',
       quantity: '',
       notes: '',
+      expiryDate: '',
+      batchNumber: '',
     },
   });
 
@@ -124,8 +128,7 @@ export default function Pharmacy() {
 
   // Update stock mutation
   const updateStockMutation = useMutation({
-    mutationFn: ({ id, quantity, type, notes }) =>
-      pharmacyService.updateStock(id, quantity, type, notes),
+    mutationFn: (payload) => pharmacyService.updateStock(payload.id, payload),
     onSuccess: () => {
       toast.success('Stock updated successfully');
       queryClient.invalidateQueries(['products']);
@@ -223,6 +226,8 @@ export default function Pharmacy() {
       quantity: parseInt(data.quantity),
       type: typeMap[data.type] || 'ADJUSTMENT',
       notes: data.notes,
+      expiryDate: data.expiryDate || undefined,
+      batchNumber: data.batchNumber || undefined,
     });
   };
 
@@ -278,13 +283,15 @@ export default function Pharmacy() {
               Manage inventory and stock levels
             </p>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            <FaPlus />
-            Add Product
-          </button>
+          {useHasPerm('pharmacy:create', ['SUPER_ADMIN', 'DOCTOR', 'PHARMACIST']) && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              <FaPlus />
+              Add Product
+            </button>
+          )}
         </div>
 
         {/* Tabs */}
@@ -741,6 +748,28 @@ export default function Pharmacy() {
                 {...registerStock('quantity', { required: true, min: 1 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Enter quantity"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Batch Number
+              </label>
+              <input
+                {...registerStock('batchNumber')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Optional batch number"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Expiry Date
+              </label>
+              <input
+                type="date"
+                {...registerStock('expiryDate')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 

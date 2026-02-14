@@ -241,4 +241,32 @@ export async function logEmergencyAccess(userId, reason, patientId, details = {}
   });
 }
 
+/**
+ * Log impersonation / view-as events for audit
+ */
+export async function logImpersonation(requestingUserId, targetUserId, details = {}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    action: 'VIEW_AS',
+    entity: 'dashboard',
+    entityId: targetUserId,
+    newData: sanitizeData(details) || null,
+    ipAddress: details.ipAddress || 'unknown',
+    userAgent: details.userAgent || 'unknown',
+    userId: requestingUserId
+  };
+
+  logger.info(`HIPAA_IMPERSONATION: ${JSON.stringify(logEntry)}`);
+
+  await createAuditLog({
+    action: 'VIEW_AS',
+    entity: 'dashboard',
+    entityId: targetUserId,
+    newData: details || null,
+    ipAddress: details.ipAddress || 'unknown',
+    userAgent: details.userAgent || 'unknown',
+    userId: requestingUserId
+  });
+}
+
 export default hipaaAuditMiddleware;

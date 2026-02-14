@@ -3,8 +3,9 @@ import api from './api';
 const settingsService = {
   // Profile settings
   getProfile: async () => {
-    const response = await api.get('/auth/profile');
-    return response.data?.data || response.data;
+    const response = await api.get('/auth/me');
+    // Server returns { user } — adapt to previous callers expecting response.data to be user
+    return response.data?.user || response.data;
   },
 
   updateProfile: async (data) => {

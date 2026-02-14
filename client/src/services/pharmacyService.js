@@ -71,12 +71,16 @@ const pharmacyService = {
    * @param {string} [notes] - Notes for the transaction
    * @returns {Promise} - Updated product data with new stock
    */
-  updateStock: async (id, quantity, type, notes = '') => {
-    const response = await api.post(`/pharmacy/products/${id}/stock`, {
-      quantity,
-      type,
-      notes,
-    });
+  updateStock: async (id, payload) => {
+    const body = {
+      quantity: payload.quantity,
+      type: payload.type,
+      notes: payload.notes,
+    };
+    if (payload.expiryDate) body.expiryDate = payload.expiryDate;
+    if (payload.batchNumber) body.batchNumber = payload.batchNumber;
+    if (payload.costPrice) body.costPrice = payload.costPrice;
+    const response = await api.post(`/pharmacy/products/${id}/stock`, body);
     return response.data;
   },
 

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { patientService } from '../../services/patientService';
+import labsAgentsService from '../../services/labsAgentsService';
 import {
   MagnifyingGlassIcon,
   BellIcon,
@@ -11,7 +13,10 @@ import {
   PlusIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, useHasPerm } from '../../context/AuthContext';
+import staffService from '../../services/staffService';
+import authService from '../../services/authService';
+import { useQueryClient } from '@tanstack/react-query';
 import { dashboardService } from '../../services/dashboardService';
 
 const Header = ({ onMenuClick }) => {
@@ -26,12 +31,17 @@ const Header = ({ onMenuClick }) => {
   
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, activeViewUser, setActiveViewUser, clearActiveViewUser } = useAuth();
 
-  // Fetch alerts/notifications from dashboard API
+  // Dev debug: log active view changes to help debug role/permission issues
+  useEffect(() => {
+    console.log('DEBUG activeViewUser changed:', activeViewUser, 'currentUser:', user);
+  }, [activeViewUser, user]);
+
+  // Fetch alerts/notifications from dashboard API (scope by activeViewUser when present)
   const { data: alertsData } = useQuery({
-    queryKey: ['dashboardAlerts'],
-    queryFn: dashboardService.getAlerts,
+    queryKey: ['dashboardAlerts', activeViewUser?.id || null],
+    queryFn: () => dashboardService.getAlerts(activeViewUser?.id || null),
     refetchInterval: 60000, // Refresh every minute
   });
 
@@ -69,7 +79,54 @@ const Header = ({ onMenuClick }) => {
     }));
   };
 
-  const breadcrumbs = getBreadcrumbs();
+  const [breadcrumbsState, setBreadcrumbsState] = useState(getBreadcrumbs());
+
+  // Expose a simple `breadcrumbs` variable for JSX usage
+  const breadcrumbs = breadcrumbsState;
+
+  // Replace ID segments with readable names for patients and labs when possible
+  useEffect(() => {
+    let mounted = true;
+    const paths = location.pathname.split('/').filter(Boolean);
+    const initial = getBreadcrumbs();
+    setBreadcrumbsState(initial);
+
+    (async () => {
+      try {
+        for (let i = 0; i < paths.length; i++) {
+          const seg = paths[i];
+          const prev = paths[i - 1];
+          if (!seg) continue;
+
+          // If path is /patients/:id -> fetch patient name
+          if (prev === 'patients') {
+            try {
+              const resp = await patientService.getById(seg);
+              const name = resp?.name || resp?.data?.name || resp?.data;
+              if (name && mounted) {
+                setBreadcrumbsState((old) => old.map((c, idx) => (idx === i ? { ...c, name } : c)));
+              }
+            } catch (e) { /* ignore */ }
+          }
+
+          // If path is /labs-agents/:id or /labs-agents/:id/... -> fetch lab name
+          if (prev === 'labs-agents') {
+            try {
+              const resp = await labsAgentsService.getLabById(seg);
+              const name = resp?.data?.name || resp?.name;
+              if (name && mounted) {
+                setBreadcrumbsState((old) => old.map((c, idx) => (idx === i ? { ...c, name } : c)));
+              }
+            } catch (e) { /* ignore */ }
+          }
+        }
+      } catch (err) {
+        console.error('Breadcrumb name resolution error', err);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, [location.pathname]);
 
   // Get today's date
   const today = new Date().toLocaleDateString('en-US', {
@@ -81,11 +138,24 @@ const Header = ({ onMenuClick }) => {
 
   // Quick actions - navigate to pages with modals/forms
   const quickActions = [
-    { name: 'New Patient', path: '/patients?action=new', icon: UserCircleIcon },
-    { name: 'New Appointment', path: '/appointments?action=new', icon: PlusIcon },
-    { name: 'New Prescription', path: '/prescriptions/new', icon: PlusIcon },
-    { name: 'New Invoice', path: '/billing/new', icon: PlusIcon },
+    { name: 'New Patient', path: '/patients?action=new', icon: UserCircleIcon, key: 'patients' },
+    { name: 'New Appointment', path: '/appointments?action=new', icon: PlusIcon, key: 'appointments' },
+    { name: 'New Prescription', path: '/prescriptions/new', icon: PlusIcon, key: 'prescriptions' },
+    { name: 'New Invoice', path: '/billing/new', icon: PlusIcon, key: 'billing' },
   ];
+
+  const canCreatePatient = useHasPerm('patients:create', ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST']);
+  const canCreateAppointment = useHasPerm('appointments:create', ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST']);
+  const canCreatePrescription = useHasPerm('prescriptions:create', ['SUPER_ADMIN', 'DOCTOR']);
+  const canCreateBilling = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+
+  const allowedQuickActions = quickActions.filter((a) => {
+    if (a.key === 'patients') return canCreatePatient;
+    if (a.key === 'appointments') return canCreateAppointment;
+    if (a.key === 'prescriptions') return canCreatePrescription;
+    if (a.key === 'billing') return canCreateBilling;
+    return true;
+  });
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -110,6 +180,142 @@ const Header = ({ onMenuClick }) => {
     navigate('/login');
   };
 
+  // Determine clinic admin flag
+  const isClinicAdmin = user?.isClinicAdmin === true || user?.role === 'SUPER_ADMIN' || user?.clinicRole === 'ADMIN' || user?.isOwner === true;
+
+  // Helper to normalize role strings to canonical uppercase roles used across UI
+  const normalizeRole = (role) => {
+    if (!role) return 'STAFF';
+    const r = role.toString().toLowerCase();
+    if (r.includes('super')) return 'SUPER_ADMIN';
+    if (r.includes('doctor')) return 'DOCTOR';
+    if (r.includes('pharm')) return 'PHARMACIST';
+    if (r.includes('recept') || r.includes('reception')) return 'RECEPTIONIST';
+    if (r.includes('account')) return 'ACCOUNTANT';
+    if (r.includes('nurse')) return 'NURSE';
+    if (r.includes('lab')) return 'LAB_TECHNICIAN';
+    return r.toUpperCase();
+  };
+
+  // Derive role from staff entry if user.role is generic 'STAFF'
+  const deriveRoleFromStaff = (staffEntry) => {
+    if (!staffEntry) return 'STAFF';
+    const possible = [staffEntry.designation, staffEntry.department, staffEntry.role, staffEntry.user?.role, staffEntry.user?.designation];
+    for (const p of possible) {
+      if (!p) continue;
+      const r = p.toString().toLowerCase();
+      if (r.includes('pharm')) return 'PHARMACIST';
+      if (r.includes('doctor')) return 'DOCTOR';
+      if (r.includes('recept') || r.includes('reception')) return 'RECEPTIONIST';
+      if (r.includes('account')) return 'ACCOUNTANT';
+      if (r.includes('nurse')) return 'NURSE';
+      if (r.includes('lab')) return 'LAB_TECHNICIAN';
+    }
+    return 'STAFF';
+  };
+
+  // Fetch staff list for staff-switcher (visible only to clinic admin)
+  const queryClient = useQueryClient();
+  const invalidateViewQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardCharts'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardAlerts'] });
+    queryClient.invalidateQueries({ queryKey: ['patients'] });
+    queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+    queryClient.invalidateQueries({ queryKey: ['appointments'] });
+  };
+  const { data: staffResp } = useQuery({
+    queryKey: ['clinicStaff'],
+    queryFn: () => staffService.getAll({ limit: 200 }),
+    enabled: !!user && isClinicAdmin
+  });
+  const staffList = Array.isArray(staffResp) ? staffResp : (staffResp?.data || []);
+
+  const handleViewAsChange = async (e) => {
+    const uid = e.target.value;
+    if (!uid) {
+      // stop impersonation mode
+      localStorage.removeItem('impersonationToken');
+      localStorage.setItem('impersonationActive', 'false');
+      clearActiveViewUser();
+      invalidateViewQueries();
+      return;
+    }
+
+    // If logged-in user is clinic admin (or super admin), use server-side scoping (no impersonation token)
+    const isClinicAdmin = user?.isClinicAdmin === true || user?.role === 'SUPER_ADMIN';
+    if (isClinicAdmin) {
+      // find staff entry locally first
+      const staffEntry = staffList.find((s) => (s.user && s.user.id === uid) || s.id === uid);
+      if (staffEntry) {
+        const raw = staffEntry.user || { id: staffEntry.id, name: staffEntry.name, role: staffEntry.role, email: staffEntry.email };
+        let roleCandidate = raw.role;
+        if (!roleCandidate || roleCandidate === 'STAFF') roleCandidate = deriveRoleFromStaff(staffEntry);
+        const viewUser = { ...raw, role: normalizeRole(roleCandidate) };
+        // ensure no impersonation token is used
+        localStorage.removeItem('impersonationToken');
+        localStorage.setItem('impersonationActive', 'false');
+        setActiveViewUser(viewUser);
+        // refresh queries which now include activeViewUser id
+        invalidateViewQueries();
+      } else {
+        // as fallback, fetch user via API but do not request impersonation token
+        try {
+          const resp = await staffService.getById(uid);
+          const raw = resp?.data?.user || resp?.data || { id: uid };
+          let roleCandidate = raw.role;
+          if ((!roleCandidate || roleCandidate === 'STAFF') && resp?.data?.designation) roleCandidate = resp.data.designation;
+          const viewUser = { ...raw, role: normalizeRole(roleCandidate) };
+          localStorage.removeItem('impersonationToken');
+          localStorage.setItem('impersonationActive', 'false');
+          setActiveViewUser(viewUser);
+          invalidateViewQueries();
+        } catch (err) {
+          console.error('Failed to fetch staff for view-as:', err);
+        }
+      }
+
+      return;
+    }
+
+    // Non-admin doctors: request server-side impersonation token (short-lived)
+    try {
+      const resp = await authService.impersonate(uid);
+      // store impersonation token and activate
+      localStorage.setItem('impersonationToken', resp.token);
+      localStorage.setItem('impersonationActive', 'true');
+      // set active view user in store (normalize role)
+      const userRaw = resp.user || resp;
+      setActiveViewUser({ ...userRaw, role: normalizeRole(userRaw.role) });
+      // refresh queries
+      invalidateViewQueries();
+      } catch (err) {
+      // fallback: set active view user without impersonation
+      const staffEntry = staffList.find((s) => (s.user && s.user.id === uid) || s.id === uid);
+      if (staffEntry) {
+        const raw = staffEntry.user || { id: staffEntry.id, name: staffEntry.name, role: staffEntry.role };
+        let roleCandidate = raw.role;
+        if (!roleCandidate || roleCandidate === 'STAFF') roleCandidate = deriveRoleFromStaff(staffEntry);
+        setActiveViewUser({ ...raw, role: normalizeRole(roleCandidate) });
+        invalidateViewQueries();
+      }
+      console.error('Impersonation failed:', err);
+    }
+  };
+
+  const stopViewing = async () => {
+    try {
+      // Clear impersonation tokens
+      localStorage.removeItem('impersonationToken');
+      localStorage.setItem('impersonationActive', 'false');
+      // notify server if needed
+      try { await authService.stopImpersonation(); } catch (e) { /* ignore */ }
+    } finally {
+      clearActiveViewUser();
+      invalidateViewQueries();
+    }
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -122,6 +328,15 @@ const Header = ({ onMenuClick }) => {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
       <div className="px-4 md:px-6 lg:px-8">
+        {/* Viewing-as banner */}
+        {activeViewUser && activeViewUser.id && activeViewUser.id !== user?.id && (
+          <div className="bg-yellow-50 border-b border-yellow-200 text-yellow-800 px-3 py-2 text-sm flex items-center justify-between">
+            <div>Viewing as: <strong className="text-yellow-900">{activeViewUser.name || activeViewUser.email}</strong> <span className="text-xs text-gray-600">({activeViewUser.role || 'Staff'})</span></div>
+            <div>
+              <button onClick={stopViewing} className="ml-2 inline-flex items-center px-3 py-1 bg-white border border-yellow-300 rounded text-sm text-yellow-900 hover:bg-yellow-100">Stop viewing</button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between h-16">
           {/* Left section - Breadcrumbs and Date */}
           <div className="flex-1 min-w-0 hidden md:block">
@@ -163,6 +378,30 @@ const Header = ({ onMenuClick }) => {
 
           {/* Right section - Actions */}
           <div className="flex items-center space-x-4">
+            {/* Staff selector for viewing dashboard as another staff (admin/doctor only) */}
+            {isClinicAdmin && (
+              <div className="hidden sm:block">
+                <select
+                  value={activeViewUser?.id || ''}
+                  onChange={handleViewAsChange}
+                  className="border rounded-md px-2 py-1 text-sm"
+                >
+                  {/* Admin clinic is the default; selecting it clears activeViewUser */}
+                  <option value="">Admin clinic</option>
+                  {staffList
+                    .filter((s) => (s.user?.id || s.id) !== user?.id)
+                    .map((s) => {
+                      const name = s.user?.name || s.name || 'Unknown';
+                      const roleRaw = (s.user && s.user.role) || s.role || 'STAFF';
+                      const roleLabel = roleRaw.toLowerCase().replace(/_/g, ' ');
+                      const label = `${name} - ${roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1)}`;
+                      return (
+                        <option key={s.user?.id || s.id} value={s.user?.id || s.id}>{label}</option>
+                      );
+                    })}
+                </select>
+              </div>
+            )}
             {/* Quick Actions */}
             <div ref={quickActionsRef} className="relative hidden md:block">
               <button
@@ -175,7 +414,7 @@ const Header = ({ onMenuClick }) => {
 
               {showQuickActions && (
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                  {quickActions.map((action) => (
+                  {allowedQuickActions.map((action) => (
                     <Link
                       key={action.path}
                       to={action.path}

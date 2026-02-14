@@ -15,6 +15,7 @@ import {
   FaEnvelope,
 } from 'react-icons/fa';
 import { prescriptionService } from '../../services/prescriptionService';
+import { useHasPerm } from '../../context/AuthContext';
 import Modal from '../../components/common/Modal';
 import Button from '../../components/common/Button';
 
@@ -96,6 +97,8 @@ export default function Prescriptions() {
     });
   };
 
+  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -105,9 +108,11 @@ export default function Prescriptions() {
             <h1 className="text-2xl font-bold text-gray-900">Prescriptions</h1>
             <p className="text-gray-500 mt-1">View and manage patient prescriptions</p>
           </div>
-          <Link to="/prescriptions/new">
-            <Button iconLeft={FaPlus}>New Prescription</Button>
-          </Link>
+          {canCreate && (
+            <Link to="/prescriptions/new">
+              <Button iconLeft={FaPlus}>New Prescription</Button>
+            </Link>
+          )}
         </div>
 
         {/* Search Bar */}

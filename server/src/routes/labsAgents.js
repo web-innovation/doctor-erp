@@ -183,7 +183,7 @@ router.put('/agents/:id', checkPermission('agents', 'manage'), async (req, res, 
 // ==================== COMMISSIONS ====================
 
 // GET /commissions - List commissions
-router.get('/commissions', checkPermission('labs', 'read'), async (req, res, next) => {
+router.get('/commissions', checkPermission('commissions', 'read'), async (req, res, next) => {
   try {
     const { labId, agentId, status, startDate, endDate, page = 1, limit = 50 } = req.query;
     const pageNum = parseInt(page, 10);
@@ -222,7 +222,7 @@ router.get('/commissions', checkPermission('labs', 'read'), async (req, res, nex
 });
 
 // PUT /commissions/:id/pay - Mark commission as paid
-router.put('/commissions/:id/pay', checkPermission('labs', 'manage'), async (req, res, next) => {
+router.put('/commissions/:id/pay', checkPermission('commissions', 'pay'), async (req, res, next) => {
   try {
     const commission = await prisma.commissionRecord.update({
       where: { id: req.params.id },
@@ -235,3 +235,110 @@ router.put('/commissions/:id/pay', checkPermission('labs', 'manage'), async (req
 });
 
 export default router;
+
+// ==================== LAB TEST CATALOG (CRUD for lab staff) ====================
+
+// GET /labs/:labId/tests - list tests for a lab
+router.get('/labs/:labId/tests', checkPermission('labs', 'tests'), async (req, res, next) => {
+  try {
+    const { labId } = req.params;
+    const { search, isActive, page = 1, limit = 100 } = req.query;
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const where = { labId, clinicId: req.user.clinicId };
+    if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [tests, total] = await Promise.all([
+      prisma.labTest.findMany({ where, skip, take: parseInt(limit, 10), orderBy: { name: 'asc' } }),
+      prisma.labTest.count({ where })
+    ]);
+
+    res.json({ success: true, data: tests, pagination: { page: parseInt(page, 10), limit: parseInt(limit, 10), total } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Helper to check if current user is lab staff for labId
+async function isUserLabStaff(userId, labId) {
+  const staff = await prisma.staff.findFirst({ where: { userId, clinicId: undefined } }).catch(() => null);
+  // Prefer using staff by userId and clinicId matching will be checked below
+  const labStaff = await prisma.labStaff.findFirst({ where: { labId, staffId: staff ? staff.id : undefined } }).catch(() => null);
+  return !!labStaff;
+}
+
+// POST /labs/:labId/tests - create test (admin or lab staff)
+router.post('/labs/:labId/tests', checkPermission('labs', 'manage'), async (req, res, next) => {
+  try {
+    const { labId } = req.params;
+    const { name, code, category, description, price, currency } = req.body;
+
+    // Only clinic admin or lab staff can add tests
+    const isAdmin = req.user.isClinicAdmin || req.user.role === 'SUPER_ADMIN';
+    const lab = await prisma.lab.findUnique({ where: { id: labId } });
+    if (!lab || lab.clinicId !== req.user.clinicId) return res.status(404).json({ success: false, message: 'Lab not found' });
+
+    let allowed = isAdmin;
+    if (!allowed) {
+      const labStaff = await prisma.labStaff.findFirst({ where: { labId, clinicId: req.user.clinicId, staff: { userId: req.user.id } }, include: { staff: true } }).catch(() => null);
+      allowed = !!labStaff;
+    }
+
+    if (!allowed) return res.status(403).json({ success: false, message: 'Permission denied to add lab tests' });
+
+    const test = await prisma.labTest.create({ data: { name, code, category, description, price: price || 0, currency: currency || 'INR', labId, clinicId: req.user.clinicId } });
+    res.status(201).json({ success: true, data: test });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /labs/:labId/tests/:testId - update test
+router.put('/labs/:labId/tests/:testId', checkPermission('labs', 'manage'), async (req, res, next) => {
+  try {
+    const { labId, testId } = req.params;
+    const { name, code, category, description, price, isActive, currency } = req.body;
+
+    const lab = await prisma.lab.findUnique({ where: { id: labId } });
+    if (!lab || lab.clinicId !== req.user.clinicId) return res.status(404).json({ success: false, message: 'Lab not found' });
+
+    const isAdmin = req.user.isClinicAdmin || req.user.role === 'SUPER_ADMIN';
+    let allowed = isAdmin;
+    if (!allowed) {
+      const labStaff = await prisma.labStaff.findFirst({ where: { labId, clinicId: req.user.clinicId, staff: { userId: req.user.id } }, include: { staff: true } }).catch(() => null);
+      allowed = !!labStaff;
+    }
+    if (!allowed) return res.status(403).json({ success: false, message: 'Permission denied to update lab tests' });
+
+    const updated = await prisma.labTest.update({ where: { id: testId }, data: { name, code, category, description, price, isActive, currency } });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /labs/:labId/tests/:testId - delete test
+router.delete('/labs/:labId/tests/:testId', checkPermission('labs', 'manage'), async (req, res, next) => {
+  try {
+    const { labId, testId } = req.params;
+    const lab = await prisma.lab.findUnique({ where: { id: labId } });
+    if (!lab || lab.clinicId !== req.user.clinicId) return res.status(404).json({ success: false, message: 'Lab not found' });
+    const isAdmin = req.user.isClinicAdmin || req.user.role === 'SUPER_ADMIN';
+    let allowed = isAdmin;
+    if (!allowed) {
+      const labStaff = await prisma.labStaff.findFirst({ where: { labId, clinicId: req.user.clinicId, staff: { userId: req.user.id } }, include: { staff: true } }).catch(() => null);
+      allowed = !!labStaff;
+    }
+    if (!allowed) return res.status(403).json({ success: false, message: 'Permission denied to delete lab tests' });
+
+    await prisma.labTest.delete({ where: { id: testId } });
+    res.json({ success: true, message: 'Lab test deleted' });
+  } catch (error) {
+    next(error);
+  }
+});

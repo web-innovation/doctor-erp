@@ -15,6 +15,8 @@ import {
   FaTimes,
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
+import { useAuth, useHasPerm } from '../../context/AuthContext';
+import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
 
 export default function Patients() {
@@ -33,18 +35,22 @@ export default function Patients() {
   const pageSize = 10;
 
   // Handle URL params changes
+  const canCreate = useHasPerm('patients:create', ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST']);
+
   useEffect(() => {
     const action = searchParams.get('action');
     const search = searchParams.get('search');
     if (action === 'new') {
-      setIsAddModalOpen(true);
+      if (canCreate) {
+        setIsAddModalOpen(true);
+      }
       setSearchParams({}, { replace: true });
     }
     if (search) {
       setSearchQuery(search);
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, canCreate]);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
@@ -156,13 +162,15 @@ export default function Patients() {
               Manage and view all patient records
             </p>
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            <FaPlus />
-            Add Patient
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              <FaPlus />
+              Add Patient
+            </button>
+          )}
         </div>
 
         {/* Search and Filters Bar */}

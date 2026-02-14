@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { useAuth, useHasPerm } from './context/AuthContext';
 import { SessionTimeoutWarning } from './components/common';
 
 // Layouts
@@ -28,6 +28,7 @@ import Attendance from './pages/staff/Attendance';
 import Leave from './pages/staff/Leave';
 import Reports from './pages/reports/Reports';
 import LabsAgents from './pages/labs-agents/LabsAgents';
+import LabTests from './pages/labs-agents/LabTests';
 import Settings from './pages/settings/Settings';
 
 // Admin Pages
@@ -55,8 +56,10 @@ function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />;
+  if (allowedRoles) {
+    const userRole = (user?.role || '').toString().toUpperCase();
+    const allowed = allowedRoles.map(r => r.toString().toUpperCase());
+    if (!allowed.includes(userRole)) return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -91,6 +94,7 @@ function App() {
         
         {/* Appointments */}
         <Route path="/appointments" element={<Appointments />} />
+        <Route path="/appointments/new" element={<Appointments />} />
         <Route path="/appointments/calendar" element={<AppointmentCalendar />} />
         
         {/* Prescriptions */}
@@ -112,14 +116,27 @@ function App() {
         <Route path="/staff/leave" element={<Leave />} />
         
         {/* Reports */}
-        <Route path="/reports" element={
-          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
-            <Reports />
-          </ProtectedRoute>
-        } />
+        <Route path="/reports" element={<ReportsRoute />} />
         
         {/* Labs & Agents */}
         <Route path="/labs-agents" element={
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+            <LabsAgents />
+          </ProtectedRoute>
+        } />
+        <Route path="/labs" element={
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+            <LabsAgents />
+          </ProtectedRoute>
+        } />
+        <Route path="/labs-agents/:labId/tests" element={
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+            <LabTests />
+          </ProtectedRoute>
+        } />
+
+        {/* Separate Agents & Commissions route (not tied to Labs menu) */}
+        <Route path="/agents" element={
           <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
             <LabsAgents />
           </ProtectedRoute>
@@ -153,6 +170,18 @@ function App() {
     </Routes>
     </>
   );
+}
+
+// Route wrapper using permission-based check for reports
+function ReportsRoute() {
+  const canAccess =
+    useHasPerm('reports:opd') ||
+    useHasPerm('reports:sales') ||
+    useHasPerm('reports:pharmacy') ||
+    useHasPerm('reports:commissions') ||
+    useHasPerm('reports:view', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
+  if (!canAccess) return <Navigate to="/dashboard" replace />;
+  return <Reports />;
 }
 
 export default App;

@@ -83,6 +83,27 @@ const labsAgentsService = {
     const response = await api.get('/labs-agents/commissions/summary', { params });
     return response.data;
   },
+
+  // Lab test catalog operations
+  getLabTests: async (labId, params = {}) => {
+    const response = await api.get(`/labs-agents/labs/${labId}/tests`, { params });
+    return response.data;
+  },
+
+  createLabTest: async (labId, data) => {
+    const response = await api.post(`/labs-agents/labs/${labId}/tests`, data);
+    return response.data;
+  },
+
+  updateLabTest: async (labId, testId, data) => {
+    const response = await api.put(`/labs-agents/labs/${labId}/tests/${testId}`, data);
+    return response.data;
+  },
+
+  deleteLabTest: async (labId, testId) => {
+    const response = await api.delete(`/labs-agents/labs/${labId}/tests/${testId}`);
+    return response.data;
+  },
 };
 
 export { labsAgentsService };

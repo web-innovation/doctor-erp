@@ -50,9 +50,29 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
       ];
     }
 
-    // Restrict patients to doctor's own patients if requester is a DOCTOR
+    // Restrict patients to doctor's own patients by default.
+    // Support optional `viewUserId` query param: when provided, a doctor may view that user's patients
+    // only if it's their own id or a staff assigned to them (this supports the header "view as staff" dropdown).
+    const viewUserId = req.query.viewUserId;
     if (req.user.role === 'DOCTOR') {
-      where.primaryDoctorId = req.user.id;
+      if (viewUserId) {
+        // allow if viewing self
+        if (viewUserId === req.user.id) {
+          where.primaryDoctorId = req.user.id;
+        } else {
+          // validate that viewUserId corresponds to a staff user assigned to this doctor
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (assignment) {
+            where.primaryDoctorId = viewUserId;
+          } else {
+            return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
+          }
+        }
+      } else {
+        where.primaryDoctorId = req.user.id;
+      }
     }
 
     const [patientsRaw, total] = await Promise.all([
@@ -105,9 +125,21 @@ router.get('/:id', checkPermission('patients', 'read'), async (req, res, next) =
     });
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
-    // Enforce doctor-only access: doctors can view only their own patients
-    if (req.user.role === 'DOCTOR' && patient.primaryDoctorId && patient.primaryDoctorId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Permission denied' });
+    // Enforce doctor-only access: by default only their own patients; allow viewing a staff user's patients when `viewUserId` is provided and authorized
+    if (req.user.role === 'DOCTOR') {
+      const viewUserId = req.query.viewUserId;
+      if (viewUserId) {
+        if (viewUserId === req.user.id) {
+          // allowed
+        } else {
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied' });
+        }
+      } else {
+        if (patient.primaryDoctorId && patient.primaryDoctorId !== req.user.id) return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
     }
 
     // Parse JSON fields and normalize names for frontend

@@ -51,9 +51,22 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
       if (endDate) where.date.lte = new Date(endDate);
     }
 
-    // Restrict to doctor's own prescriptions when the requester is a DOCTOR
+    // Restrict to doctor's own prescriptions by default. Support optional `viewUserId` to view a staff user's prescriptions.
+    const viewUserId = req.query.viewUserId;
     if (req.user.role === 'DOCTOR') {
-      where.doctorId = req.user.id;
+      if (viewUserId) {
+        if (viewUserId === req.user.id) {
+          where.doctorId = req.user.id;
+        } else {
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
+          where.doctorId = viewUserId;
+        }
+      } else {
+        where.doctorId = req.user.id;
+      }
     }
 
     const [prescriptions, total] = await Promise.all([
@@ -122,9 +135,21 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
 
-    // Enforce doctor-only access: doctors can view only their own prescriptions
-    if (req.user.role === 'DOCTOR' && prescription.doctorId && prescription.doctorId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Permission denied' });
+    // Enforce doctor-only access: allow only own prescriptions or explicit `viewUserId` when authorized
+    if (req.user.role === 'DOCTOR') {
+      const viewUserId = req.query.viewUserId;
+      if (viewUserId) {
+        if (viewUserId === req.user.id) {
+          // allowed
+        } else {
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied' });
+        }
+      } else {
+        if (prescription.doctorId && prescription.doctorId !== req.user.id) return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
     }
 
     // Parse JSON fields
@@ -675,12 +700,37 @@ router.get('/lab-tests/search', authenticate, async (req, res, next) => {
     const { q = '' } = req.query;
     const searchLower = q.toLowerCase();
     
+    // Search server-side lab catalog for clinic and combine with common tests
+    const clinicId = req.user.clinicId;
+    const labTests = await prisma.labTest.findMany({
+      where: {
+        clinicId,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { category: { contains: q, mode: 'insensitive' } },
+          { code: { contains: q, mode: 'insensitive' } }
+        ]
+      },
+      include: { lab: { select: { id: true, name: true } } },
+      take: 20
+    });
+
     const results = commonLabTests.filter(test => 
       test.name.toLowerCase().includes(searchLower) || 
       test.category.toLowerCase().includes(searchLower)
     ).slice(0, 10);
-    
-    res.json({ success: true, data: results });
+
+    // Map labTests to unified shape and avoid duplicates by name
+    const mappedLabTests = labTests.map(t => ({ id: t.id, name: t.name, category: t.category || '', labId: t.labId, labName: t.lab?.name, price: t.price, isCatalog: true }));
+    const combined = [...mappedLabTests];
+    // Add common tests that are not already present in catalog by name
+    results.forEach(ct => {
+      if (!combined.some(c => c.name.toLowerCase() === ct.name.toLowerCase())) {
+        combined.push({ id: ct.id || null, name: ct.name, category: ct.category || '', labId: null, labName: null, price: null, isCatalog: false });
+      }
+    });
+
+    res.json({ success: true, data: combined.slice(0, 30) });
   } catch (error) {
     next(error);
   }

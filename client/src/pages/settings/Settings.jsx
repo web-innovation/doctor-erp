@@ -29,6 +29,7 @@ const TABS = [
   { id: 'email', label: 'Email', icon: FaEnvelope },
   { id: 'whatsapp', label: 'WhatsApp', icon: FaWhatsapp },
   { id: 'preferences', label: 'Preferences', icon: FaCog },
+  { id: 'access', label: 'Access Management', icon: FaUser },
 ];
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -432,6 +433,101 @@ export default function Settings() {
     </div>
   );
 
+  // If user is plain STAFF, show only change-password (no profile/clinic/access controls)
+  const isPlainStaff = user?.role === 'STAFF';
+  if (isPlainStaff) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-2xl font-bold mb-4">Settings</h1>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
+            <form onSubmit={handlePasswordSubmit(onPasswordSubmit)} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Password <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      {...registerPassword('currentPassword', {
+                        required: 'Current password is required',
+                      })}
+                      className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showCurrentPassword ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
+                  {passwordErrors.currentPassword && (
+                    <p className="mt-1 text-sm text-red-500">{passwordErrors.currentPassword.message}</p>
+                  )}
+                </div>
+                <div></div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    New Password <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      {...registerPassword('newPassword', {
+                        required: 'New password is required',
+                        minLength: { value: 8, message: 'Password must be at least 8 characters' },
+                      })}
+                      className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
+                  {passwordErrors.newPassword && (
+                    <p className="mt-1 text-sm text-red-500">{passwordErrors.newPassword.message}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm New Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    {...registerPassword('confirmPassword', {
+                      required: 'Please confirm your password',
+                      validate: (value) => value === newPasswordValue || 'Passwords do not match',
+                    })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {passwordErrors.confirmPassword && (
+                    <p className="mt-1 text-sm text-red-500">{passwordErrors.confirmPassword.message}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={changePasswordMutation.isPending}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                >
+                  <FaSave />
+                  {changePasswordMutation.isPending ? 'Changing...' : 'Change Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Render Clinic Tab
   const renderClinicTab = () => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -626,7 +722,6 @@ export default function Settings() {
         <div className="space-y-4">
           <div className="overflow-x-auto">
             <table className="w-full">
-            <RolePermissions />
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Day</th>
@@ -805,6 +900,12 @@ export default function Settings() {
         );
       case 'preferences':
         return renderPreferencesTab();
+      case 'access':
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <RolePermissions />
+          </div>
+        );
       default:
         return renderProfileTab();
     }

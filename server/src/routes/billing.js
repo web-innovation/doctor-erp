@@ -131,7 +131,8 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
       discount = 0, 
       discountType = 'AMOUNT',
       notes,
-      taxConfig 
+      taxConfig,
+      labId
     } = req.body;
     
     // Validation
@@ -181,6 +182,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
         billNo,
         clinicId: req.user.clinicId,
         doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined),
+        labId: labId || null,
         patientId,
         type,
         subtotal,
@@ -200,7 +202,9 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
             unitPrice: item.unitPrice,
             gstPercent: item.gstPercent || 0,
             amount: item.amount,
-            productId: item.productId || null
+            productId: item.productId || null,
+            labId: item.labId || null,
+            labTestId: item.labTestId || null
           }))
         }
       },

@@ -17,6 +17,8 @@ import {
   FaCalendarAlt,
 } from 'react-icons/fa';
 import billingService from '../../services/billingService';
+import { useAuth, useHasPerm } from '../../context/AuthContext';
+import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
 
 const STATUS_COLORS = {
@@ -258,13 +260,15 @@ export default function Billing() {
               Manage invoices and payments
             </p>
           </div>
-          <Link
-            to="/billing/new"
-            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            <FaPlus />
-            New Bill
-          </Link>
+          {useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']) && (
+            <Link
+              to="/billing/new"
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              <FaPlus />
+              New Bill
+            </Link>
+          )}
         </div>
 
         {/* Search and Filters */}

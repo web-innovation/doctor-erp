@@ -48,6 +48,53 @@ export default function StaffAssignments() {
     }
   };
 
+  const handleDeactivate = async (staffObj) => {
+    const displayName = staffObj.user?.name || staffObj.employeeId || 'this staff member';
+    if (!window.confirm(`Are you sure you want to deactivate "${displayName}"?`)) return;
+    try {
+      await staffService.deactivate(staffObj.id);
+      await loadAll();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || 'Failed to deactivate');
+    }
+  };
+
+  const handleActivate = async (staffId) => {
+    try {
+      await staffService.activate(staffId);
+      await loadAll();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || 'Failed to activate');
+    }
+  };
+
+  const handleResetPassword = async (staffId) => {
+    // open modal to accept password (handled by UI modal)
+    setResetModalStaffId(staffId);
+    setIsResetModalOpen(true);
+  };
+
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetModalStaffId, setResetModalStaffId] = useState(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+
+  const performResetPassword = async () => {
+    try {
+      const body = resetPasswordInput ? { newPassword: resetPasswordInput } : {};
+      const resp = await api.post(`/staff/${resetModalStaffId}/reset-password`, body);
+      const temp = resp.data?.tempPassword;
+      alert((resp.data?.message || 'Password updated') + (temp ? `\nTemporary password: ${temp}` : ''));
+      setIsResetModalOpen(false);
+      setResetPasswordInput('');
+      await loadAll();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || 'Failed to reset password');
+    }
+  };
+
   if (loading) return <div>Loading...</div>;
 
   return (
@@ -100,12 +147,47 @@ export default function StaffAssignments() {
                     }}
                     className="bg-red-600 text-white px-3 py-1 rounded"
                   >Unassign</button>
+                  { (s.user?.isActive ?? s.isActive) !== false ? (
+                    <button
+                      onClick={() => handleDeactivate(s)}
+                      className="bg-gray-600 text-white px-3 py-1 rounded ml-2"
+                    >Deactivate</button>
+                  ) : (
+                    <button
+                      onClick={() => handleActivate(s.id)}
+                      className="bg-green-600 text-white px-3 py-1 rounded ml-2"
+                    >Activate</button>
+                  )}
+                  <button
+                    onClick={() => handleResetPassword(s.id)}
+                    className="bg-yellow-600 text-white px-3 py-1 rounded ml-2"
+                  >Reset PW</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+              {/* Reset Password Modal */}
+              {isResetModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                  <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+                    <h3 className="text-lg font-semibold mb-3">Reset Password</h3>
+                    <p className="text-sm text-gray-600 mb-3">Enter a new password for the staff member, or leave blank to auto-generate a temporary password.</p>
+                    <input
+                      type="password"
+                      value={resetPasswordInput}
+                      onChange={(e) => setResetPasswordInput(e.target.value)}
+                      placeholder="New password (optional)"
+                      className="w-full px-3 py-2 border rounded mb-4"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setIsResetModalOpen(false); setResetPasswordInput(''); }} className="px-3 py-2 border rounded">Cancel</button>
+                      <button onClick={performResetPassword} className="px-3 py-2 bg-yellow-600 text-white rounded">Reset Password</button>
+                    </div>
+                  </div>
+                </div>
+              )}
     </div>
   );
 }

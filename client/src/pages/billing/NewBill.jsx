@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -16,8 +17,10 @@ import {
   FaPrint,
 } from 'react-icons/fa';
 import billingService from '../../services/billingService';
+import { useHasPerm } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
 import pharmacyService from '../../services/pharmacyService';
+import labsAgentsService from '../../services/labsAgentsService';
 
 const BILL_TYPES = [
   { id: 'consultation', label: 'Consultation', color: 'blue' },
@@ -41,6 +44,19 @@ const PAYMENT_METHODS = [
 ];
 
 export default function NewBill() {
+  const canCreateBill = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
+  if (!canCreateBill) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl p-6 border border-gray-100">
+            <h2 className="text-lg font-semibold">Access denied</h2>
+            <p className="text-sm text-gray-500 mt-2">You do not have permission to create bills.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const navigate = useNavigate();
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -48,6 +64,10 @@ export default function NewBill() {
   const [billType, setBillType] = useState('consultation');
   const [productSearch, setProductSearch] = useState('');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [labSearch, setLabSearch] = useState('');
+  const [selectedLab, setSelectedLab] = useState(null);
+  const [labTestSearch, setLabTestSearch] = useState('');
+  const [showLabTestDropdown, setShowLabTestDropdown] = useState(false);
   const [collectPayment, setCollectPayment] = useState(false);
 
   const {
@@ -75,10 +95,16 @@ export default function NewBill() {
     name: 'items',
   });
 
-  const watchItems = watch('items');
+  // Use watch to observe items; fall back to `fields` so we have a stable reference
+  const watchItems = watch('items') || fields;
   const watchDiscount = watch('discount') || 0;
   const watchDiscountType = watch('discountType');
-  const watchGstRate = watch('gstRate') || 0;
+  const watchGstRate = Number(watch('gstRate') || 0);
+
+  // Ensure gstRate is set as a numeric default so calculations run on first render
+  useEffect(() => {
+    setValue('gstRate', 0);
+  }, [setValue]);
   const watchPaymentAmount = watch('paymentAmount') || 0;
 
   // Fetch patients for search
@@ -97,6 +123,21 @@ export default function NewBill() {
 
   const patients = patientsData?.data || [];
   const products = productsData?.data || [];
+  // Fetch labs for lab billing
+  const { data: labsData } = useQuery({
+    queryKey: ['labs-search', labSearch],
+    queryFn: () => labsAgentsService.getLabs({ search: labSearch, limit: 10 }),
+    enabled: billType === 'lab' && labSearch.length >= 1,
+  });
+  const labs = labsData?.data || [];
+
+  // Fetch lab tests for selected lab
+  const { data: labTestsData } = useQuery({
+    queryKey: ['lab-tests', selectedLab?.id, labTestSearch],
+    queryFn: () => labsAgentsService.getLabTests(selectedLab?.id, { search: labTestSearch, limit: 50 }),
+    enabled: billType === 'lab' && !!selectedLab && labTestSearch.length >= 1,
+  });
+  const labTests = labTestsData?.data || [];
 
   // Calculate totals
   const calculations = useMemo(() => {
@@ -122,13 +163,18 @@ export default function NewBill() {
       gstAmount,
       total,
     };
-  }, [watchItems, watchDiscount, watchDiscountType, watchGstRate]);
+  // include a stringified items snapshot so memo recalculates when nested item fields change
+  }, [JSON.stringify(watchItems || []), watchDiscount, watchDiscountType, watchGstRate]);
 
   // Create bill mutation
+  const queryClient = useQueryClient();
+
   const createBillMutation = useMutation({
     mutationFn: (data) => billingService.createBill(data),
     onSuccess: (data) => {
       toast.success('Bill created successfully');
+      // Refresh billing list so the new bill appears immediately
+      queryClient.invalidateQueries(['bills']);
       navigate(`/billing`);
     },
     onError: (error) => {
@@ -167,6 +213,26 @@ export default function NewBill() {
 
     setProductSearch('');
     setShowProductDropdown(false);
+  };
+
+  const handleLabSelect = (lab) => {
+    setSelectedLab(lab);
+    setLabSearch(lab.name);
+  };
+
+  const handleLabTestSelect = (test) => {
+    // Add lab test as bill item
+    append({
+      productId: null,
+      description: test.name,
+      quantity: 1,
+      unitPrice: test.price || 0,
+      type: 'lab',
+      meta: { labId: selectedLab?.id || test.labId, labTestId: test.id },
+    });
+    toast.success(`${test.name} added to bill`);
+    setLabTestSearch('');
+    setShowLabTestDropdown(false);
   };
 
   const addManualItem = () => {
@@ -395,6 +461,76 @@ export default function NewBill() {
                     )}
                   </div>
                 )}
+
+                  {/* Lab selection & Test Search (for Lab bills) */}
+                  {billType === 'lab' && (
+                    <div className="mb-4 bg-white rounded p-4 border border-gray-100">
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Lab</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={labSearch}
+                            onChange={(e) => { setLabSearch(e.target.value); }}
+                            onFocus={() => setLabSearch(labSearch)}
+                            placeholder="Search labs..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {labSearch && labs.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                              {labs.map((lab) => (
+                                <button key={lab.id} type="button" onClick={() => handleLabSelect(lab)} className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-100">
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <p className="font-medium text-gray-900">{lab.name}</p>
+                                      {lab.contactPerson && <p className="text-xs text-gray-500">{lab.contactPerson}</p>}
+                                    </div>
+                                    <div className="text-sm text-gray-500">{lab._count?.bills || ''}</div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {selectedLab && (
+                        <div>
+                          <p className="text-sm text-gray-700 mb-2">Selected Lab: <strong>{selectedLab.name}</strong></p>
+                          <div className="relative mb-2">
+                            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={labTestSearch}
+                              onChange={(e) => { setLabTestSearch(e.target.value); setShowLabTestDropdown(true); }}
+                              onFocus={() => setShowLabTestDropdown(true)}
+                              placeholder="Search lab tests..."
+                              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            {showLabTestDropdown && labTestSearch.length >= 1 && (
+                              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                {labTests.length === 0 ? (
+                                  <div className="px-4 py-3 text-sm text-gray-500">No lab tests found</div>
+                                ) : (
+                                  labTests.map((test) => (
+                                    <button key={test.id} type="button" onClick={() => handleLabTestSelect(test)} className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-0">
+                                      <div className="flex justify-between items-center">
+                                        <div>
+                                          <p className="font-medium text-gray-900">{test.name}</p>
+                                          {test.category && <p className="text-sm text-gray-500">{test.category}</p>}
+                                        </div>
+                                        <div className="text-sm font-medium text-gray-800">{test.price} {test.currency || 'INR'}</div>
+                                      </div>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 {/* Items List */}
                 {fields.length === 0 ? (

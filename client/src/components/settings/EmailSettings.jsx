@@ -61,7 +61,7 @@ export default function EmailSettings() {
   // Fetch current email configuration
   const { data: emailConfig, isLoading } = useQuery({
     queryKey: ['emailConfig'],
-    queryFn: notificationService.getEmailConfig,
+    queryFn: () => notificationService.getEmailConfig(),
   });
 
   // Update form when config is loaded

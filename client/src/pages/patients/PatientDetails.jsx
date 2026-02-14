@@ -22,6 +22,7 @@ import {
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
 import { prescriptionService } from '../../services/prescriptionService';
+import { useHasPerm } from '../../context/AuthContext';
 import Modal from '../../components/common/Modal';
 
 const tabs = [
@@ -119,6 +120,10 @@ export default function PatientDetails() {
     queryFn: () => patientService.getHistory(id),
     enabled: !!id && activeTab === 'history',
   });
+
+  // Permission checks (call hooks unconditionally)
+  const canCreatePrescription = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+  const canCreateAppointment = useHasPerm('appointments:create', ['DOCTOR', 'SUPER_ADMIN', 'RECEPTIONIST']);
 
   // Add vitals mutation
   const addVitalsMutation = useMutation({
@@ -287,20 +292,24 @@ export default function PatientDetails() {
 
               {/* Quick Actions */}
               <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
-                <Link
-                  to={`/prescriptions/new?patientId=${id}`}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition"
-                >
-                  <FaPrescriptionBottleAlt />
-                  New Prescription
-                </Link>
-                <Link
-                  to={`/appointments/new?patientId=${id}`}
-                  className="w-full inline-flex items-center justify-center gap-2 border border-blue-600 text-blue-600 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition"
-                >
-                  <FaCalendarAlt />
-                  Book Appointment
-                </Link>
+                {canCreatePrescription && (
+                  <Link
+                    to={`/prescriptions/new?patientId=${id}`}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition"
+                  >
+                    <FaPrescriptionBottleAlt />
+                    New Prescription
+                  </Link>
+                )}
+                {canCreateAppointment && (
+                  <Link
+                    to={`/appointments/new?patientId=${id}`}
+                    className="w-full inline-flex items-center justify-center gap-2 border border-blue-600 text-blue-600 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition"
+                  >
+                    <FaCalendarAlt />
+                    Book Appointment
+                  </Link>
+                )}
               </div>
             </div>
           </div>

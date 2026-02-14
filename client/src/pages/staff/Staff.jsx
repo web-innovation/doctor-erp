@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import api from '../../services/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -170,8 +171,29 @@ export default function Staff() {
     setIsEditModalOpen(true);
   };
 
+  // Reset password modal state
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetModalStaffId, setResetModalStaffId] = useState(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+
+  const performResetPassword = async () => {
+    try {
+      const body = resetPasswordInput ? { newPassword: resetPasswordInput } : {};
+      const resp = await api.post(`/staff/${resetModalStaffId}/reset-password`, body);
+      const temp = resp.data?.tempPassword;
+      alert((resp.data?.message || 'Password updated') + (temp ? `\nTemporary password: ${temp}` : ''));
+      setIsResetModalOpen(false);
+      setResetPasswordInput('');
+      queryClient.invalidateQueries(['staff']);
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.message || 'Failed to reset password');
+    }
+  };
+
   const handleDeactivate = (staff) => {
-    if (window.confirm(`Are you sure you want to deactivate "${staff.name}"?`)) {
+    const displayName = staff.user?.name || staff.name || staff.employeeId || 'this staff member';
+    if (window.confirm(`Are you sure you want to deactivate "${displayName}"?`)) {
       deactivateMutation.mutate(staff.id);
     }
   };
@@ -333,7 +355,7 @@ export default function Staff() {
                             >
                               <FaEdit />
                             </button>
-                            {staff.isActive !== false ? (
+                            {(staff.user?.isActive ?? staff.isActive) !== false ? (
                               <button
                                 onClick={() => handleDeactivate(staff)}
                                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -350,6 +372,13 @@ export default function Staff() {
                                 <FaUserCheck />
                               </button>
                             )}
+                            <button
+                              onClick={() => { setResetModalStaffId(staff.id); setIsResetModalOpen(true); }}
+                              className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition"
+                              title="Reset Password"
+                            >
+                              Reset PW
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -398,7 +427,10 @@ export default function Staff() {
           title="Add Staff Member"
           size="lg"
         >
-          <form onSubmit={handleSubmit(onAddStaff)} className="space-y-4">
+          <form autoComplete="off" onSubmit={handleSubmit(onAddStaff)} className="space-y-4">
+            {/* Hidden fields to deter browser autofill of admin credentials into staff forms */}
+            <input type="text" name="fake-username" autoComplete="username" style={{ position: 'absolute', left: '-9999px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }} />
+            <input type="password" name="fake-password" autoComplete="current-password" style={{ position: 'absolute', left: '-9999px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -421,6 +453,7 @@ export default function Staff() {
                 </label>
                 <input
                   type="email"
+                  autoComplete="off"
                   {...register('email', {
                     required: 'Email is required',
                     pattern: {
@@ -434,6 +467,19 @@ export default function Staff() {
                 {errors.email && (
                   <p className="mt-1 text-sm text-red-500">{errors.email.message}</p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password <span className="text-gray-400 text-xs">(optional)</span>
+                </label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  {...register('password')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Set initial password (leave blank to auto-generate)"
+                />
               </div>
 
               <div>
@@ -554,7 +600,10 @@ export default function Staff() {
           title="Edit Staff Member"
           size="lg"
         >
-          <form onSubmit={handleEditSubmit(onEditStaff)} className="space-y-4">
+          <form autoComplete="off" onSubmit={handleEditSubmit(onEditStaff)} className="space-y-4">
+            {/* Hidden fields to deter browser autofill of admin credentials into staff forms */}
+            <input type="text" name="fake-username-edit" autoComplete="username" style={{ position: 'absolute', left: '-9999px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }} />
+            <input type="password" name="fake-password-edit" autoComplete="current-password" style={{ position: 'absolute', left: '-9999px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -665,6 +714,17 @@ export default function Staff() {
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-gray-400 text-xs">(optional)</span></label>
+                <input
+                  type="password"
+                  {...registerEdit('password')}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Set new password (leave blank to keep existing)"
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
@@ -689,6 +749,27 @@ export default function Staff() {
             </div>
           </form>
         </Modal>
+        {/* Reset Password Modal */}
+        {isResetModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+              <h3 className="text-lg font-semibold mb-3">Reset Password</h3>
+              <p className="text-sm text-gray-600 mb-3">Enter a new password for the staff member, or leave blank to auto-generate a temporary password.</p>
+              <input
+                type="password"
+                value={resetPasswordInput}
+                onChange={(e) => setResetPasswordInput(e.target.value)}
+                placeholder="New password (optional)"
+                className="w-full px-3 py-2 border rounded mb-4"
+                autoComplete="new-password"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setIsResetModalOpen(false); setResetPasswordInput(''); }} className="px-3 py-2 border rounded">Cancel</button>
+                <button onClick={performResetPassword} className="px-3 py-2 bg-yellow-600 text-white rounded">Reset Password</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

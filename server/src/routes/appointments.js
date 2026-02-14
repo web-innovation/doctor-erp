@@ -43,9 +43,22 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     if (status) where.status = status;
     if (patientId) where.patientId = patientId;
 
-    // Restrict to doctor's own appointments if requester is DOCTOR
+    // Restrict to doctor's own appointments by default. Support optional `viewUserId` to view a staff user's appointments.
+    const viewUserId = req.query.viewUserId;
     if (req.user.role === 'DOCTOR') {
-      where.doctorId = req.user.id;
+      if (viewUserId) {
+        if (viewUserId === req.user.id) {
+          where.doctorId = req.user.id;
+        } else {
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
+          where.doctorId = viewUserId;
+        }
+      } else {
+        where.doctorId = req.user.id;
+      }
     }
 
     const [appointments, total] = await Promise.all([
@@ -121,9 +134,21 @@ router.get('/:id', checkPermission('appointments', 'read'), async (req, res, nex
       }
     });
     if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
-    // Enforce doctor-only access for appointment detail
-    if (req.user.role === 'DOCTOR' && appointment.doctorId && appointment.doctorId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Permission denied' });
+    // Enforce doctor-only access for appointment detail. Allow viewing when `viewUserId` is provided and authorized.
+    if (req.user.role === 'DOCTOR') {
+      const viewUserId = req.query.viewUserId;
+      if (viewUserId) {
+        if (viewUserId === req.user.id) {
+          // allowed
+        } else {
+          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
+          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied' });
+        }
+      } else {
+        if (appointment.doctorId && appointment.doctorId !== req.user.id) return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
     }
 
     res.json({ success: true, data: appointment });

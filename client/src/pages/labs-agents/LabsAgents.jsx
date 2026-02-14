@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -18,6 +19,8 @@ import {
   FaMapMarkerAlt,
 } from 'react-icons/fa';
 import Modal from '../../components/common/Modal';
+import { useHasPerm } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import labsAgentsService from '../../services/labsAgentsService';
 
 const TABS = [
@@ -28,7 +31,34 @@ const TABS = [
 
 export default function LabsAgents() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('labs');
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Determine initial tab from URL: /agents -> agents, /labs -> labs, ?tab=... also supported
+  const searchParams = new URLSearchParams(location.search);
+  const initialTabFromQuery = searchParams.get('tab');
+  const initialTab = location.pathname.startsWith('/agents')
+    ? 'agents'
+    : location.pathname.startsWith('/labs')
+    ? 'labs'
+    : (initialTabFromQuery || (location.hash ? location.hash.replace('#', '') : 'labs'));
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Determine which tabs should be visible depending on the current route
+  const path = location.pathname;
+  const showLabs = path.startsWith('/labs') || path.startsWith('/labs-agents');
+  const showAgents = path.startsWith('/agents') || path.startsWith('/labs-agents');
+  const visibleTabs = TABS.filter((tab) => {
+    if (tab.id === 'labs') return showLabs;
+    if (tab.id === 'agents' || tab.id === 'commissions') return showAgents;
+    return true;
+  });
+
+  // Ensure activeTab is valid when path or visibleTabs change
+  useEffect(() => {
+    if (!visibleTabs.find((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id || 'labs');
+    }
+  }, [location.pathname, visibleTabs]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -319,6 +349,15 @@ export default function LabsAgents() {
 
   const isLoading = labsLoading || agentsLoading || commissionsLoading;
 
+  // Permissions
+  const canCreateLabOrAgent = useHasPerm(activeTab === 'labs' ? 'labs:create' : 'agents:create', ['SUPER_ADMIN', 'DOCTOR']);
+  const canUpdateLab = useHasPerm('labs:update', ['SUPER_ADMIN', 'DOCTOR']);
+  const canManageLabs = useHasPerm('labs:manage', ['SUPER_ADMIN', 'DOCTOR']);
+  const canUpdateAgent = useHasPerm('agents:update', ['SUPER_ADMIN', 'DOCTOR']);
+  const canManageAgents = useHasPerm('agents:manage', ['SUPER_ADMIN', 'DOCTOR']);
+  const canManageLabTests = useHasPerm('labs:tests', ['SUPER_ADMIN', 'DOCTOR', 'LAB_TECHNICIAN']);
+  const canPayCommissions = useHasPerm('commissions:pay', ['SUPER_ADMIN', 'ACCOUNTANT']);
+
   // Render Labs Table
   const renderLabsTable = () => (
     <div className="overflow-x-auto">
@@ -381,20 +420,33 @@ export default function LabsAgents() {
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => openEditModal(lab)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                    title="Edit"
-                  >
-                    <FaEdit />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(lab)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                    title="Delete"
-                  >
-                    <FaTrash />
-                  </button>
+                  {canUpdateLab && (
+                    <button
+                      onClick={() => openEditModal(lab)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                      title="Edit"
+                    >
+                      <FaEdit />
+                    </button>
+                  )}
+                  {canManageLabs && (
+                    <button
+                      onClick={() => handleDelete(lab)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Delete"
+                    >
+                      <FaTrash />
+                    </button>
+                  )}
+                  {canManageLabTests && (
+                    <button
+                      onClick={() => navigate(`/labs-agents/${lab.id}/tests`)}
+                      className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                      title="Manage Tests"
+                    >
+                      <FaFlask />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -466,20 +518,24 @@ export default function LabsAgents() {
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => openEditModal(agent)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                    title="Edit"
-                  >
-                    <FaEdit />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(agent)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                    title="Delete"
-                  >
-                    <FaTrash />
-                  </button>
+                  {canUpdateAgent && (
+                    <button
+                      onClick={() => openEditModal(agent)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                      title="Edit"
+                    >
+                      <FaEdit />
+                    </button>
+                  )}
+                  {canManageAgents && (
+                    <button
+                      onClick={() => handleDelete(agent)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      title="Delete"
+                    >
+                      <FaTrash />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -589,7 +645,7 @@ export default function LabsAgents() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  {commission.status !== 'paid' && (
+                  {commission.status !== 'paid' && canPayCommissions && (
                     <button
                       onClick={() => openPaymentModal(commission)}
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition"
@@ -631,7 +687,7 @@ export default function LabsAgents() {
             <h1 className="text-2xl font-bold text-gray-900">Labs & Agents</h1>
             <p className="text-gray-500 mt-1">Manage labs, agents, and commissions</p>
           </div>
-          {activeTab !== 'commissions' && (
+          {activeTab !== 'commissions' && canCreateLabOrAgent && (
             <button
               onClick={() => setIsAddModalOpen(true)}
               className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
@@ -645,7 +701,7 @@ export default function LabsAgents() {
         {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-100">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}

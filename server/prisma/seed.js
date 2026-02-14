@@ -375,6 +375,64 @@ async function main() {
   console.log(`   ✅ Ensured ${labs.length} labs`);
 
   // ==========================================
+  // Create default Lab Tests for each lab
+  // ==========================================
+  console.log('\n🧪 Creating default lab tests for labs...');
+  const defaultTests = [
+    { code: 'CBC', name: 'Complete Blood Count (CBC)', category: 'Hematology', price: 400 },
+    { code: 'HBA1C', name: 'HbA1c Test', category: 'Diabetes', price: 500 },
+    { code: 'LIPID', name: 'Lipid Profile', category: 'Biochemistry', price: 300 }
+  ];
+
+  for (const lab of labs) {
+    for (const t of defaultTests) {
+      // Try to ensure a labTest exists for this lab + code. If the global `code` unique
+      // constraint conflicts (same code already exists for another lab), fall back to a
+      // lab-specific code to avoid crashing the seed.
+      const labTestModel = prisma.labTest;
+      const where = { labId: lab.id, code: t.code };
+      const existing = await labTestModel.findFirst({ where });
+      if (existing) continue;
+
+      try {
+        await labTestModel.create({
+          data: {
+            code: t.code,
+            name: t.name,
+            category: t.category,
+            price: t.price,
+            currency: 'INR',
+            isActive: true,
+            labId: lab.id,
+            clinicId: clinic.id
+          }
+        });
+      } catch (err) {
+        // If a unique constraint on `code` hits (P2002), generate a safe lab-specific code
+        // and create the record with that code. Re-throw other errors.
+        if (err && err.code === 'P2002' && Array.isArray(err.meta?.target) && err.meta.target.includes('code')) {
+          const safeCode = `${t.code}_${lab.id.slice(0, 8)}`;
+          await labTestModel.create({
+            data: {
+              code: safeCode,
+              name: t.name,
+              category: t.category,
+              price: t.price,
+              currency: 'INR',
+              isActive: true,
+              labId: lab.id,
+              clinicId: clinic.id
+            }
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+  console.log('   ✅ Ensured default lab tests for all labs');
+
+  // ==========================================
   // 6. CREATE AGENTS
   // ==========================================
   console.log('\n🤝 Creating agents...');
@@ -783,6 +841,22 @@ async function main() {
     update: {}
   });
 
+  // Create a second doctor user who is a staff member assigned to the primary doctor
+  const doctorBUser = await ensure('user', { email: 'doctorb@demo.com' }, {
+    email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Demo B', role: 'STAFF', password: await bcrypt.hash('D0ct0rB@Demo!2024', 10), clinicId: clinic.id
+  });
+
+  const staffDoctorB = await ensure('staff', { userId: doctorBUser.id }, {
+    userId: doctorBUser.id, employeeId: 'EMP-DR-002', designation: 'Doctor', department: 'Medical', joinDate: new Date(), salary: 0, clinicId: clinic.id
+  });
+
+  // Assign Doctor B as staff under the primary doctor (doctorUser)
+  await prisma.staffAssignment.upsert({
+    where: { staffId_doctorId: { staffId: staffDoctorB.id, doctorId: doctorUser.id } },
+    create: { staffId: staffDoctorB.id, doctorId: doctorUser.id, clinicId: clinic.id },
+    update: {}
+  });
+
   // Set primaryDoctor for some patients and link doctorId for prescriptions, bills and appointments
   await prisma.patient.updateMany({ where: { patientId: { in: ['P-0001','P-0003'] }, clinicId: clinic.id }, data: { primaryDoctorId: doctorUser.id } });
 
@@ -806,10 +880,7 @@ async function main() {
   // ==========================================
   // Create a second doctor and demonstrate shared vs exclusive staff
   // ==========================================
-  const hashedDoctorB = await bcrypt.hash('D0ct0rB@Demo!2024', 10);
-  const doctorBUser = await ensure('user', { email: 'doctorb@demo.com' }, {
-    email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Beta', role: 'DOCTOR', password: hashedDoctorB, clinicId: clinic.id
-  });
+  // (doctorBUser was already created above as a staff user and assigned to primary doctor)
 
   const staffLabUser = await ensure('user', { email: 'lab1@demo.com' }, {
     email: 'lab1@demo.com', phone: '9001000111', name: 'Lab Assistant', role: 'STAFF', password: await bcrypt.hash('Lab@Demo1', 10), clinicId: clinic.id
@@ -854,7 +925,7 @@ async function main() {
   });
 
   await ensure('bill', { billNo: 'BILL-1001' }, {
-    billNo: 'BILL-1001', type: 'CONSULTATION', patientId: patientB.id, clinicId: clinic.id, subtotal: 500, totalAmount: 500, paidAmount: 0, dueAmount: 500, paymentStatus: 'UNPAID', doctorId: doctorBUser.id,
+    billNo: 'BILL-1001', type: 'CONSULTATION', patientId: patientB.id, clinicId: clinic.id, subtotal: 500, taxAmount: 0, totalAmount: 500, paidAmount: 0, dueAmount: 500, paymentStatus: 'UNPAID', doctorId: doctorBUser.id,
     items: { create: [{ description: 'Consultation Fee', quantity: 1, unitPrice: 500, amount: 500 }] }
   });
 

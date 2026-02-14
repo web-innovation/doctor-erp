@@ -11,8 +11,10 @@ const dashboardService = {
    *   - newPatients: new patient registrations this month
    *   - lowStockItems: count of low stock pharmacy items
    */
-  getStats: async () => {
-    const response = await api.get('/dashboard/stats');
+  getStats: async (staffId = null) => {
+    const response = await api.get('/dashboard/stats', {
+      params: staffId ? { staffId } : {}
+    });
     return response.data;
   },
 
@@ -26,9 +28,9 @@ const dashboardService = {
    *   - departmentDistribution: appointments by department
    *   - paymentMethodDistribution: payments by method
    */
-  getCharts: async (period = 'month') => {
+  getCharts: async (period = 'month', staffId = null) => {
     const response = await api.get('/dashboard/charts', {
-      params: { period },
+      params: Object.assign({ period }, staffId ? { staffId } : {})
     });
     return response.data;
   },
@@ -42,8 +44,10 @@ const dashboardService = {
    *   - expiringMedicines: medicines expiring soon
    *   - systemAlerts: any system-level alerts
    */
-  getAlerts: async () => {
-    const response = await api.get('/dashboard/alerts');
+  getAlerts: async (staffId = null) => {
+    const response = await api.get('/dashboard/alerts', {
+      params: staffId ? { staffId } : {}
+    });
     return response.data;
   },
 
@@ -56,9 +60,9 @@ const dashboardService = {
    *   - recentPayments: recent payment transactions
    *   - stockUpdates: recent stock changes
    */
-  getRecentActivity: async (limit = 10) => {
+  getRecentActivity: async (limit = 10, staffId = null) => {
     const response = await api.get('/dashboard/activity', {
-      params: { limit },
+      params: Object.assign({ limit }, staffId ? { staffId } : {})
     });
     return response.data;
   },
@@ -68,10 +72,10 @@ const dashboardService = {
    * @param {string} dateRange - Date range (7days, 30days, etc.)
    * @returns {Promise} - Patient trend data with labels and data arrays
    */
-  getPatientTrend: async (dateRange = '7days') => {
+  getPatientTrend: async (dateRange = '7days', staffId = null) => {
     // Using chart data API
     const response = await api.get('/dashboard/charts', {
-      params: { period: dateRange },
+      params: Object.assign({ period: dateRange }, staffId ? { staffId } : {}),
     });
     // Generate placeholder data for visualization
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -86,9 +90,9 @@ const dashboardService = {
    * @param {string} dateRange - Date range (7days, 30days, etc.)
    * @returns {Promise} - Revenue trend data with labels and data arrays
    */
-  getRevenueTrend: async (dateRange = '7days') => {
+  getRevenueTrend: async (dateRange = '7days', staffId = null) => {
     const response = await api.get('/dashboard/charts', {
-      params: { period: dateRange },
+      params: Object.assign({ period: dateRange }, staffId ? { staffId } : {}),
     });
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const total = response.data?.data?.summary?.totalRevenue || 0;

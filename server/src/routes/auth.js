@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import { prisma } from '../index.js';
 import { authenticate } from '../middleware/auth.js';
+import { logImpersonation } from '../middleware/hipaaAudit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../config/logger.js';
 import { logAuthEvent } from '../middleware/hipaaAudit.js';
@@ -341,6 +342,40 @@ router.post('/logout', authenticate, async (req, res, next) => {
     });
 
     res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /impersonate - create a short-lived impersonation token for target user
+router.post('/impersonate', authenticate, async (req, res, next) => {
+  try {
+    const { targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ message: 'targetUserId is required' });
+
+    const target = await prisma.user.findUnique({ where: { id: targetUserId }, include: { clinic: true } });
+    if (!target) return res.status(404).json({ message: 'Target user not found' });
+    if (!target.isActive) return res.status(400).json({ message: 'Target user is not active' });
+
+    // Only SUPER_ADMIN or DOCTOR of same clinic can impersonate
+    const allowed = req.user.role === 'SUPER_ADMIN' || (req.user.role === 'DOCTOR' && req.user.clinicId === target.clinicId);
+    if (!allowed) return res.status(403).json({ message: 'Not authorized to impersonate this user' });
+
+    // Create short-lived token (15 minutes)
+    const token = jwt.sign(
+      { userId: target.id, role: target.role, impersonatorId: req.user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    // Create a session entry for the impersonation token
+    const clientIP = getClientIP(req);
+    await prisma.session.create({ data: { userId: target.id, token, expiresAt: new Date(Date.now() + 15 * 60 * 1000), ipAddress: clientIP, device: `impersonation:${req.user.id}` } });
+
+    // Audit log
+    await logImpersonation(req.user.id, target.id, { path: req.originalUrl, ipAddress: clientIP, userAgent: req.headers['user-agent'] });
+
+    res.json({ token, user: { id: target.id, name: target.name, email: target.email, role: target.role, clinic: target.clinic } });
   } catch (error) {
     next(error);
   }

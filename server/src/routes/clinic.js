@@ -177,7 +177,8 @@ router.get('/tax-config', async (req, res, next) => {
 });
 
 // GET /role-permissions - Get role permission overrides for the clinic
-router.get('/role-permissions', checkPermission('settings', 'clinic'), async (req, res, next) => {
+// Allow any authenticated clinic user to read role overrides so UI can adapt per-clinic settings
+router.get('/role-permissions', async (req, res, next) => {
   try {
     const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
