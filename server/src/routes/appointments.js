@@ -20,7 +20,7 @@ async function generateAppointmentNo(clinicId) {
 // GET / - List appointments
 router.get('/', checkPermission('appointments', 'read'), async (req, res, next) => {
   try {
-    const { date, startDate, endDate, status, patientId, page = 1, limit = 20, sortBy = 'date', sortOrder = 'desc' } = req.query;
+    const { date, startDate, endDate, status, patientId, search, page = 1, limit = 20, sortBy = 'date', sortOrder = 'desc' } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
@@ -43,19 +43,24 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     if (status) where.status = status;
     if (patientId) where.patientId = patientId;
 
+    if (search) {
+      where.OR = [
+        { patient: { name: { contains: search } } },
+        { patient: { phone: { contains: search } } },
+        { patientId: { contains: search } }
+      ];
+    }
+
     // Restrict to doctor's own appointments by default. Support optional `viewUserId` to view a staff user's appointments.
     const viewUserId = req.query.viewUserId;
-    if (req.user.role === 'DOCTOR') {
+    const { isEffectiveDoctor, canDoctorViewStaff } = await import('../middleware/auth.js');
+    const doctorCheck = isEffectiveDoctor(req);
+    if (doctorCheck) {
+      const viewCheck = await canDoctorViewStaff(req, viewUserId);
+      if (viewCheck.notStaff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+      if (!viewCheck.allowed) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
       if (viewUserId) {
-        if (viewUserId === req.user.id) {
-          where.doctorId = req.user.id;
-        } else {
-          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId } });
-          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
-          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
-          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
-          where.doctorId = viewUserId;
-        }
+        where.doctorId = viewUserId === req.user.id ? req.user.id : viewUserId;
       } else {
         where.doctorId = req.user.id;
       }
@@ -135,7 +140,7 @@ router.get('/:id', checkPermission('appointments', 'read'), async (req, res, nex
     });
     if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
     // Enforce doctor-only access for appointment detail. Allow viewing when `viewUserId` is provided and authorized.
-    if (req.user.role === 'DOCTOR') {
+    if ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR') {
       const viewUserId = req.query.viewUserId;
       if (viewUserId) {
         if (viewUserId === req.user.id) {
@@ -172,7 +177,7 @@ router.post('/', checkPermission('appointments', 'create'), async (req, res, nex
         symptoms, notes, consultationFee,
         bookedVia: bookedVia || 'CLINIC',
         status: 'SCHEDULED',
-        doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined)
+        doctorId: req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined)
       },
       include: { patient: { select: { id: true, name: true, phone: true } } }
     });

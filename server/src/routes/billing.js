@@ -73,7 +73,7 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     if (patientId) where.patientId = patientId;
 
     // If requester is a DOCTOR, restrict to their own bills
-    if (req.user.role === 'DOCTOR') {
+    if ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR') {
       where.doctorId = req.user.id;
     }
     
@@ -181,7 +181,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
       data: {
         billNo,
         clinicId: req.user.clinicId,
-        doctorId: req.body.doctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined),
+        doctorId: req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined),
         labId: labId || null,
         patientId,
         type,

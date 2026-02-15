@@ -357,8 +357,9 @@ router.post('/impersonate', authenticate, async (req, res, next) => {
     if (!target) return res.status(404).json({ message: 'Target user not found' });
     if (!target.isActive) return res.status(400).json({ message: 'Target user is not active' });
 
-    // Only SUPER_ADMIN or DOCTOR of same clinic can impersonate
-    const allowed = req.user.role === 'SUPER_ADMIN' || (req.user.role === 'DOCTOR' && req.user.clinicId === target.clinicId);
+    // Only SUPER_ADMIN or DOCTOR (including staff who are effectively doctors) of same clinic can impersonate
+    const userRole = (req.user.effectiveRole || req.user.role || '').toString().toUpperCase();
+    const allowed = userRole === 'SUPER_ADMIN' || (userRole === 'DOCTOR' && req.user.clinicId === target.clinicId);
     if (!allowed) return res.status(403).json({ message: 'Not authorized to impersonate this user' });
 
     // Create short-lived token (15 minutes)

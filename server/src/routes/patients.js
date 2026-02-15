@@ -69,22 +69,14 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
     // Support optional `viewUserId` query param: when provided, a doctor may view that user's patients
     // only if it's their own id or a staff assigned to them (this supports the header "view as staff" dropdown).
     const viewUserId = req.query.viewUserId;
-    if (userRoleNormalized === 'DOCTOR') {
+    const { isEffectiveDoctor, canDoctorViewStaff } = await import('../middleware/auth.js');
+    const doctorCheck = userRoleNormalized === 'DOCTOR' || isEffectiveDoctor(req);
+    if (doctorCheck) {
+      const viewCheck = await canDoctorViewStaff(req, viewUserId);
+      if (viewCheck.notStaff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
+      if (!viewCheck.allowed) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
       if (viewUserId) {
-        // allow if viewing self
-        if (viewUserId === req.user.id) {
-          where.primaryDoctorId = req.user.id;
-        } else {
-          // validate that viewUserId corresponds to a staff user assigned to this doctor
-          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId } });
-          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
-          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
-          if (assignment) {
-            where.primaryDoctorId = viewUserId;
-          } else {
-            return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
-          }
-        }
+        where.primaryDoctorId = viewUserId === req.user.id ? req.user.id : viewUserId;
       } else {
         where.primaryDoctorId = req.user.id;
       }
@@ -205,7 +197,7 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       allergies: allergies ? JSON.stringify(allergies) : null,
       medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
       clinicId,
-      primaryDoctorId: req.body.primaryDoctorId || (req.user.role === 'DOCTOR' ? req.user.id : undefined)
+      primaryDoctorId: req.body.primaryDoctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined)
     };
 
     try {

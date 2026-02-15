@@ -49,6 +49,38 @@ export async function authenticate(req, res, next) {
   }
 }
 
+// Helper to test whether the current request user should be treated as a doctor
+export function isEffectiveDoctor(req) {
+  try {
+    const eff = (req.user && (req.user.effectiveRole || req.user.role) || '').toString().toUpperCase();
+    return eff === 'DOCTOR';
+  } catch (e) {
+    return false;
+  }
+}
+
+// Check whether requester (doctor) is allowed to view patients/appointments/prescriptions
+// for the given `viewUserId`. Returns an object: { allowed: boolean, notStaff?: boolean }
+export async function canDoctorViewStaff(req, viewUserId) {
+  if (!isEffectiveDoctor(req)) return { allowed: false };
+  if (!viewUserId) return { allowed: true };
+
+  if (viewUserId === req.user.id) return { allowed: true };
+
+  // Ensure viewUserId corresponds to a staff member in same clinic
+  try {
+    const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
+    if (!staff) return { allowed: false, notStaff: true };
+
+    const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
+    if (!assignment) return { allowed: false };
+
+    return { allowed: true };
+  } catch (e) {
+    return { allowed: false };
+  }
+}
+
 // Role-based access control
 export function authorize(...allowedRoles) {
   return (req, res, next) => {
