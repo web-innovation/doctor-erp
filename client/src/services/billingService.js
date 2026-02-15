@@ -85,6 +85,21 @@ const billingService = {
     const response = await api.get('/billing/summary', { params });
     return response.data;
   },
+  /**
+   * Search patients for billing (clinic-wide)
+   */
+  getPatients: async (params = {}) => {
+    const response = await api.get('/billing/patients', { params });
+    return response.data;
+  },
+
+  /**
+   * Get clinic doctors for billing dropdown
+   */
+  getDoctors: async () => {
+    const response = await api.get('/billing/doctors');
+    return response.data;
+  },
 };
 
 export { billingService };

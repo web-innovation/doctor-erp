@@ -125,8 +125,35 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
 // GET /patients - List patients for billing (clinic-wide). Guarded by billing:create
 router.get('/patients', authenticate, checkPermission('billing:create'), async (req, res) => {
   try {
-    const { search, limit = 50 } = req.query;
+    const { search, page = 1, limit = 50, doctorId, allDoctors } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
     const where = { clinicId: req.user.clinicId };
+    // Support explicit allDoctors=true to return clinic-wide patients even if doctorId omitted.
+    const wantAllDoctors = (allDoctors || '').toString().toLowerCase() === 'true';
+    // Only allow `allDoctors=true` for clinic admins or roles with broader billing access
+    if (wantAllDoctors) {
+      const userRole = (req.user.role || '').toString().toUpperCase();
+      const isAdminLike = req.user.isClinicAdmin || userRole === 'SUPER_ADMIN' || userRole === 'ACCOUNTANT';
+      if (!isAdminLike) {
+        return res.status(403).json({ success: false, message: 'Insufficient permissions to list patients for all doctors' });
+      }
+    }
+    // If doctorId provided and allDoctors is not true, validate and restrict to that doctor's patients
+    if (!wantAllDoctors && doctorId) {
+      const candidate = await prisma.user.findUnique({ where: { id: doctorId }, include: { staffProfile: true } });
+      if (!candidate || candidate.clinicId !== req.user.clinicId) {
+        return res.status(400).json({ success: false, message: 'Invalid doctor selected' });
+      }
+      const isDoctorRole = (candidate.role || '').toString().toUpperCase() === 'DOCTOR';
+      const isStaffDoctor = candidate.staffProfile && candidate.staffProfile.designation && candidate.staffProfile.designation.toLowerCase().includes('doctor');
+      if (!isDoctorRole && !isStaffDoctor) {
+        return res.status(400).json({ success: false, message: 'Selected user is not a doctor' });
+      }
+      where.primaryDoctorId = doctorId;
+    }
     if (search) {
       where.OR = [
         { name: { contains: search } },
@@ -135,17 +162,58 @@ router.get('/patients', authenticate, checkPermission('billing:create'), async (
       ];
     }
 
-    const patients = await prisma.patient.findMany({
-      where,
-      take: parseInt(limit, 10),
-      orderBy: { name: 'asc' },
-      select: { id: true, patientId: true, name: true, phone: true }
-    });
+    const [patients, total] = await Promise.all([
+      prisma.patient.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          patientId: true,
+          name: true,
+          phone: true,
+          primaryDoctor: { select: { id: true, name: true } }
+        }
+      }),
+      prisma.patient.count({ where })
+    ]);
 
-    res.json({ success: true, data: patients });
+    res.json({ success: true, data: patients, pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) } });
   } catch (error) {
     console.error('Error listing billing patients:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch patients', error: error.message });
+  }
+});
+
+// GET /doctors - List clinic doctors for billing dropdown
+router.get('/doctors', authenticate, checkPermission('billing:create'), async (req, res) => {
+  try {
+    const clinicId = req.user.clinicId;
+    // Users with role DOCTOR
+    const usersDoctors = await prisma.user.findMany({
+      where: { clinicId, role: 'DOCTOR' },
+      select: { id: true, name: true, email: true }
+    });
+
+    // Staff records — fetch by clinic and filter designation in JS to avoid unsupported `mode` option
+    const rawStaff = await prisma.staff.findMany({
+      where: { clinicId },
+      include: { user: { select: { id: true, name: true, email: true } } }
+    });
+    const staffDoctors = rawStaff.filter(s => s.designation && s.designation.toLowerCase().includes('doctor'));
+
+    const map = new Map();
+    usersDoctors.forEach(u => map.set(u.id, { id: u.id, name: u.name, email: u.email }));
+    staffDoctors.forEach(s => {
+      if (s.user) map.set(s.user.id, { id: s.user.id, name: s.user.name, email: s.user.email });
+    });
+
+    const doctors = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ success: true, data: doctors });
+  } catch (error) {
+    console.error('Error listing clinic doctors for billing:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch doctors', error: error.message });
   }
 });
 
@@ -204,6 +272,19 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
     // Generate bill number
     const billNo = await generateBillNo();
     
+    // If a doctorId is provided, validate it belongs to this clinic and represents a doctor
+    if (req.body.doctorId) {
+      const candidate = await prisma.user.findUnique({ where: { id: req.body.doctorId }, include: { staffProfile: true } });
+      if (!candidate || candidate.clinicId !== req.user.clinicId) {
+        return res.status(400).json({ success: false, message: 'Invalid doctor selected' });
+      }
+      const isDoctorRole = (candidate.role || '').toString().toUpperCase() === 'DOCTOR';
+      const isStaffDoctor = candidate.staffProfile && candidate.staffProfile.designation && candidate.staffProfile.designation.toLowerCase().includes('doctor');
+      if (!isDoctorRole && !isStaffDoctor) {
+        return res.status(400).json({ success: false, message: 'Selected user is not a doctor' });
+      }
+    }
+
     // Create bill with items
     const bill = await prisma.bill.create({
       data: {
@@ -232,13 +313,15 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
             amount: item.amount,
             productId: item.productId || null,
             labId: item.labId || null,
-            labTestId: item.labTestId || null
+            labTestId: item.labTestId || null,
+            doctorId: item.doctorId || null
           }))
         }
       },
       include: {
-        patient: { select: { id: true, name: true, phone: true } },
-        items: true
+        patient: { select: { id: true, name: true, phone: true, primaryDoctor: { select: { id: true, name: true } } } },
+        items: true,
+        doctor: { select: { id: true, name: true } }
       }
     });
     

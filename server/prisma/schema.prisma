@@ -485,9 +485,14 @@ model BillItem {
   labTest   LabTest? @relation(fields: [labTestId], references: [id])
   labTestId String?
 
+  // Optional doctor for consultation items
+  doctor   User? @relation(fields: [doctorId], references: [id])
+  doctorId String?
+
   @@index([billId])
   @@index([labId])
   @@index([labTestId])
+  @@index([doctorId])
 }
 
 // ==========================================

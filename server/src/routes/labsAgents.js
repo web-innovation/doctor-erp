@@ -247,10 +247,13 @@ router.get('/labs/:labId/tests', checkPermission('labs', 'tests'), async (req, r
     const where = { labId, clinicId: req.user.clinicId };
     if (isActive !== undefined) where.isActive = isActive === 'true';
     if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { code: { contains: search, mode: 'insensitive' } },
-      ];
+      // Prisma `mode` option may be unavailable; fetch candidates and filter in JS
+      const allCandidates = await prisma.labTest.findMany({ where: { labId, clinicId: req.user.clinicId }, include: {}, take: 1000 });
+      const searchLower = search.toLowerCase();
+      const filtered = allCandidates.filter(t => (t.name || '').toLowerCase().includes(searchLower) || (t.code || '').toLowerCase().includes(searchLower));
+      const total = filtered.length;
+      const tests = filtered.slice(skip, skip + parseInt(limit, 10));
+      return res.json({ success: true, data: tests, pagination: { page: parseInt(page, 10), limit: parseInt(limit, 10), total } });
     }
 
     const [tests, total] = await Promise.all([

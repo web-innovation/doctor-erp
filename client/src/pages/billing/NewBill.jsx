@@ -17,7 +17,7 @@ import {
   FaPrint,
 } from 'react-icons/fa';
 import billingService from '../../services/billingService';
-import { useHasPerm } from '../../context/AuthContext';
+import { useHasPerm, useAuth } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
 import pharmacyService from '../../services/pharmacyService';
 import labsAgentsService from '../../services/labsAgentsService';
@@ -107,10 +107,38 @@ export default function NewBill() {
   }, [setValue]);
   const watchPaymentAmount = watch('paymentAmount') || 0;
 
-  // Fetch patients for search
+  // Fetch billing doctors for dropdown
+  const { data: doctorsData } = useQuery({
+    queryKey: ['billing-doctors'],
+    queryFn: () => billingService.getDoctors(),
+    enabled: true,
+  });
+
+  const doctors = doctorsData?.data || [];
+  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const { user, normalizeRole } = useAuth();
+
+  const effectiveRole = normalizeRole(user?.role);
+  const isEffectiveDoctor = effectiveRole === 'DOCTOR';
+  const canSeeAllDoctors = !!(user?.isClinicAdmin || ['SUPER_ADMIN', 'ACCOUNTANT'].includes(effectiveRole));
+  // If API returned no doctors but current user is an effective doctor, include them
+  const augmentedDoctors = useMemo(() => {
+    try {
+      const list = Array.isArray(doctors) ? [...doctors] : [];
+      if (isEffectiveDoctor && user) {
+        const exists = list.some((d) => d.id === user.id);
+        if (!exists) list.unshift({ id: user.id, name: user.name, email: user.email });
+      }
+      return list;
+    } catch (e) {
+      return doctors || [];
+    }
+  }, [doctors, isEffectiveDoctor, user]);
+
+  // Fetch patients for billing search (uses billing endpoint so we get primaryDoctor)
   const { data: patientsData } = useQuery({
-    queryKey: ['patients-search', patientSearch],
-    queryFn: () => patientService.getPatients({ search: patientSearch, limit: 5 }),
+    queryKey: ['billing-patients-search', patientSearch, selectedDoctor?.id],
+    queryFn: () => billingService.getPatients({ search: patientSearch, limit: 10, doctorId: selectedDoctor?.id }),
     enabled: patientSearch.length >= 2,
   });
 
@@ -188,6 +216,23 @@ export default function NewBill() {
     setShowPatientDropdown(false);
   };
 
+  const handleDoctorSelect = (doc) => {
+    setSelectedDoctor(doc || null);
+    // clear selected patient when doctor changes
+    setSelectedPatient(null);
+    setPatientSearch('');
+  };
+
+  // Default selected doctor for effective doctors who are not admins
+  useEffect(() => {
+    if (!canSeeAllDoctors && isEffectiveDoctor && user) {
+      // prefer doctor's entry from fetched doctors if available
+      const me = augmentedDoctors.find((d) => d.id === user.id) || { id: user.id, name: user.name };
+      setSelectedDoctor(me);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isEffectiveDoctor, canSeeAllDoctors]);
+
   const handleProductSelect = (product) => {
     // Check if product already exists in items
     const existingIndex = watchItems.findIndex(
@@ -242,6 +287,8 @@ export default function NewBill() {
       quantity: 1,
       unitPrice: 0,
       type: billType === 'consultation' ? 'consultation' : billType === 'lab' ? 'lab' : 'other',
+      // default doctor for consultation items to current user when they are a doctor and not an admin
+      doctorId: billType === 'consultation' && isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined,
     });
   };
 
@@ -265,6 +312,7 @@ export default function NewBill() {
 
     const billData = {
       patientId: selectedPatient.id,
+      doctorId: selectedDoctor?.id,
       type: billTypeMap[billType] || 'MIXED',
       items: data.items.map((item) => ({
         description: item.description,
@@ -272,6 +320,7 @@ export default function NewBill() {
         unitPrice: parseFloat(item.unitPrice),
         gstPercent: parseFloat(data.gstRate) || 0,
         productId: item.productId || undefined,
+        doctorId: item.doctorId || undefined,
       })),
       discount: calculations.discountAmount,
       discountType: 'AMOUNT',
@@ -328,19 +377,43 @@ export default function NewBill() {
                 </div>
 
                 <div className="relative">
-                  <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={patientSearch}
-                    onChange={(e) => {
-                      setPatientSearch(e.target.value);
-                      setShowPatientDropdown(true);
-                      if (!e.target.value) setSelectedPatient(null);
-                    }}
-                    onFocus={() => setShowPatientDropdown(true)}
-                    placeholder="Search patient by name or phone..."
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                  />
+                    <div className="flex gap-3">
+                      <div className="w-1/3">
+                        <select
+                          value={selectedDoctor?.id || ''}
+                          onChange={(e) => {
+                            const id = e.target.value;
+                            const doc = augmentedDoctors.find((d) => d.id === id) || null;
+                            handleDoctorSelect(doc);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {canSeeAllDoctors && <option value="">All Doctors</option>}
+                          {augmentedDoctors.map((doc) => (
+                            <option key={doc.id} value={doc.id}>{doc.name}</option>
+                          ))}
+                        </select>
+                        {!canSeeAllDoctors && (
+                          <p className="text-xs text-gray-400 mt-1">Listing patients for all doctors is restricted to clinic admins and accountants.</p>
+                        )}
+                      </div>
+
+                      <div className="flex-1 relative">
+                        <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          value={patientSearch}
+                          onChange={(e) => {
+                            setPatientSearch(e.target.value);
+                            setShowPatientDropdown(true);
+                            if (!e.target.value) setSelectedPatient(null);
+                          }}
+                          onFocus={() => setShowPatientDropdown(true)}
+                          placeholder="Search patient by name or phone..."
+                          className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                        />
+                      </div>
+                    </div>
 
                   {/* Patient Dropdown */}
                   {showPatientDropdown && patients.length > 0 && (
@@ -563,6 +636,23 @@ export default function NewBill() {
                               placeholder="Item description"
                             />
                           </div>
+                          {/* Consultation-specific: allow selecting doctor per item */}
+                          {field.type === 'consultation' && (
+                            <div className="md:col-span-1">
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
+                              <select
+                                {...register(`items.${index}.doctorId`)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                              >
+                                {/* If current user cannot see all doctors, ensure their own entry is available */}
+                                {!canSeeAllDoctors && <option value={user?.id}>{user?.name}</option>}
+                                {canSeeAllDoctors && <option value="">Select doctor</option>}
+                                {augmentedDoctors.map((d) => (
+                                  <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                           <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">
                               Qty

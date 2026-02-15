@@ -708,18 +708,19 @@ router.get('/lab-tests/search', authenticate, async (req, res, next) => {
     
     // Search server-side lab catalog for clinic and combine with common tests
     const clinicId = req.user.clinicId;
-    const labTests = await prisma.labTest.findMany({
-      where: {
-        clinicId,
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { category: { contains: q, mode: 'insensitive' } },
-          { code: { contains: q, mode: 'insensitive' } }
-        ]
-      },
+    // Prisma `mode: 'insensitive'` may not be supported in this environment —
+    // fetch candidates and filter in JS for case-insensitive search.
+    const candidates = await prisma.labTest.findMany({
+      where: { clinicId },
       include: { lab: { select: { id: true, name: true } } },
-      take: 20
+      take: 200
     });
+    const labTests = candidates.filter(t => {
+      const name = (t.name || '').toLowerCase();
+      const category = (t.category || '').toLowerCase();
+      const code = (t.code || '').toLowerCase();
+      return name.includes(q.toLowerCase()) || category.includes(q.toLowerCase()) || code.includes(q.toLowerCase());
+    }).slice(0, 20);
 
     const results = commonLabTests.filter(test => 
       test.name.toLowerCase().includes(searchLower) || 
