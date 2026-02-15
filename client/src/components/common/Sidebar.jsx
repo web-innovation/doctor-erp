@@ -51,10 +51,29 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   
   // Check if we're on admin routes
   const isAdminRoute = location.pathname.startsWith('/admin');
+
+  // Fetch clinic role permissions (if configured)
+  const { data: rolePermResp } = useQuery({
+    queryKey: ['rolePermissions'],
+    queryFn: () => settingsService.getRolePermissions(),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && !isAdminRoute,
+  });
+
+  const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || null;
   
   // Get user role from AuthContext — if viewing as another staff, use their role
   const userRoleRaw = activeViewUser?.role || user?.role || 'DOCTOR';
   const normalizedRole = normalizeRole ? normalizeRole(userRoleRaw) : (userRoleRaw || 'DOCTOR').toString().toUpperCase();
+  // Some users in the seed/DB use 'STAFF' for doctors — only fallback to DOCTOR
+  // when clinic-level rolePermissions do NOT define a STAFF override but DOCTOR exists.
+  const effectiveRoleForMatch = (() => {
+    if (normalizedRole !== 'STAFF') return normalizedRole;
+    if (!rolePermissions) return 'DOCTOR';
+    const hasStaffOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'STAFF');
+    const hasDoctorOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'DOCTOR');
+    return !hasStaffOverride && hasDoctorOverride ? 'DOCTOR' : 'STAFF';
+  })();
 
   // Determine if current real user is a clinic admin (some doctor users act as clinic admin)
   const isClinicAdmin = user?.role === 'SUPER_ADMIN' || user?.isClinicAdmin === true || user?.clinicRole === 'ADMIN' || user?.isOwner === true;
@@ -83,16 +102,6 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   });
   
   const todayOPDCount = dashboardStats?.data?.appointments?.total || 0;
-  
-  // Fetch clinic role permissions (if configured)
-  const { data: rolePermResp } = useQuery({
-    queryKey: ['rolePermissions'],
-    queryFn: () => settingsService.getRolePermissions(),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!user && !isAdminRoute,
-  });
-
-  const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || null;
 
   // Map menu paths to permission keys used in rolePermissions
   const menuPermissionMap = {
@@ -103,6 +112,8 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     '/pharmacy': 'pharmacy:read',
     '/billing': 'billing:read',
     '/staff': 'staff:read',
+    '/staff/attendance': 'staff:read',
+    '/staff/leave': 'leaves:read',
     '/reports': 'reports:opd',
     '/settings': 'settings:clinic',
     // granular mappings for labs and agents
@@ -120,19 +131,25 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     // Admin clinic doctor or super admin can always see everything
     if (bypassPermissions) return true;
 
-    const roleMatch = item.roles.some(r => r.toString().toUpperCase() === normalizedRole);
+    const roleMatch = item.roles.some(r => r.toString().toUpperCase() === effectiveRoleForMatch);
     const roleKey = normalizedRole;
     const requiredPerm = menuPermissionMap[item.path];
-    const permsForRole = rolePermissions && rolePermissions[roleKey];
+    // Determine which role key to use when looking up clinic overrides. If the
+    // clinic has an explicit override for the normalizedRole, use it. Otherwise
+    // fall back to the effectiveRoleForMatch (e.g., treat STAFF as DOCTOR when
+    // only DOCTOR is defined in clinic overrides).
+    const roleKeyForPerms = rolePermissions
+      ? (rolePermissions[roleKey] ? roleKey : (rolePermissions[effectiveRoleForMatch] ? effectiveRoleForMatch : roleKey))
+      : roleKey;
+    const permsForRole = rolePermissions && rolePermissions[roleKeyForPerms];
 
     // If clinic-level overrides are configured, they are authoritative for mapped permissions.
     if (rolePermissions) {
       if (requiredPerm) {
-        // If clinic-level overrides exist but this specific role has no
-        // non-empty entry, fall back to static role membership so users
-        // (e.g., STAFF) don't lose all menu items unexpectedly.
-        const hasNonEmptyOverride = Array.isArray(permsForRole) && permsForRole.length > 0;
-        if (!hasNonEmptyOverride) return roleMatch;
+        // If this role has no override (undefined or empty array), deny access
+        // to any menu item that depends on a mapped permission. This ensures
+        // explicit Access Management settings are enforced.
+        if (!Array.isArray(permsForRole) || permsForRole.length === 0) return false;
         return permsForRole.includes(requiredPerm);
       }
       return roleMatch;
@@ -210,7 +227,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
         {/* Navigation items */}
         <nav className="flex-1 overflow-y-auto py-4">
           {/* Show admin menu when on admin routes */}
-          {isAdminRoute && userRole === 'SUPER_ADMIN' ? (
+          {isAdminRoute && normalizedRole === 'SUPER_ADMIN' ? (
             <>
               <ul className="space-y-1 px-3">
                 {adminMenuItems.map((item) => {
@@ -305,7 +322,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
               </ul>
               
               {/* Admin Menu Link - Only for Super Admin when NOT on admin routes */}
-              {userRole === 'SUPER_ADMIN' && (
+              {normalizedRole === 'SUPER_ADMIN' && (
                 <>
                   {!collapsed && (
                     <div className="px-3 mt-4 mb-2">

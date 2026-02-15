@@ -40,6 +40,21 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
     const skip = (pageNum - 1) * limitNum;
     const clinicId = req.user.clinicId;
 
+    // Normalize role: some users are stored with role 'STAFF' but have a
+    // staff.designation of 'Doctor'. Treat those users as DOCTOR for
+    // patient-scoping checks so backend behavior matches frontend normalization.
+    let userRoleNormalized = (req.user.role || '').toString().toUpperCase();
+    if (userRoleNormalized === 'STAFF') {
+      try {
+        const staffRecord = await prisma.staff.findFirst({ where: { userId: req.user.id, clinicId } });
+        if (staffRecord && staffRecord.designation && staffRecord.designation.toString().toLowerCase().includes('doctor')) {
+          userRoleNormalized = 'DOCTOR';
+        }
+      } catch (e) {
+        // ignore lookup errors and keep original role
+      }
+    }
+
     const where = { clinicId };
     if (search) {
       where.OR = [
@@ -54,7 +69,7 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
     // Support optional `viewUserId` query param: when provided, a doctor may view that user's patients
     // only if it's their own id or a staff assigned to them (this supports the header "view as staff" dropdown).
     const viewUserId = req.query.viewUserId;
-    if (req.user.role === 'DOCTOR') {
+    if (userRoleNormalized === 'DOCTOR') {
       if (viewUserId) {
         // allow if viewing self
         if (viewUserId === req.user.id) {
@@ -126,7 +141,7 @@ router.get('/:id', checkPermission('patients', 'read'), async (req, res, next) =
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
     // Enforce doctor-only access: by default only their own patients; allow viewing a staff user's patients when `viewUserId` is provided and authorized
-    if (req.user.role === 'DOCTOR') {
+    if (userRoleNormalized === 'DOCTOR') {
       const viewUserId = req.query.viewUserId;
       if (viewUserId) {
         if (viewUserId === req.user.id) {

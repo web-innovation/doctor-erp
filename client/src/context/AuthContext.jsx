@@ -234,8 +234,23 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
     return fallbackRoles.includes((effectiveRole || '').toString().toUpperCase());
   }
 
-  const perms = rolePermissions[effectiveRole?.toString().toUpperCase()];
-  if (!perms) return false;
+  // Determine which role key to use when looking up clinic overrides. If the
+  // clinic has an explicit override for the effective role, use it. Otherwise
+  // attempt sensible fallbacks (e.g., treat `STAFF` as `DOCTOR` when only
+  // `DOCTOR` is defined in clinic overrides).
+  const effRoleKey = (effectiveRole || '').toString().toUpperCase();
+  let roleKeyForLookup = effRoleKey;
+  if (rolePermissions) {
+    if (!rolePermissions[roleKeyForLookup]) {
+      // fallback: treat STAFF as DOCTOR when DOCTOR override exists
+      if (roleKeyForLookup === 'STAFF' && rolePermissions['DOCTOR']) {
+        roleKeyForLookup = 'DOCTOR';
+      }
+    }
+  }
+
+  const perms = rolePermissions[roleKeyForLookup];
+  if (!Array.isArray(perms) || perms.length === 0) return false;
   return perms.includes(permKey);
 };
 
