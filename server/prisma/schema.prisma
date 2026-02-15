@@ -40,6 +40,7 @@ model User {
   prescriptionsAsDoctor    Prescription[]    @relation("PrescriptionDoctor")
   staffAssignmentsAsDoctor StaffAssignment[] @relation("StaffAssignmentDoctor")
   billsAsDoctor            Bill[]            @relation("BillDoctor")
+  BillItem                 BillItem[]
 
   @@index([clinicId])
   @@index([phone])
@@ -486,7 +487,7 @@ model BillItem {
   labTestId String?
 
   // Optional doctor for consultation items
-  doctor   User? @relation(fields: [doctorId], references: [id])
+  doctor   User?   @relation(fields: [doctorId], references: [id])
   doctorId String?
 
   @@index([billId])
