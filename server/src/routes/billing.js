@@ -72,10 +72,11 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     if (type) where.type = type;
     if (patientId) where.patientId = patientId;
 
-    // If requester is a DOCTOR, restrict to their own bills
-    if ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR') {
-      where.doctorId = req.user.id;
-    }
+    // Billing should show clinic-wide bills (doctors share billing area).
+    // Do not restrict listing to a single doctor's bills here; server-side control
+    // ensures billing is a shared area. Individual bill `doctorId` is still
+    // respected when present, and bill creation defaults to the requesting
+    // doctor when applicable.
     
     if (startDate || endDate) {
       where.date = {};
@@ -118,6 +119,33 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
   } catch (error) {
     console.error('Error listing bills:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch bills', error: error.message });
+  }
+});
+
+// GET /patients - List patients for billing (clinic-wide). Guarded by billing:create
+router.get('/patients', authenticate, checkPermission('billing:create'), async (req, res) => {
+  try {
+    const { search, limit = 50 } = req.query;
+    const where = { clinicId: req.user.clinicId };
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { phone: { contains: search } },
+        { patientId: { contains: search } }
+      ];
+    }
+
+    const patients = await prisma.patient.findMany({
+      where,
+      take: parseInt(limit, 10),
+      orderBy: { name: 'asc' },
+      select: { id: true, patientId: true, name: true, phone: true }
+    });
+
+    res.json({ success: true, data: patients });
+  } catch (error) {
+    console.error('Error listing billing patients:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch patients', error: error.message });
   }
 });
 
