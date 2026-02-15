@@ -28,6 +28,19 @@ export async function authenticate(req, res, next) {
     }
 
     req.user = user;
+    // Compute an effective role: some users are stored with role 'STAFF' but
+    // have a staffProfile.designation that indicates they are a doctor. Set
+    // `effectiveRole` to allow permission checks to consider this.
+    try {
+      let effective = (user.role || '').toString().toUpperCase();
+      if (effective === 'STAFF' && user.staffProfile && user.staffProfile.designation) {
+        const des = user.staffProfile.designation.toString().toLowerCase();
+        if (des.includes('doctor')) effective = 'DOCTOR';
+      }
+      req.user.effectiveRole = effective;
+    } catch (e) {
+      req.user.effectiveRole = (req.user.role || '').toString().toUpperCase();
+    }
     req.clinicId = user.clinicId;
     
     next();
@@ -223,7 +236,10 @@ export function checkPermission(resource, action) {
         console.warn('Failed to load clinic rolePermissions', err);
       }
 
-      if (!allowedRolesSet.has(req.user.role)) {
+      // Allow if user's stored role OR computed effectiveRole is permitted
+      const userRolesToCheck = new Set([ (req.user.role || '').toString().toUpperCase(), (req.user.effectiveRole || '').toString().toUpperCase() ]);
+      const allowed = [...allowedRolesSet].some(r => userRolesToCheck.has(r.toString().toUpperCase()));
+      if (!allowed) {
         return next(new AppError(`Permission denied: ${permission}`, 403));
       }
 
