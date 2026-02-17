@@ -9,8 +9,13 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../config/logger.js';
 import { logAuthEvent } from '../middleware/hipaaAudit.js';
 import { validatePassword, hashPassword, getPasswordRequirements } from '../utils/passwordPolicy.js';
+import crypto from 'crypto';
+import { sendSms } from '../services/smsService.js';
+import { requestOtp, verifyOtp, getOtpForDebug } from '../services/otpService.js';
+import emailService from '../services/emailService.js';
 
 const router = express.Router();
+
 
 // Get client IP helper
 function getClientIP(req) {
@@ -21,11 +26,226 @@ function getClientIP(req) {
          'unknown';
 }
 
+// Normalize phone numbers to a canonical form for OTP storage/lookup
+function normalizePhone(phone){
+  if(!phone) return phone;
+  let d = String(phone).replace(/\D/g,'');
+  // strip leading zeros
+  d = d.replace(/^0+/, '');
+  // strip leading country code 91 for India
+  if(d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  return d;
+}
+
 // ===========================================
 // PASSWORD REQUIREMENTS (for UI)
 // ===========================================
 router.get('/password-requirements', (req, res) => {
   res.json(getPasswordRequirements());
+});
+
+// ===========================================
+// REQUEST OTP (for mobile-only login/signup)
+// body: { mobile: "+919876543210" }
+// ===========================================
+router.post('/request-otp', async (req, res, next) => {
+  try{
+    const { mobile } = req.body;
+    if(!mobile) return res.status(400).json({ error: 'mobile required' });
+    const normalized = normalizePhone(mobile);
+    console.log(`[Auth] /request-otp called for mobile=${mobile} normalized=${normalized}`);
+    // request OTP via otpService (uses Redis if configured)
+    const r = await requestOtp(normalized);
+    console.log(`[Auth] OTP generated for ${normalized}: ${r.code}`);
+    const message = `Your DocClinic OTP is ${r.code}. It expires in 5 minutes.`;
+    // send SMS to the original provided number
+    await sendSms(mobile, message, { type: 'Transactional' });
+    // Also attempt to send OTP to email registered for this mobile (if any)
+    try{
+      // look up patient or user by normalized or raw phone
+      const patient = await prisma.patient.findFirst({ where: { OR: [{ phone: mobile }, { phone: normalized }] } });
+      const user = await prisma.user.findFirst({ where: { OR: [{ phone: mobile }, { phone: normalized }] } });
+      // prefer patient email if available, else user email
+      const email = patient?.email || user?.email || null;
+      const clinicId = patient?.clinicId || user?.clinicId || null;
+      if(email){
+        const expiryMinutes = 5;
+        let html = `<p>Your OTP is <strong>${r.code}</strong>. It expires in ${expiryMinutes} minutes.</p>`;
+        let text = `Your DocClinic OTP is ${r.code}. It expires in ${expiryMinutes} minutes.`;
+        if(clinicId){
+          const tplRecord = await prisma.clinicSettings.findFirst({ where: { key: 'otp_email_template', clinicId } });
+          if(tplRecord?.value){
+            const t = tplRecord.value;
+            html = t
+              .replace(/\{\{\s*code\s*\}\}/g, r.code)
+              .replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes))
+              .replace(/\{\{\s*clinicName\s*\}\}/g, (await prisma.clinic.findUnique({ where: { id: clinicId } }))?.name || '')
+              .replace(/\{\{\s*email\s*\}\}/g, email || '');
+            text = html.replace(/<[^>]+>/g, '');
+          }
+        } else {
+          html = html.replace(/\{\{\s*code\s*\}\}/g, r.code).replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes)).replace(/\{\{\s*email\s*\}\}/g, email || '');
+          text = text.replace(/\{\{\s*code\s*\}\}/g, r.code).replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes)).replace(/\{\{\s*email\s*\}\}/g, email || '');
+        }
+
+        try{
+          await emailService.sendEmail({ to: email, subject: 'Your DocClinic OTP', text, html, type: 'otp', clinicId: clinicId || undefined });
+          req.logger?.info?.(`OTP email sent to ${email} for mobile ${mobile}`);
+        }catch(e){
+          req.logger?.warn?.('Failed to send OTP email for mobile', mobile, e.message || e);
+        }
+      }
+    }catch(emailErr){
+      // don't block OTP SMS flow if anything above fails
+      req.logger?.warn?.('Error while attempting to send OTP email', emailErr);
+    }
+    // If in sandbox, return code for debugging
+    if(process.env.SMS_SANDBOX === 'true'){
+      return res.json({ ok: true, message: 'OTP sent (sandbox)', code: r.code });
+    }
+    return res.json({ ok: true, message: 'OTP sent' });
+  }catch(err){
+    next(err);
+  }
+});
+
+// ===========================================
+// REQUEST EMAIL OTP
+// body: { email: "user@example.com" }
+// ===========================================
+router.post('/request-email-otp', async (req, res, next) => {
+  try{
+    const { email } = req.body;
+    if(!email) return res.status(400).json({ error: 'email required' });
+
+    const r = await requestOtp(email);
+    const expiryMinutes = 5;
+
+    // Try to load clinic-specific OTP template if clinicId provided
+    const clinicId = req.body.clinicId || req.headers['x-clinic-id'] || null;
+    let html = `<p>Your OTP is <strong>${r.code}</strong>. It expires in ${expiryMinutes} minutes.</p>`;
+    let text = `Your DocClinic OTP is ${r.code}. It expires in ${expiryMinutes} minutes.`;
+
+    try{
+      let clinic = null;
+      if (clinicId) {
+        clinic = await prisma.clinic.findUnique({ where: { id: clinicId } });
+        const tplRecord = await prisma.clinicSettings.findFirst({ where: { key: 'otp_email_template', clinicId } });
+        if (tplRecord?.value) {
+          const t = tplRecord.value;
+          html = t
+            .replace(/\{\{\s*code\s*\}\}/g, r.code)
+            .replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes))
+            .replace(/\{\{\s*clinicName\s*\}\}/g, clinic?.name || '')
+            .replace(/\{\{\s*email\s*\}\}/g, email || '');
+          // build simple text version by stripping tags
+          text = html.replace(/<[^>]+>/g, '');
+        }
+      } else {
+        // replace email placeholder even when no clinic
+        html = html.replace(/\{\{\s*code\s*\}\}/g, r.code).replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes)).replace(/\{\{\s*email\s*\}\}/g, email || '');
+        text = text.replace(/\{\{\s*code\s*\}\}/g, r.code).replace(/\{\{\s*expiryMinutes\s*\}\}/g, String(expiryMinutes)).replace(/\{\{\s*email\s*\}\}/g, email || '');
+      }
+
+      await emailService.sendEmail({
+        to: email,
+        subject: 'Your DocClinic OTP',
+        text,
+        html,
+        type: 'otp',
+        clinicId: clinicId || undefined
+      });
+    }catch(err){
+      // email send failed — still return generic response to avoid enumeration
+      req.logger?.warn?.('Failed to send OTP email', err);
+    }
+
+    if(process.env.SMS_SANDBOX === 'true'){
+      return res.json({ ok: true, message: 'OTP sent (sandbox)', code: r.code });
+    }
+    return res.json({ ok: true, message: 'OTP sent' });
+  }catch(err){
+    next(err);
+  }
+});
+
+// ===========================================
+// VERIFY EMAIL OTP
+// body: { email, otp }
+// ===========================================
+router.post('/verify-email-otp', async (req, res, next) => {
+  try{
+    const { email, otp } = req.body;
+    if(!email || !otp) return res.status(400).json({ error: 'email and otp required' });
+    const ok = await verifyOtp(email, otp);
+    if(!ok) return res.status(400).json({ error: 'Invalid or expired OTP' });
+
+    // find or create user by email
+    let user = await prisma.user.findFirst({ where: { email } });
+    if(!user){
+      const tempPwd = crypto.randomBytes(12).toString('hex');
+      const hashed = await hashPassword(tempPwd);
+      user = await prisma.user.create({ data: { email, name: 'Patient', role: 'PATIENT', password: hashed } });
+      console.log(`[Auth] Created PATIENT user for email=${email} with temp password`);
+    }
+
+    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const clientIP = getClientIP(req);
+    await prisma.session.create({ data: { userId: user.id, token, expiresAt: new Date(Date.now() + 7*24*60*60*1000), ipAddress: clientIP, device: req.headers['user-agent'] } });
+
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  }catch(err){
+    next(err);
+  }
+});
+
+// ===========================================
+// VERIFY OTP - returns JWT token + user
+// body: { mobile, otp }
+// If user does not exist, create a minimal PATIENT user
+// ===========================================
+router.post('/verify-otp', async (req, res, next) => {
+  try{
+    const { mobile, otp } = req.body;
+    const normalized = normalizePhone(mobile);
+    console.log(`[Auth] /verify-otp called for mobile=${mobile} normalized=${normalized} otp=${otp}`);
+    if(!mobile || !otp) return res.status(400).json({ error: 'mobile and otp required' });
+    const ok = await verifyOtp(normalized, otp);
+    console.log(`[Auth] verifyOtp result for ${normalized}: ${ok}`);
+    if(!ok) return res.status(400).json({ error: 'Invalid or expired OTP' });
+
+    // OTP valid - find or create user
+    const normalizedPhone = normalized;
+    console.log(`[Auth] verify-otp phone received=${mobile} normalized=${normalizedPhone}`);
+    // Try to find existing patient/user by normalized phone first
+    let user = await prisma.user.findFirst({ where: { OR: [{ phone: mobile }, { phone: normalizedPhone }] } });
+    let patient = await prisma.patient.findFirst({ where: { OR: [{ phone: mobile }, { phone: normalizedPhone }] } });
+    if(!user && patient){
+      // prefer patient's email
+      const emailFromPatient = patient.email;
+      const tempPwd = crypto.randomBytes(12).toString('hex');
+      const hashed = await hashPassword(tempPwd);
+      user = await prisma.user.create({ data: { phone: mobile, email: emailFromPatient || `${normalizedPhone}@mobile.local`, name: 'Patient', role: 'PATIENT', password: hashed, clinicId: patient.clinicId } });
+      console.log(`[Auth] Created PATIENT user for phone=${mobile} with patient email=${emailFromPatient}`);
+    }
+    if(!user){
+      const tempPwd = crypto.randomBytes(12).toString('hex');
+      const hashed = await hashPassword(tempPwd);
+      user = await prisma.user.create({ data: { phone: mobile, email: `${normalizedPhone}@mobile.local`, name: 'Patient', role: 'PATIENT', password: hashed } });
+      console.log(`[Auth] Created PATIENT user for phone=${mobile} (email ${normalizedPhone}@mobile.local)`);
+    }
+
+    // create session token
+    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const clientIP = getClientIP(req);
+    await prisma.session.create({ data: { userId: user.id, token, expiresAt: new Date(Date.now() + 7*24*60*60*1000), ipAddress: clientIP, device: req.headers['user-agent'] } });
+
+    // OTP consumed by otpService (no-op here)
+
+    res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, role: user.role } });
+  }catch(err){
+    next(err);
+  }
 });
 
 // ===========================================

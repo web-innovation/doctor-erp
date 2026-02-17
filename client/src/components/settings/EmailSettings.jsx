@@ -97,6 +97,43 @@ export default function EmailSettings() {
     },
   });
 
+  // OTP template: fetch + save
+  const { data: otpTemplateData, isLoading: otpTemplateLoading } = useQuery({
+    queryKey: ['otpTemplate'],
+    queryFn: () => notificationService.getOtpTemplate(),
+  });
+
+  const [otpTemplate, setOtpTemplate] = useState('');
+  const [otpPlaceholders, setOtpPlaceholders] = useState([]);
+
+  useEffect(() => {
+    if (typeof otpTemplateData !== 'undefined') {
+      // server returns { template, placeholders }
+      if (otpTemplateData && typeof otpTemplateData === 'object') {
+        setOtpTemplate(otpTemplateData.template || '');
+        setOtpPlaceholders(otpTemplateData.placeholders || []);
+      } else {
+        setOtpTemplate(otpTemplateData || '');
+        setOtpPlaceholders([]);
+      }
+    }
+  }, [otpTemplateData]);
+
+  const saveOtpMutation = useMutation({
+    mutationFn: (payload) => notificationService.saveOtpTemplate(payload),
+    onSuccess: () => {
+      toast.success('OTP email template saved');
+      queryClient.invalidateQueries(['otpTemplate']);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to save template');
+    },
+  });
+
+  const handleSaveOtpTemplate = () => {
+    saveOtpMutation.mutate({ template: otpTemplate });
+  };
+
   const onSubmit = (data) => {
     // Filter out irrelevant fields based on provider
     const config = {
@@ -548,6 +585,47 @@ export default function EmailSettings() {
           </button>
         </div>
       </form>
+
+      {/* OTP Email Template Editor */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">OTP Email Template</h3>
+            <p className="text-sm text-gray-500 mt-1">Customize the HTML template used for email OTPs. Use <span className="font-mono">{'{{code}}'}</span> and <span className="font-mono">{'{{expiryMinutes}}'}</span> as placeholders.</p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <textarea
+            value={otpTemplate}
+            onChange={(e) => setOtpTemplate(e.target.value)}
+            className="w-full h-48 p-3 border border-gray-200 rounded-lg font-sans"
+            placeholder="<p>Your OTP is <strong>{{code}}</strong></p>"
+          />
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <button
+            type="button"
+            onClick={handleSaveOtpTemplate}
+            disabled={saveOtpMutation?.isLoading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50"
+          >
+            <FaSave /> {saveOtpMutation?.isLoading ? 'Saving...' : 'Save Template'}
+          </button>
+        </div>
+      </div>
+
+      {otpPlaceholders?.length > 0 && (
+        <div className="mt-3 text-sm text-gray-600">
+          <p className="font-medium">Available placeholders:</p>
+          <ul className="list-disc list-inside">
+            {otpPlaceholders.map((p) => (
+              <li key={p} className="font-mono">{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

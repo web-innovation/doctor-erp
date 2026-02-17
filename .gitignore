@@ -64,3 +64,10 @@ server/prisma/*.db-journal
 credentials/
 *.pem
 *.key
+# Mobile app sensitive files
+mobile-latest/docsyerp-patient/credentials/
+mobile-latest/docsyerp-patient/keystores/
+mobile-latest/docsyerp-patient/google-service-account.json
+mobile-latest/docsyerp-patient/.expo-shared/
+mobile-latest/docsyerp-patient/.expo/
+mobile-latest/docsyerp-patient/.env*

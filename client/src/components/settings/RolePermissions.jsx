@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import settingsService from '../../services/settingsService';
 import Button from '../../components/common/Button';
 
-const AVAILABLE_ROLES = ['DOCTOR','RECEPTIONIST','PHARMACIST','ACCOUNTANT','STAFF'];
+// Include PATIENT so clinic admins can grant access to mobile patients (e.g. prescriptions)
+const AVAILABLE_ROLES = ['DOCTOR','RECEPTIONIST','PHARMACIST','ACCOUNTANT','STAFF','PATIENT'];
 
 const DEFAULT_PERMISSIONS = [
   'dashboard:view',

@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 0.56.0"
+  },
+  "build": {
+    "production": {
+      "releaseChannel": "production",
+      "workflow": "managed",
+      "android": {
+        "buildType": "app-bundle"
+      }
+    },
+    "preview": {
+      "workflow": "managed",
+      "android": { "buildType": "apk" }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./credentials/google-service-account.json"
+      }
+    }
+  }
+}

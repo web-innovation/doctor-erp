@@ -44,7 +44,60 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
 
     const where = { clinicId: req.user.clinicId };
 
-    if (patientId) where.patientId = patientId;
+    // Support patientId='me' from mobile clients: resolve to the Patient record
+    if (patientId === 'me') {
+      // Try to find a patient in this clinic matching the authenticated user's phone or email.
+      // Mobile numbers may be stored in different formats (leading 0, country code). Build candidate variants.
+      const userPhoneRaw = req.user?.phone || '';
+      const digits = String(userPhoneRaw).replace(/\D/g, '');
+      const last10 = digits.slice(-10);
+      const candidates = new Set();
+      if (userPhoneRaw) candidates.add(userPhoneRaw);
+      if (digits) candidates.add(digits);
+      if (last10) candidates.add(last10);
+      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
+
+      const phoneCandidates = Array.from(candidates);
+
+      const orClauses = [];
+      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
+      if (req.user?.email) orClauses.push({ email: req.user.email });
+
+      const linkedPatient = await prisma.patient.findFirst({
+        where: {
+          clinicId: req.user.clinicId,
+          OR: orClauses
+        }
+      });
+      logger.info(`[Prescriptions] Resolving patientId=me for user=${req.user.id} phoneCandidates=${JSON.stringify(phoneCandidates)} foundPatient=${linkedPatient?.id || null}`);
+      // Additional console debug for troubleshooting mobile lookups
+      try {
+        console.log('[Prescriptions DEBUG] user:', { id: req.user.id, phone: req.user.phone, email: req.user.email });
+        console.log('[Prescriptions DEBUG] phoneCandidates:', phoneCandidates);
+        console.log('[Prescriptions DEBUG] linkedPatient:', linkedPatient ? { id: linkedPatient.id, patientId: linkedPatient.patientId, phone: linkedPatient.phone, email: linkedPatient.email } : null);
+      } catch (e) {
+        // ignore
+      }
+      if (linkedPatient) {
+        where.patientId = linkedPatient.id;
+      } else {
+        // No linked patient for this user - return empty list
+        return res.json({
+          success: true,
+          data: [],
+          pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 }
+        });
+      }
+    } else if (patientId) {
+      // Support clients passing patient code (e.g., P-0001) by mapping to internal id
+      if (typeof patientId === 'string' && patientId.startsWith('P-')) {
+        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId: req.user.clinicId } });
+        if (p) where.patientId = p.id;
+        else where.patientId = patientId; // fallback if not found
+      } else {
+        where.patientId = patientId;
+      }
+    }
 
     if (search) {
       where.OR = [
@@ -94,6 +147,11 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
       }),
       prisma.prescription.count({ where })
     ]);
+
+    try {
+      console.log('[Prescriptions DEBUG] query where:', JSON.stringify(where));
+      console.log(`[Prescriptions DEBUG] fetched ${prescriptions.length} prescriptions, total=${total}`);
+    } catch (e) {}
 
     res.json({
       success: true,

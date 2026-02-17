@@ -197,6 +197,46 @@ router.post('/email/test', authorize('DOCTOR'), async (req, res) => {
 // ==========================================
 
 /**
+ * GET /api/notifications/email/otp-template
+ * Get OTP email template for clinic (editable in settings UI)
+ */
+router.get('/email/otp-template', authorize('DOCTOR'), async (req, res) => {
+  try {
+    const config = await prisma.clinicSettings?.findFirst({ where: { key: 'otp_email_template', clinicId: req.user.clinicId } });
+    const template = config?.value || null;
+    const placeholders = ['{{code}}', '{{expiryMinutes}}', '{{clinicName}}', '{{email}}'];
+    res.json({ success: true, data: { template, placeholders } });
+  } catch (error) {
+    logger.error('Error getting OTP email template:', error);
+    res.status(500).json({ success: false, message: 'Failed to get OTP email template' });
+  }
+});
+
+/**
+ * POST /api/notifications/email/otp-template
+ * Save OTP email template for clinic (editable in settings UI)
+ * body: { template: '<p>Your OTP is {{code}}</p>' }
+ */
+router.post('/email/otp-template', authorize('DOCTOR'), async (req, res) => {
+  try {
+    const { template } = req.body;
+    if (!template) return res.status(400).json({ success: false, message: 'template is required' });
+
+    const existing = await prisma.clinicSettings?.findFirst({ where: { key: 'otp_email_template', clinicId: req.user.clinicId } });
+    if (existing) {
+      await prisma.clinicSettings?.update({ where: { id: existing.id }, data: { value: template, updatedAt: new Date() } });
+    } else {
+      await prisma.clinicSettings?.create({ data: { key: 'otp_email_template', value: template, clinicId: req.user.clinicId } });
+    }
+
+    res.json({ success: true, message: 'OTP email template saved' });
+  } catch (error) {
+    logger.error('Error saving OTP email template:', error);
+    res.status(500).json({ success: false, message: 'Failed to save OTP email template' });
+  }
+});
+
+/**
  * POST /api/notifications/appointment-reminder/:id
  * Send appointment reminder email
  */

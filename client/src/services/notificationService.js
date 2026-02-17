@@ -109,6 +109,26 @@ const notificationService = {
   },
 
   // ==========================================
+  // OTP Email Template
+  // ==========================================
+  /**
+   * Get clinic OTP email template
+   */
+  getOtpTemplate: async () => {
+    const response = await api.get('/notifications/email/otp-template');
+    return response.data?.data || null;
+  },
+
+  /**
+   * Save clinic OTP email template
+   * @param {Object} payload - { template: string }
+   */
+  saveOtpTemplate: async (payload) => {
+    const response = await api.post('/notifications/email/otp-template', payload);
+    return response.data;
+  },
+
+  // ==========================================
   // WhatsApp Configuration
   // ==========================================
 

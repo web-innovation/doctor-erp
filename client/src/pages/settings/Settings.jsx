@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import EmailSettings from '../../components/settings/EmailSettings';
 import WhatsAppSettings from '../../components/settings/WhatsAppSettings';
 import RolePermissions from '../../components/settings/RolePermissions';
+import MobileAccess from '../../components/settings/MobileAccess';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
@@ -902,8 +903,14 @@ export default function Settings() {
         return renderPreferencesTab();
       case 'access':
         return (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <RolePermissions />
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <RolePermissions />
+            </div>
+
+            <div>
+              <MobileAccess />
+            </div>
           </div>
         );
       default:

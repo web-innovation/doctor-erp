@@ -1,6 +1,7 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import { logger } from '../config/logger.js';
 
 const router = express.Router();
 
@@ -70,7 +71,43 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     
     if (status) where.paymentStatus = status;
     if (type) where.type = type;
-    if (patientId) where.patientId = patientId;
+    if (patientId === 'me') {
+      const userPhoneRaw = req.user?.phone || '';
+      const digits = String(userPhoneRaw).replace(/\D/g, '');
+      const last10 = digits.slice(-10);
+      const candidates = new Set();
+      if (userPhoneRaw) candidates.add(userPhoneRaw);
+      if (digits) candidates.add(digits);
+      if (last10) candidates.add(last10);
+      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
+      const phoneCandidates = Array.from(candidates);
+
+      const orClauses = [];
+      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
+      if (req.user?.email) orClauses.push({ email: req.user.email });
+
+      const linkedPatient = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, OR: orClauses } });
+      logger.info(`[Billing] Resolving patientId=me for user=${req.user.id} phoneCandidates=${JSON.stringify(phoneCandidates)} foundPatient=${linkedPatient?.id || null}`);
+      try {
+        console.log('[Billing DEBUG] user:', { id: req.user.id, phone: req.user.phone, email: req.user.email });
+        console.log('[Billing DEBUG] phoneCandidates:', phoneCandidates);
+        console.log('[Billing DEBUG] linkedPatient:', linkedPatient ? { id: linkedPatient.id, patientId: linkedPatient.patientId, phone: linkedPatient.phone, email: linkedPatient.email } : null);
+      } catch (e) {}
+
+      if (linkedPatient) {
+        where.patientId = linkedPatient.id;
+      } else {
+        return res.json({ success: true, data: [], pagination: { page: parseInt(page), limit: parseInt(limit), total: 0, totalPages: 0 } });
+      }
+    } else if (patientId) {
+      if (typeof patientId === 'string' && patientId.startsWith('P-')) {
+        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId: req.user.clinicId } });
+        if (p) where.patientId = p.id;
+        else where.patientId = patientId;
+      } else {
+        where.patientId = patientId;
+      }
+    }
 
     // Billing should show clinic-wide bills (doctors share billing area).
     // Do not restrict listing to a single doctor's bills here; server-side control
@@ -91,6 +128,13 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
       ];
     }
     
+    // Debug: dump incoming query and resolved filters to help mobile lookups
+    try {
+      console.log('[Billing DEBUG] request user:', { id: req.user.id, phone: req.user.phone, email: req.user.email });
+      console.log('[Billing DEBUG] query params:', req.query);
+      console.log('[Billing DEBUG] resolved where before query:', JSON.stringify(where));
+    } catch (e) {}
+
     const [bills, total] = await Promise.all([
       prisma.bill.findMany({
         where,
@@ -105,10 +149,24 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
       }),
       prisma.bill.count({ where })
     ]);
-    
+    try {
+      console.log(`[Billing DEBUG] fetched ${bills.length} bills, total=${total}`);
+      // print first 3 bills for inspection
+      console.log('[Billing DEBUG] sample bills:', bills.slice(0,3).map(b => ({ id: b.id, billNo: b.billNo, patientId: b.patientId, total: b.total || b.amount })));
+    } catch (e) {}
+
+    // Provide compatibility aliases for frontend: `total`, `amount`, `paid`, `due`
+    const billsMapped = bills.map(b => ({
+      ...b,
+      total: b.totalAmount,
+      amount: b.totalAmount,
+      paid: b.paidAmount,
+      due: b.dueAmount
+    }));
+
     res.json({
       success: true,
-      data: bills,
+      data: billsMapped,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -474,7 +532,13 @@ router.get('/:id', authenticate, checkPermission('billing:read'), async (req, re
     if (bill.taxBreakdown) {
       bill.taxBreakdownParsed = JSON.parse(bill.taxBreakdown);
     }
-    
+
+    // Compatibility aliases
+    bill.total = bill.totalAmount;
+    bill.amount = bill.totalAmount;
+    bill.paid = bill.paidAmount;
+    bill.due = bill.dueAmount;
+
     res.json({ success: true, data: bill });
   } catch (error) {
     console.error('Error fetching bill:', error);
