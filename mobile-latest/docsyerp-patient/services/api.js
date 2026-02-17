@@ -5,10 +5,13 @@ async function fetchWithAuth(path, opts = {}){
   const token = await auth.getToken();
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if(token) headers['Authorization'] = `Bearer ${token}`;
+  const fullUrl = `${SERVER_URL}${path}`;
   try {
-    console.log('[API DEBUG] fetching:', `${SERVER_URL}${path}`, opts && opts.method ? opts.method : 'GET');
+    const method = (opts && opts.method) || 'GET';
+    const bodyPreview = opts && opts.body ? ` body=${String(opts.body).slice(0,200)}` : '';
+    console.log('[API DEBUG] fetching:', method, fullUrl, bodyPreview);
   } catch (e) {}
-  const res = await fetch(`${SERVER_URL}${path}`, Object.assign({}, opts, { headers }));
+  const res = await fetch(fullUrl, Object.assign({}, opts, { headers }));
   if(res.status === 401){
     // try refresh once
     try{
@@ -17,7 +20,11 @@ async function fetchWithAuth(path, opts = {}){
       const headers2 = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
       if(token2) headers2['Authorization'] = `Bearer ${token2}`;
       const res2 = await fetch(`${SERVER_URL}${path}`, Object.assign({}, opts, { headers: headers2 }));
-      if(!res2.ok) throw new Error('Network error');
+      if(!res2.ok) {
+        const t2 = await res2.text().catch(() => '<no body>');
+        console.error('[API ERROR] refresh attempt failed', res2.status, t2);
+        throw new Error('Network error');
+      }
       const j2 = await res2.json();
       if (j2 && typeof j2 === 'object') {
         if ('pagination' in j2) return j2; // return full object for paginated endpoints
@@ -28,7 +35,11 @@ async function fetchWithAuth(path, opts = {}){
       throw new Error('Unauthorized');
     }
   }
-  if(!res.ok) throw new Error('Network error');
+  if(!res.ok){
+    const txt = await res.text().catch(() => '<no body>');
+    console.error('[API ERROR] request failed', res.status, txt);
+    throw new Error('Network error');
+  }
   const j = await res.json();
   if (j && typeof j === 'object') {
     if ('pagination' in j) return j;

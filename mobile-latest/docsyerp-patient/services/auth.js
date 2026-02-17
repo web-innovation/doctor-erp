@@ -4,7 +4,7 @@ const TOKEN_KEY = 'docclinic_token';
 const REFRESH_KEY = 'docclinic_refresh';
 const USER_KEY = 'docclinic_user';
 const MOCK_OTP_KEY_PREFIX = 'mock_otp_';
-const SERVER_URL = 'http://192.168.1.7:3001'; // replace with your backend or 'mock' for dev
+const SERVER_URL = 'https://docsyerp.in'; // replace with your backend or 'mock' for dev
 
 const MOCK_DEV = SERVER_URL === 'mock';
 
@@ -75,9 +75,19 @@ export default {
       console.log('MOCK OTP for', mobile, otp);
       return { ok: true };
     }
-    const res = await fetch(`${SERVER_URL}/api/auth/request-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
-    if(!res.ok) throw new Error('Request OTP failed');
-    return res.json();
+    const url = `${SERVER_URL}/api/auth/request-otp`;
+    try {
+      console.log('[AUTH DEBUG] requestOtp ->', url, 'mobile=', mobile);
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
+      const text = await res.text().catch(() => '<no body>');
+      console.log('[AUTH DEBUG] requestOtp response', res.status, text);
+      if(!res.ok) throw new Error('Request OTP failed: ' + res.status + ' ' + text);
+      // try parse json
+      try { return JSON.parse(text); } catch (e) { return { ok: true, raw: text }; }
+    } catch (err) {
+      console.error('[AUTH ERROR] requestOtp failed', err);
+      throw err;
+    }
   },
   verifyOtp: async (mobile, otp) => {
     if(MOCK_DEV){

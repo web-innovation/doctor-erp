@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, Alert, Linking, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import auth from '@/services/auth';
 
@@ -39,6 +39,11 @@ export default function Login() {
         <View style={styles.buttonWrap}>
           <Button title={loading ? 'Requesting OTP...' : 'Send OTP'} onPress={doRequestOtp} disabled={loading} />
         </View>
+        <View style={styles.privacyWrap}>
+          <TouchableOpacity onPress={() => Linking.openURL('https://docsyerp.in/privacy') }>
+            <Text style={styles.privacyLink}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -51,4 +56,6 @@ const styles = StyleSheet.create({
   info: { fontSize: 14, color: '#555', marginBottom: 16, textAlign: 'center' },
   input: { borderWidth: 1, borderColor: '#e2e8f0', padding: 12, marginBottom: 12, borderRadius: 8, fontSize: 18, backgroundColor: '#fff' },
   buttonWrap: { marginTop: 8 }
+  ,privacyWrap: { marginTop: 12, alignItems: 'center' },
+  privacyLink: { color: '#3b82f6', textDecorationLine: 'underline' }
 });

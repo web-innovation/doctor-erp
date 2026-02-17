@@ -39,6 +39,7 @@ import Users from './pages/admin/Users';
 
 // Landing Page
 import Landing from './pages/Landing';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
@@ -76,6 +77,7 @@ function App() {
       <Routes>
       {/* Public Routes */}
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
       
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>

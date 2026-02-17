@@ -179,9 +179,12 @@ export default function Login() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-gray-400 text-sm mt-8">
-          © {new Date().getFullYear()} Docsy. All rights reserved.
-        </p>
+        <div className="text-center text-gray-400 text-sm mt-8">
+          <p>© {new Date().getFullYear()} Docsy. All rights reserved.</p>
+          <p className="mt-1">
+            <Link to="/privacy" className="text-gray-500 hover:underline">Privacy Policy</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
