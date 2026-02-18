@@ -10,6 +10,15 @@ import { PrismaClient } from '@prisma/client';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './config/logger.js';
 
+// Log only the names of environment variables set at startup (no values)
+try {
+  console.log('===== ENVIRONMENT VARIABLE NAMES SET =====');
+  Object.keys(process.env).sort().forEach((k) => console.log(k));
+  console.log('===== END ENVIRONMENT VARIABLE NAMES =====');
+} catch (e) {
+  console.warn('Failed to list environment variable names', e);
+}
+
 // ES module dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
