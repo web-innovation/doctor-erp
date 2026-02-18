@@ -24,6 +24,27 @@ function genOtp(){
 
 export async function requestOtp(mobile){
   const now = Date.now();
+  // Test OTP support: if enabled and the mobile matches TEST_MOBILE, return a fixed OTP with long TTL
+  try{
+    const enabled = process.env.TEST_OTP_ENABLED === 'true';
+    const testMobile = process.env.TEST_MOBILE || '';
+    const testOtp = process.env.TEST_OTP || '000000';
+    const testTtlDays = parseInt(process.env.TEST_OTP_TTL_DAYS || '30', 10);
+    if(enabled && testMobile && String(mobile) === String(testMobile)){
+      const ttlSeconds = Math.max(60, testTtlDays * 24 * 60 * 60);
+      if(redis){
+        await redis.set(OTP_KEY(mobile), testOtp, 'EX', ttlSeconds);
+        console.log(`[OTP service] test OTP set for ${mobile}: ${testOtp} (redis, ttl=${ttlSeconds}s)`);
+        return { code: testOtp };
+      }
+      // mem fallback
+      memStore.set(mobile, { code: testOtp, expiresAt: now + (ttlSeconds * 1000), count: 0, lastSent: now });
+      console.log(`[OTP service] test OTP set for ${mobile}: ${testOtp} (mem, ttl=${ttlSeconds}s)`);
+      return { code: testOtp };
+    }
+  }catch(e){
+    console.warn('Error while checking TEST_OTP settings', e);
+  }
   if(redis){
     // lastSent check (60s)
     const last = await redis.get(OTP_LAST_KEY(mobile));
@@ -55,6 +76,18 @@ export async function requestOtp(mobile){
 }
 
 export async function verifyOtp(mobile, otp){
+  // Allow persistent test OTP if enabled
+  try{
+    const enabled = process.env.TEST_OTP_ENABLED === 'true';
+    const testMobile = process.env.TEST_MOBILE || '';
+    const testOtp = process.env.TEST_OTP || '000000';
+    if(enabled && testMobile && String(mobile) === String(testMobile) && String(otp) === String(testOtp)){
+      console.log(`[OTP service] verify test OTP for ${mobile} accepted`);
+      return true;
+    }
+  }catch(e){
+    console.warn('Error while checking TEST_OTP settings', e);
+  }
   if(redis){
     const stored = await redis.get(OTP_KEY(mobile));
     const ok = !!stored && stored === otp;
