@@ -617,24 +617,103 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
 });
 
 // PUT /:id - Update bill
-router.put('/:id', authenticate, checkPermission('billing:create'), async (req, res) => {
+router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { notes, paymentStatus } = req.body;
-    
-    const bill = await prisma.bill.findFirst({
-      where: { id, clinicId: req.user.clinicId }
-    });
-    
-    if (!bill) {
-      return res.status(404).json({ success: false, message: 'Bill not found' });
-    }
-    
-    const updateData = {};
+    // allow updating items, discount, taxConfig, notes, doctorId, type
+    const { notes, paymentStatus, items, discount = 0, discountType = 'AMOUNT', taxConfig, doctorId, type } = req.body;
+
+    const bill = await prisma.bill.findFirst({ where: { id, clinicId: req.user.clinicId } });
+    if (!bill) return res.status(404).json({ success: false, message: 'Bill not found' });
+
+    // If items provided, recalculate totals and replace items
+    let updateData = {};
     if (notes !== undefined) updateData.notes = notes;
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
-    
-    const updatedBill = await prisma.bill.update({
+    if (doctorId !== undefined) updateData.doctorId = doctorId;
+    if (type) updateData.type = type;
+
+    if (items && Array.isArray(items)) {
+      // Process items and totals similar to create endpoint
+      let subtotal = 0;
+      const processedItems = items.map(item => {
+        const qty = Number(item.quantity) || 1;
+        const unitPrice = Number(item.unitPrice) || 0;
+        const amount = qty * unitPrice;
+        subtotal += amount;
+        return {
+          description: item.description || '',
+          quantity: qty,
+          unitPrice: unitPrice,
+          gstPercent: item.gstPercent || 0,
+          amount,
+          productId: item.productId || null,
+          labId: item.labId || null,
+          labTestId: item.labTestId || null,
+          doctorId: item.doctorId || null,
+        };
+      });
+
+      // Discount
+      let discountAmount = Number(discount) || 0;
+      let discountPercent = null;
+      if ((discountType || 'AMOUNT').toUpperCase() === 'PERCENTAGE') {
+        discountPercent = Number(discount) || 0;
+        discountAmount = (subtotal * discountPercent) / 100;
+      }
+
+      const taxableAmount = subtotal - discountAmount;
+      const tax = calculateTax(taxableAmount, taxConfig);
+      const totalAmount = taxableAmount + tax.totalTax;
+
+      // Preserve paid amount and compute due
+      const paidAmount = bill.paidAmount || 0;
+      const dueAmount = Math.max(0, totalAmount - paidAmount);
+      const newStatus = dueAmount <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+
+      updateData = {
+        ...updateData,
+        subtotal,
+        discountPercent,
+        discountAmount,
+        taxAmount: tax.totalTax,
+        taxBreakdown: JSON.stringify({ cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst }),
+        totalAmount,
+        dueAmount,
+        paymentStatus: newStatus,
+      };
+
+      const updatedBill = await prisma.bill.update({
+        where: { id },
+        data: {
+          ...updateData,
+          items: {
+            deleteMany: {},
+            create: processedItems.map(it => ({
+              description: it.description,
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              gstPercent: it.gstPercent,
+              amount: it.amount,
+              productId: it.productId,
+              labId: it.labId,
+              labTestId: it.labTestId,
+              doctorId: it.doctorId,
+            }))
+          }
+        },
+        include: {
+          patient: { select: { id: true, name: true, phone: true } },
+          items: true,
+          payments: true
+        }
+      });
+
+      return res.json({ success: true, data: updatedBill, message: 'Bill updated successfully' });
+    }
+
+    // If no items provided, simple update
+    const finalUpdated = await prisma.bill.update({
       where: { id },
       data: updateData,
       include: {
@@ -643,8 +722,8 @@ router.put('/:id', authenticate, checkPermission('billing:create'), async (req, 
         payments: true
       }
     });
-    
-    res.json({ success: true, data: updatedBill, message: 'Bill updated successfully' });
+
+    res.json({ success: true, data: finalUpdated, message: 'Bill updated successfully' });
   } catch (error) {
     console.error('Error updating bill:', error);
     res.status(500).json({ success: false, message: 'Failed to update bill', error: error.message });

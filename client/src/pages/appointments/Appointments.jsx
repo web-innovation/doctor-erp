@@ -129,6 +129,18 @@ export default function Appointments() {
     label: `${p.name} (${p.patientId || `P${String(p.id).padStart(5, '0')}`})`,
   }));
 
+  // Fetch doctors for the doctor dropdown when creating appointment
+  const { data: doctorsData } = useQuery({
+    queryKey: ['doctors-list'],
+    queryFn: () => appointmentService.getDoctors(),
+    enabled: showNewModal,
+  });
+
+  const doctorOptions = (doctorsData?.data || []).map((d) => ({
+    value: d.id,
+    label: d.name,
+  }));
+
   // Create appointment mutation
   const createMutation = useMutation({
     mutationFn: appointmentService.createAppointment,
@@ -157,6 +169,19 @@ export default function Appointments() {
   });
 
   const onSubmit = (data) => {
+    // Client-side validation: prevent scheduling in the past
+    try {
+      if (data.date && data.time) {
+        const apptDt = new Date(`${data.date}T${data.time}`);
+        if (apptDt < new Date()) {
+          toast.error('Appointment date and time cannot be in the past');
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore parse errors and let server-side validation handle
+    }
+
     createMutation.mutate({
       patientId: data.patient?.value,
       date: data.date,
@@ -164,6 +189,7 @@ export default function Appointments() {
       type: data.type?.value || 'CONSULTATION',
       symptoms: data.reason,
       notes: data.notes,
+      doctorId: data.doctor?.value,
     });
   };
 
@@ -399,6 +425,26 @@ export default function Appointments() {
                                   Mark Completed
                                 </button>
                               )}
+
+                              {/* Approve / Reject for patient-submitted requests */}
+                              {appointment.status === 'REVIEW' && (
+                                <>
+                                  <button
+                                    onClick={() => handleStatusChange(appointment.id, 'SCHEDULED')}
+                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <FaCheck className="text-green-500" />
+                                    Approve (Schedule)
+                                  </button>
+                                  <button
+                                    onClick={() => handleStatusChange(appointment.id, 'CANCELLED')}
+                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <FaTimes className="text-red-500" />
+                                    Reject
+                                  </button>
+                                </>
+                              )}
                               {appointment.status !== 'CANCELLED' && (
                                 <button
                                   onClick={() => handleStatusChange(appointment.id, 'CANCELLED')}
@@ -501,10 +547,21 @@ export default function Appointments() {
               isSearchable
             />
 
+            <Select
+              label="Doctor"
+              name="doctor"
+              control={control}
+              options={doctorOptions}
+              placeholder="Select doctor (optional)"
+              error={errors.doctor?.message}
+              isSearchable
+            />
+
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
                 type="date"
+                min={new Date().toISOString().split('T')[0]}
                 {...register('date', { required: 'Date is required' })}
                 error={errors.date?.message}
               />

@@ -38,6 +38,8 @@ export default function Prescriptions() {
         search: searchQuery || undefined,
       }),
     placeholderData: (previousData) => previousData,
+    // Auto-refresh every 5 minutes
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const prescriptions = prescriptionsData?.data || [];

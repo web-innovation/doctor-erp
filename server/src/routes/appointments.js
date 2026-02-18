@@ -257,6 +257,24 @@ router.post('/', async (req, res, next) => {
     // If doctorId omitted and user is a doctor, default to current user
     const doctorIdFinal = doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined);
 
+    // Server-side validation: appointment datetime must not be in the past
+    try {
+      if (date && timeSlot) {
+        const apptDt = new Date(`${date}T${timeSlot}`);
+        if (apptDt < new Date()) {
+          return res.status(400).json({ success: false, message: 'Appointment date and time cannot be in the past' });
+        }
+      } else if (date) {
+        const apptDateOnly = new Date(date);
+        apptDateOnly.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (apptDateOnly < today) return res.status(400).json({ success: false, message: 'Appointment date cannot be in the past' });
+      }
+    } catch (e) {
+      // fall through to allow create and let later DB or other validations handle parse errors
+    }
+
     // If a patient is creating the appointment via mobile, put it into REVIEW state
     const isPatient = ((req.user.effectiveRole || '').toString().toUpperCase() === 'PATIENT');
     const statusFinal = isPatient ? 'REVIEW' : 'SCHEDULED';
@@ -289,6 +307,28 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', checkPermission('appointments', 'update'), async (req, res, next) => {
   try {
     const { date, timeSlot, type, status, symptoms, notes, consultationFee } = req.body;
+
+    // Fetch existing appointment to allow combining existing date/time with updates
+    const existing = await prisma.appointment.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Appointment not found' });
+
+    // Server-side validation: ensure updated appointment datetime is not in the past
+    try {
+      const finalDate = date || (existing.date ? existing.date.toISOString().split('T')[0] : undefined);
+      const finalTime = timeSlot || existing.timeSlot;
+      if (finalDate && finalTime) {
+        const apptDt = new Date(`${finalDate}T${finalTime}`);
+        if (apptDt < new Date()) return res.status(400).json({ success: false, message: 'Appointment date and time cannot be in the past' });
+      } else if (finalDate && !finalTime) {
+        const apptDateOnly = new Date(finalDate);
+        apptDateOnly.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (apptDateOnly < today) return res.status(400).json({ success: false, message: 'Appointment date cannot be in the past' });
+      }
+    } catch (e) {
+      // ignore parse errors and let other validations handle
+    }
 
     const appointment = await prisma.appointment.update({
       where: { id: req.params.id },

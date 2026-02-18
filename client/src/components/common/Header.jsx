@@ -378,14 +378,14 @@ const Header = ({ onMenuClick }) => {
 
           {/* Right section - Actions */}
           <div className="flex items-center space-x-4">
-            {/* Staff selector for viewing dashboard as another staff (admin/doctor only) */}
-            {isClinicAdmin && (
-              <div className="hidden sm:block">
-                <select
-                  value={activeViewUser?.id || ''}
-                  onChange={handleViewAsChange}
-                  className="border rounded-md px-2 py-1 text-sm"
-                >
+            {/* Staff selector for viewing dashboard as another staff (admin/doctor only) - visible only on dashboard */}
+              {isClinicAdmin && location.pathname.startsWith('/dashboard') && (
+                <div className="hidden sm:block">
+                  <select
+                    value={activeViewUser?.id || ''}
+                    onChange={handleViewAsChange}
+                    className="border rounded-md px-2 py-1 text-sm"
+                  >
                   {/* Admin clinic is the default; selecting it clears activeViewUser */}
                   <option value="">Admin clinic</option>
                   {staffList

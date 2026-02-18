@@ -52,6 +52,16 @@ const billingService = {
   },
 
   /**
+   * Update existing bill
+   * @param {string} id - Bill ID
+   * @param {Object} data - Updated bill data (items, notes, taxConfig, discount, etc.)
+   */
+  updateBill: async (id, data) => {
+    const response = await api.put(`/billing/${id}`, data);
+    return response.data;
+  },
+
+  /**
    * Record payment for a bill
    * @param {string} id - Bill ID
    * @param {Object} paymentData - Payment data

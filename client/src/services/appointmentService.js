@@ -111,6 +111,15 @@ const appointmentService = {
     });
     return response.data?.data || [];
   },
+
+  /**
+   * Get active clinic doctors for dropdowns
+   * @returns {Promise} - Array of doctors {id, name, email}
+   */
+  getDoctors: async () => {
+    const response = await api.get('/appointments/doctors');
+    return response.data;
+  },
 };
 
 export { appointmentService };

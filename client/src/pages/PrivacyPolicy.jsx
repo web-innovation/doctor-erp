@@ -62,11 +62,6 @@ export default function PrivacyPolicy(){
         <p>Clinics may update this notice. Users will be notified via app or clinic communication.</p>
       </section>
 
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">11. Hosting the Policy</h2>
-        <p>Host this page on your clinic website (HTTPS) and provide the URL in the Play Console Data Safety & Privacy Policy field.</p>
-      </section>
-
     </div>
   );
 }

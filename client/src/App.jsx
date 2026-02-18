@@ -111,6 +111,7 @@ function App() {
         {/* Billing */}
         <Route path="/billing" element={<Billing />} />
         <Route path="/billing/new" element={<NewBill />} />
+        <Route path="/billing/:id/edit" element={<NewBill />} />
         
         {/* Staff Management */}
         <Route path="/staff" element={<Staff />} />

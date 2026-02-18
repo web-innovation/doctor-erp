@@ -59,6 +59,10 @@ export default function Billing() {
     formState: { errors },
   } = useForm();
 
+  // Permission flags — call hooks unconditionally to keep hook order stable
+  const canCreateBilling = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
+  const canEditBilling = useHasPerm('billing:edit', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
+
   // Fetch bills
   const { data: billsData, isLoading } = useQuery({
     queryKey: ['bills', currentPage, pageSize, searchQuery, filters],
@@ -260,7 +264,7 @@ export default function Billing() {
               Manage invoices and payments
             </p>
           </div>
-          {useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']) && (
+          {canCreateBilling && (
             <Link
               to="/billing/new"
               className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
@@ -764,6 +768,17 @@ export default function Billing() {
                 <FaPrint />
                 Print
               </button>
+              {canEditBilling && (
+                <button
+                  onClick={() => {
+                    setIsViewModalOpen(false);
+                    navigate(`/billing/${selectedBill.id}/edit`);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  Edit
+                </button>
+              )}
               {selectedBill.status !== 'paid' && selectedBill.status !== 'cancelled' && (
                 <button
                   onClick={() => {

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -44,14 +45,17 @@ const PAYMENT_METHODS = [
 ];
 
 export default function NewBill() {
+  const { id: billId } = useParams();
   const canCreateBill = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
-  if (!canCreateBill) {
+  const canEditBill = useHasPerm('billing:edit', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
+  const isEditMode = !!billId;
+  if ((isEditMode && !canEditBill) || (!isEditMode && !canCreateBill)) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-xl p-6 border border-gray-100">
             <h2 className="text-lg font-semibold">Access denied</h2>
-            <p className="text-sm text-gray-500 mt-2">You do not have permission to create bills.</p>
+            <p className="text-sm text-gray-500 mt-2">You do not have permission to {isEditMode ? 'edit' : 'create'} bills.</p>
           </div>
         </div>
       </div>
@@ -210,6 +214,81 @@ export default function NewBill() {
     },
   });
 
+  // Edit mode: if billId present, fetch bill and populate form
+  const { data: billData } = useQuery({
+    queryKey: ['bill', billId],
+    queryFn: () => (billId ? billingService.getBill(billId) : Promise.resolve(null)),
+    enabled: !!billId,
+  });
+
+  useEffect(() => {
+    if (billData && billId) {
+      const b = billData.data || billData;
+      // Populate patient & doctor
+      setSelectedPatient(b.patient || null);
+      if (b.doctor) setSelectedDoctor({ id: b.doctor.id, name: b.doctor.name });
+      // Map backend type (e.g., 'PHARMACY') to local billType ('pharmacy')
+      if (b.type) {
+        const t = (b.type || '').toString().toUpperCase();
+        if (t === 'PHARMACY') setBillType('pharmacy');
+        else if (t === 'LAB_TEST') setBillType('lab');
+        else if (t === 'CONSULTATION') setBillType('consultation');
+        else setBillType('consultation');
+      }
+
+      const items = (b.items || []).map(it => ({
+        productId: it.productId || null,
+        description: it.description || '',
+        quantity: it.quantity || 1,
+        unitPrice: it.unitPrice || it.amount || 0,
+        type: it.type || 'other',
+        doctorId: it.doctorId || undefined,
+      }));
+
+      try {
+        setValue('items', items);
+        // Discount: prefer discountPercent when present
+        if (b.discountPercent !== null && b.discountPercent !== undefined) {
+          setValue('discount', b.discountPercent || 0);
+          setValue('discountType', 'percentage');
+        } else {
+          setValue('discount', b.discountAmount || 0);
+          setValue('discountType', 'fixed');
+        }
+
+        // GST rate: compute from taxAmount and taxable base when possible
+        const subtotal = Number(b.subtotal || 0);
+        const discountAmount = Number(b.discountAmount || 0);
+        const taxableBase = subtotal - discountAmount;
+        if (taxableBase > 0) {
+          const gstRate = ((Number(b.taxAmount || 0) / taxableBase) * 100) || 0;
+          // round to 2 decimals
+          setValue('gstRate', Math.round(gstRate * 100) / 100);
+        } else {
+          setValue('gstRate', 0);
+        }
+
+        setValue('notes', b.notes || '');
+      } catch (e) {
+        // ignore setValue errors
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billData, billId]);
+
+  // Update bill mutation (edit)
+  const updateBillMutation = useMutation({
+    mutationFn: ({ id, data }) => billingService.updateBill(id, data),
+    onSuccess: () => {
+      toast.success('Bill updated successfully');
+      queryClient.invalidateQueries(['bills']);
+      navigate('/billing');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to update bill');
+    },
+  });
+
   const handlePatientSelect = (patient) => {
     setSelectedPatient(patient);
     setPatientSearch(patient.name);
@@ -337,7 +416,11 @@ export default function NewBill() {
       };
     }
 
-    createBillMutation.mutate(billData);
+    if (billId) {
+      updateBillMutation.mutate({ id: billId, data: billData });
+    } else {
+      createBillMutation.mutate(billData);
+    }
   };
 
   const formatCurrency = (amount) => {

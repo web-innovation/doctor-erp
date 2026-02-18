@@ -1,25 +1,21 @@
 {
   "cli": {
-    "version": ">= 0.56.0"
+    "version": ">= 18.0.1",
+    "appVersionSource": "remote"
   },
   "build": {
-    "production": {
-      "releaseChannel": "production",
-      "workflow": "managed",
-      "android": {
-        "buildType": "app-bundle"
-      }
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
     },
     "preview": {
-      "workflow": "managed",
-      "android": { "buildType": "apk" }
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true
     }
   },
   "submit": {
-    "production": {
-      "android": {
-        "serviceAccountKeyPath": "./credentials/google-service-account.json"
-      }
-    }
+    "production": {}
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
@@ -17,6 +17,8 @@ import {
   FaArrowLeft,
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
+import { appointmentService } from '../../services/appointmentService';
+import billingService from '../../services/billingService';
 import { pharmacyService } from '../../services/pharmacyService';
 import { prescriptionService } from '../../services/prescriptionService';
 import { useHasPerm, useAuth } from '../../context/AuthContext';
@@ -78,6 +80,9 @@ export default function NewPrescription() {
   const [labTestSearch, setLabTestSearch] = useState('');
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [showLabTestDropdown, setShowLabTestDropdown] = useState(false);
+  const lastPayloadRef = useRef(null);
+  const [patientAppointmentsEnabled, setPatientAppointmentsEnabled] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
 
   const {
     register,
@@ -135,6 +140,16 @@ export default function NewPrescription() {
     patient: p,
   }));
 
+  // Fetch scheduled appointments for selected patient (doctor will only see own scheduled appointments)
+  const patientIdSelected = () => watch('patient')?.value;
+  const { data: patientAppointmentsData } = useQuery({
+    queryKey: ['patient-appointments', patientIdSelected()],
+    queryFn: () => appointmentService.getAppointments({ patientId: patientIdSelected(), status: 'SCHEDULED', doctorId: user?.id, limit: 50 }),
+    enabled: !!patientIdSelected(),
+  });
+
+  const appointmentOptions = (patientAppointmentsData?.data || []).map(a => ({ value: a.id, label: `${a.appointmentNo || ''} ${a.date ? `- ${new Date(a.date).toLocaleDateString()}` : ''}`, appt: a }));
+
   // Search medicines
   const { data: medicinesData } = useQuery({
     queryKey: ['medicines-search', medicineSearch],
@@ -158,9 +173,52 @@ export default function NewPrescription() {
     mutationFn: prescriptionService.createPrescription,
     onSuccess: async (response) => {
       toast.success('Prescription saved successfully');
-      // Invalidate prescriptions list to refresh
-      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
       const prescriptionData = response.data || response;
+      // Create a draft bill for this prescription so clinic staff can publish/modify
+      try {
+        const payloadSnapshot = lastPayloadRef.current || {};
+        const billItems = [];
+
+        // Always add a consultation item by default (doctor raised prescription)
+        let consultationFee = 0;
+        let consultationLabel = 'Consultation';
+        if (payloadSnapshot.appointmentId && Array.isArray(patientAppointmentsData?.data)) {
+          const appt = (patientAppointmentsData.data || []).find(x => x.id === payloadSnapshot.appointmentId);
+          if (appt) {
+            consultationFee = appt.consultationFee || 0;
+            consultationLabel = `Consultation (${appt.appointmentNo || ''})`;
+          }
+        }
+        billItems.push({ description: consultationLabel, quantity: 1, unitPrice: consultationFee, type: 'consultation' });
+
+        // Medicines
+        (payloadSnapshot.medicines || []).forEach((m) => {
+          billItems.push({ description: m.medicineName || m.name || m.medicine || '', quantity: m.quantity || 1, unitPrice: m.price || m.unitPrice || 0, type: 'medicine', productId: m.productId || m.productId });
+        });
+
+        // Lab tests
+        (payloadSnapshot.labTests || []).forEach((lt) => {
+          billItems.push({ description: lt.testName || lt.name || '', quantity: 1, unitPrice: lt.price || 0, type: 'lab', labId: lt.labId || null });
+        });
+
+        if (billItems.length > 0) {
+          const billReq = {
+            patientId: prescriptionData.patientId || payloadSnapshot.patientId,
+            type: 'MIXED',
+            items: billItems,
+            notes: `Draft bill for prescription ${prescriptionData.prescriptionNo || ''}`,
+            doctorId: user?.id,
+          };
+          try {
+            await billingService.createBill(billReq);
+            try { queryClient.invalidateQueries({ queryKey: ['bills'] }); } catch (e) {}
+          } catch (e) {
+            console.error('Failed creating draft bill:', e);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to create draft bill for prescription:', e);
+      }
       // Try to open print dialog (PDF generation may not be available)
       try {
         const pdfBlob = await prescriptionService.getPrescriptionPdf(prescriptionData.id);
@@ -174,6 +232,23 @@ export default function NewPrescription() {
       } catch (error) {
         console.log('PDF not available, navigating to prescriptions');
       }
+      // Update local prescriptions list cache (all matching prescriptions queries)
+      try {
+        queryClient.setQueriesData({ queryKey: ['prescriptions'] }, (old) => {
+          if (!old) return old;
+          // If the cached value is an object with a `data` array and pagination
+          if (old && typeof old === 'object' && Array.isArray(old.data)) {
+            return { ...old, data: [prescriptionData, ...old.data] };
+          }
+          // If the cached value is a plain array of prescriptions
+          if (Array.isArray(old)) {
+            return [prescriptionData, ...old];
+          }
+          return old;
+        });
+      } catch (e) {
+        console.error('Failed to update prescriptions cache optimistically', e);
+      }
       navigate('/prescriptions');
     },
     onError: (error) => {
@@ -184,6 +259,7 @@ export default function NewPrescription() {
 
   const onSubmit = (data) => {
     const payload = {
+      appointmentId: data.appointment?.value,
       patientId: data.patient?.value,
       vitalsSnapshot: {
         bloodPressureSystolic: data.vitals.bloodPressureSystolic
@@ -221,6 +297,8 @@ export default function NewPrescription() {
       })),
     };
 
+    // keep a snapshot for post-create actions (draft billing)
+    lastPayloadRef.current = payload;
     createMutation.mutate(payload);
   };
 
@@ -234,6 +312,21 @@ export default function NewPrescription() {
       instructions: '',
       quantity: '',
       isExternal: false,
+    });
+    setMedicineSearch('');
+    setShowMedicineDropdown(false);
+  };
+
+  const handleAddExternalMedicine = (name) => {
+    appendMedicine({
+      medicineId: null,
+      name: name,
+      dosage: null,
+      duration: null,
+      mealTiming: null,
+      instructions: '',
+      quantity: 1,
+      isExternal: true,
     });
     setMedicineSearch('');
     setShowMedicineDropdown(false);
@@ -330,6 +423,27 @@ export default function NewPrescription() {
                     <span className="text-red-600 text-sm">{selectedPatient.allergies}</span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Appointment selection (optional) - show scheduled appointments for the selected patient */}
+            {appointmentOptions.length > 0 && (
+              <div className="mt-4">
+                <Controller
+                  name="appointment"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      {...field}
+                      label="Select Appointment (optional)"
+                      options={appointmentOptions}
+                      placeholder="Select appointment..."
+                      isClearable
+                      isSearchable
+                      onChange={(val) => { field.onChange(val); setSelectedAppointment(val); }}
+                    />
+                  )}
+                />
               </div>
             )}
           </div>
@@ -483,7 +597,18 @@ export default function NewPrescription() {
               {showMedicineDropdown && medicineSearch.length >= 2 && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                   {medicineResults.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-500">No medicines found</div>
+                    <div>
+                      <div className="px-4 py-3 text-sm text-gray-500">No medicines found</div>
+                      <div className="px-4 py-3 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => handleAddExternalMedicine(medicineSearch)}
+                          className="w-full text-left px-3 py-2 bg-yellow-50 text-yellow-900 rounded-md"
+                        >
+                          Add "{medicineSearch}" as external medicine
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     medicineResults.map((medicine) => (
                       <button
