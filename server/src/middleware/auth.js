@@ -99,6 +99,7 @@ export function authorize(...allowedRoles) {
 // Role hierarchy for permission checks
 const roleHierarchy = {
   SUPER_ADMIN: 100,
+  ADMIN: 90,
   DOCTOR: 80,
   ACCOUNTANT: 60,
   PHARMACIST: 50,
@@ -227,6 +228,21 @@ export const PERMISSIONS = {
   TAX_SETTINGS: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']
 };
 
+// Purchases & OCR
+PERMISSIONS['purchases'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];
+PERMISSIONS['purchases:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];
+PERMISSIONS['purchases:update'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT'];
+PERMISSIONS['purchases:read'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];
+PERMISSIONS['purchases:receive'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT'];
+
+// Ledger permissions (read-only for now)
+PERMISSIONS['ledger'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
+PERMISSIONS['ledger:read'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
+PERMISSIONS['ledger:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
+
+// Document AI usage permission (UI flag)
+PERMISSIONS['document_ai:use'] = ['SUPER_ADMIN', 'PHARMACIST', 'ACCOUNTANT'];
+
 // Check permission middleware
 export function checkPermission(resource, action) {
   return async (req, res, next) => {
@@ -271,8 +287,11 @@ export function checkPermission(resource, action) {
 
       // Allow if user's stored role OR computed effectiveRole is permitted
       const userRolesToCheck = new Set([ (req.user.role || '').toString().toUpperCase(), (req.user.effectiveRole || '').toString().toUpperCase() ]);
-      const allowed = [...allowedRolesSet].some(r => userRolesToCheck.has(r.toString().toUpperCase()));
+      const allowedRolesList = [...allowedRolesSet];
+      const userRolesArray = [...userRolesToCheck];
+      const allowed = allowedRolesList.some(r => userRolesToCheck.has(r.toString().toUpperCase()));
       if (!allowed) {
+        console.warn('Permission denied check', { permission, allowedRoles: allowedRolesList, userRoles: userRolesArray, clinicId: req.user.clinicId, userId: req.user.id });
         return next(new AppError(`Permission denied: ${permission}`, 403));
       }
 

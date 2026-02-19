@@ -911,6 +911,129 @@ async function main() {
 
   console.log('   ✅ Added second doctor, exclusive and shared staff, and doctorB-scoped demo data');
 
+  // ==========================================
+  // 12. CREATE DEMO LEDGER ENTRIES (MULTIPLE ACCOUNTS)
+  // ==========================================
+  console.log('\n📒 Creating demo ledger entries...');
+  // Create realistic pharmacy accounts (distributors + inventory + cash/bank)
+  const acctNames = [
+    'Inventory',
+    'Cash',
+    'Bank',
+    'GST Payable',
+    'Accounts Payable',
+    'Payable - Distributor A',
+    'Payable - Distributor B',
+    'Payable - Distributor C'
+  ];
+
+  for (const name of acctNames) {
+    await prisma.account.upsert({ where: { clinicId_name: { clinicId: clinic.id, name } }, update: {}, create: { clinicId: clinic.id, name, type: name.startsWith('Payable') || name.includes('Payable') ? 'LIABILITY' : (name === 'Inventory' ? 'ASSET' : 'ASSET') } });
+  }
+
+  // Create suppliers/distributors
+  let distributorA = await prisma.supplier.findFirst({ where: { email: 'distA@demo.com', clinicId: clinic.id } });
+  if (!distributorA) {
+    distributorA = await prisma.supplier.create({ data: { name: 'Distributor A', phone: '9002000001', email: 'distA@demo.com', clinicId: clinic.id } });
+  }
+  let distributorB = await prisma.supplier.findFirst({ where: { email: 'distB@demo.com', clinicId: clinic.id } });
+  if (!distributorB) {
+    distributorB = await prisma.supplier.create({ data: { name: 'Distributor B', phone: '9002000002', email: 'distB@demo.com', clinicId: clinic.id } });
+  }
+  let distributorC = await prisma.supplier.findFirst({ where: { email: 'distC@demo.com', clinicId: clinic.id } });
+  if (!distributorC) {
+    distributorC = await prisma.supplier.create({ data: { name: 'Distributor C', phone: '9002000003', email: 'distC@demo.com', clinicId: clinic.id } });
+  }
+
+  // Helper to create purchase + ledger entries and optional payments
+  async function createPurchaseWithPayments(supplier, invoiceNo, items = [], payments = []) {
+    const subtotal = items.reduce((s, it) => s + (it.unitPrice * it.quantity), 0);
+    const taxAmount = 0;
+    const total = subtotal + taxAmount;
+
+    const purchase = await prisma.purchase.create({ data: { invoiceNo, invoiceDate: new Date(), status: 'RECEIVED', notes: '', subtotal, taxAmount, totalAmount: total, clinicId: clinic.id, supplierId: supplier.id } });
+
+    // create purchase items
+    for (const it of items) {
+      // try to resolve product by name within this clinic
+      const prod = await prisma.pharmacyProduct.findFirst({ where: { clinicId: clinic.id, name: it.name } }).catch(() => null);
+      const productId = prod?.id || null;
+      const createdItem = await prisma.purchaseItem.create({ data: { purchaseId: purchase.id, productId, name: it.name, quantity: it.quantity, unitPrice: it.unitPrice, taxAmount: it.taxAmount || 0, amount: it.unitPrice * it.quantity, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate || null } });
+
+      // If product exists, create stock batch, update product quantity and add stock history/transaction
+      if (productId) {
+        const previous = await prisma.pharmacyProduct.findUnique({ where: { id: productId } });
+        const previousQty = previous?.quantity || 0;
+        const newQty = previousQty + it.quantity;
+        const batch = await prisma.stockBatch.create({ data: { productId, quantity: it.quantity, costPrice: it.unitPrice, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate || null, clinicId: clinic.id } }).catch(() => null);
+        await prisma.pharmacyProduct.update({ where: { id: productId }, data: { quantity: newQty } });
+        await prisma.stockHistory.create({ data: { productId, batchId: batch?.id || null, type: 'PURCHASE', quantity: it.quantity, previousQty, newQty, reference: `Purchase ${invoiceNo}`, notes: `Received ${it.quantity} x ${it.name}`, createdBy: null } }).catch(() => null);
+        await prisma.stockTransaction.create({ data: { clinicId: clinic.id, productId, changeQty: it.quantity, type: 'PURCHASE', refType: 'PURCHASE', refId: purchase.id, note: `Purchase receive ${invoiceNo}` } }).catch(() => null);
+      }
+    }
+
+    // Ledger: Debit Inventory, Credit Payable (supplier-specific account)
+    const payableAccount = `Payable - ${supplier.name}`;
+    const inventoryAcct = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: 'Inventory' } });
+    const payableAcct = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: payableAccount } });
+    await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: inventoryAcct?.name || 'Inventory', accountId: inventoryAcct?.id || null, type: 'DEBIT', amount: subtotal, refType: 'PURCHASE', refId: purchase.id, note: `Purchase ${invoiceNo} received from ${supplier.name}` } });
+    await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: payableAcct?.name || payableAccount, accountId: payableAcct?.id || null, type: 'CREDIT', amount: subtotal, refType: 'PURCHASE', refId: purchase.id, note: `Purchase ${invoiceNo} payable to ${supplier.name}` } });
+
+    // Create payments (partial/full) — each payment creates ledger entries: Debit Payable, Credit Cash/Bank
+    for (const p of payments) {
+      const payAcct = p.method === 'BANK' ? 'Bank' : 'Cash';
+      const payableAcctP = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: payableAccount } });
+      const payAcctRec = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: payAcct } });
+      await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: payableAcctP?.name || payableAccount, accountId: payableAcctP?.id || null, type: 'DEBIT', amount: p.amount, refType: 'PAYMENT', refId: purchase.id, note: `Payment for ${invoiceNo} (${p.method})` } });
+      await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: payAcctRec?.name || payAcct, accountId: payAcctRec?.id || null, type: 'CREDIT', amount: p.amount, refType: 'PAYMENT', refId: purchase.id, note: `Payment for ${invoiceNo} (${p.method})` } });
+    }
+
+    return purchase;
+  }
+
+  // Create sample purchases: full paid, partial paid, unpaid + adjustment
+  // create purchases with line items
+  await createPurchaseWithPayments(distributorA, 'INV-A-1001', [
+    { name: 'Paracetamol 500mg', quantity: 100, unitPrice: 20 },
+    { name: 'Amoxicillin 500mg', quantity: 50, unitPrice: 45 }
+  ], [{ amount: 15000, method: 'CASH' }]); // fully paid
+
+  await createPurchaseWithPayments(distributorB, 'INV-B-2001', [
+    { name: 'Cetirizine 10mg', quantity: 200, unitPrice: 55 },
+    { name: 'Metformin 500mg', quantity: 80, unitPrice: 60 }
+  ], [{ amount: 10000, method: 'BANK' }]); // partial paid
+
+  const p3 = await createPurchaseWithPayments(distributorC, 'INV-C-3001', [
+    { name: 'Vitamin D 60k', quantity: 30, unitPrice: 200 },
+    { name: 'Omeprazole 20mg', quantity: 40, unitPrice: 30 }
+  ], []); // unpaid
+
+  // Return: return some items from p3 to distributorC (reduce inventory and reduce payable)
+  // Choose one item from p3 to return partly
+  const p3Items = await prisma.purchaseItem.findMany({ where: { purchaseId: p3.id } });
+  if (p3Items && p3Items.length) {
+    const toReturn = p3Items[0];
+    const returnQty = Math.min(1, toReturn.quantity); // return 1 unit (or 1 strip)
+    const prodId = toReturn.productId;
+    if (prodId) {
+      const prod = await prisma.pharmacyProduct.findUnique({ where: { id: prodId } });
+      const prevQty = prod?.quantity || 0;
+      const newQty = Math.max(0, prevQty - returnQty);
+      await prisma.pharmacyProduct.update({ where: { id: prodId }, data: { quantity: newQty } }).catch(() => null);
+      await prisma.stockHistory.create({ data: { productId: prodId, batchId: null, type: 'RETURN', quantity: -returnQty, previousQty: prevQty, newQty, reference: `Return for ${p3.invoiceNo}`, notes: `Returned ${returnQty} x ${toReturn.name}`, createdBy: null } }).catch(() => null);
+      await prisma.stockTransaction.create({ data: { clinicId: clinic.id, productId: prodId, changeQty: -returnQty, type: 'RETURN', refType: 'PURCHASE', refId: p3.id, note: `Return ${toReturn.name}` } }).catch(() => null);
+
+      const returnAmount = (toReturn.unitPrice || 0) * returnQty + (toReturn.taxAmount || 0) * (returnQty / (toReturn.quantity || 1));
+      const payableAccountC = `Payable - ${distributorC.name}`;
+      const inventoryAcctR = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: 'Inventory' } });
+      const payableAcctR = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: payableAccountC } });
+      await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: inventoryAcctR?.name || 'Inventory', accountId: inventoryAcctR?.id || null, type: 'CREDIT', amount: returnAmount, refType: 'RETURN', refId: p3.id, note: `Return to ${distributorC.name}` } });
+      await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: payableAcctR?.name || payableAccountC, accountId: payableAcctR?.id || null, type: 'DEBIT', amount: returnAmount, refType: 'RETURN', refId: p3.id, note: `Return to ${distributorC.name}` } });
+    }
+  }
+
+  console.log('   ✅ Created demo purchases, distributor accounts and payments (full/partial/adjustment)');
+
 }
 
 main()

@@ -283,15 +283,36 @@ export default function Pharmacy() {
               Manage inventory and stock levels
             </p>
           </div>
-          {useHasPerm('pharmacy:create', ['SUPER_ADMIN', 'DOCTOR', 'PHARMACIST']) && (
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-            >
-              <FaPlus />
-              Add Product
-            </button>
-          )}
+          <div className="flex gap-2">
+            {useHasPerm('pharmacy:create', ['SUPER_ADMIN', 'DOCTOR', 'PHARMACIST']) && (
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
+              >
+                <FaPlus />
+                Add Product
+              </button>
+            )}
+
+            {useHasPerm('purchases:create', ['SUPER_ADMIN', 'ACCOUNTANT', 'PHARMACIST']) && (
+              <a
+                href="/pharmacy/upload"
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition"
+              >
+                <FaBoxOpen />
+                Upload Invoice
+              </a>
+            )}
+
+            {useHasPerm('ledger:read', ['SUPER_ADMIN', 'ACCOUNTANT']) && (
+              <a
+                href="/pharmacy/ledger"
+                className="inline-flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-amber-700 transition"
+              >
+                Ledger
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

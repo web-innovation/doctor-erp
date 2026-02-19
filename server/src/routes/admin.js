@@ -269,6 +269,32 @@ router.put('/clinics/:id', async (req, res, next) => {
   }
 });
 
+// PUT /clinics/:id/document-ai - Enable/disable Document AI for a clinic and set config
+router.put('/clinics/:id/document-ai', async (req, res, next) => {
+  try {
+    const { enabled, config } = req.body; // config is an object
+    const updateData = {};
+    if (typeof enabled !== 'undefined') updateData.documentAiEnabled = Boolean(enabled);
+    if (typeof config !== 'undefined') updateData.documentAiConfig = config ? JSON.stringify(config) : null;
+
+    const clinic = await prisma.clinic.update({ where: { id: req.params.id }, data: updateData });
+    res.json({ success: true, data: { id: clinic.id, documentAiEnabled: clinic.documentAiEnabled, documentAiConfig: clinic.documentAiConfig ? JSON.parse(clinic.documentAiConfig) : null } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /document-ai/usage/:clinicId - Get Document AI usage summary for a clinic
+router.get('/document-ai/usage/:clinicId', async (req, res, next) => {
+  try {
+    const clinicId = req.params.clinicId;
+    const usages = await prisma.documentAiUsage.findMany({ where: { clinicId }, orderBy: { createdAt: 'desc' }, take: 100 });
+    res.json({ success: true, data: usages });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // DELETE /clinics/:id - Soft delete (deactivate all users)
 router.delete('/clinics/:id', async (req, res, next) => {
   try {

@@ -12,7 +12,9 @@ const DEFAULT_PERMISSIONS = [
   'patients:read','patients:create','patients:update',
   'appointments:read','appointments:create','appointments:update',
   'prescriptions:read','prescriptions:create',
-  'pharmacy:read','pharmacy:create','billing:read','billing:create','billing:edit','reports:opd'
+  'pharmacy:read','pharmacy:create','billing:read','billing:create','billing:edit','reports:opd',
+  // Purchases / Ledger permissions
+  'purchases:read','purchases:create','ledger:read'
 ];
 
 // Add leave permissions to default set so Access Management can control Leave access

@@ -25,8 +25,9 @@ import MobileAccess from '../../components/settings/MobileAccess';
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
   { id: 'clinic', label: 'Clinic', icon: FaClinicMedical },
-  { id: 'tax', label: 'Tax Setup', icon: FaPercent },
-  { id: 'hours', label: 'Working Hours', icon: FaClock },
+  // Tax and Working Hours temporarily hidden (managed elsewhere)
+  // { id: 'tax', label: 'Tax Setup', icon: FaPercent },
+  // { id: 'hours', label: 'Working Hours', icon: FaClock },
   { id: 'email', label: 'Email', icon: FaEnvelope },
   { id: 'whatsapp', label: 'WhatsApp', icon: FaWhatsapp },
   { id: 'preferences', label: 'Preferences', icon: FaCog },
@@ -125,6 +126,8 @@ export default function Settings() {
   }, [clinicData, setClinicValue]);
 
   // Fetch tax settings
+  // Tax settings temporarily disabled in UI
+  /*
   const { data: taxData, isLoading: taxLoading } = useQuery({
     queryKey: ['tax-settings'],
     queryFn: () => settingsService.getTaxSettings(),
@@ -140,8 +143,11 @@ export default function Settings() {
       setTaxValue('inclusiveTax', taxData.inclusiveTax || false);
     }
   }, [taxData, setTaxValue]);
+  */
 
   // Fetch working hours
+  // Working hours temporarily disabled in UI
+  /*
   const { data: hoursData, isLoading: hoursLoading } = useQuery({
     queryKey: ['working-hours'],
     queryFn: () => settingsService.getWorkingHours(),
@@ -153,6 +159,7 @@ export default function Settings() {
       setWorkingHours(hoursData.hours);
     }
   }, [hoursData]);
+  */
 
   // Fetch preferences
   const { data: preferencesData, isLoading: preferencesLoading } = useQuery({
@@ -601,6 +608,7 @@ export default function Settings() {
                 placeholder="Enter registration number"
               />
             </div>
+            {/*
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
               <input
@@ -610,6 +618,7 @@ export default function Settings() {
                 placeholder="Enter GST number"
               />
             </div>
+            */}
           </div>
           <div className="flex justify-end pt-4">
             <button
@@ -626,7 +635,8 @@ export default function Settings() {
     </div>
   );
 
-  // Render Tax Tab
+  // Tax configuration disabled in UI for now
+  /*
   const renderTaxTab = () => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax Configuration</h3>
@@ -710,8 +720,10 @@ export default function Settings() {
       )}
     </div>
   );
+  */
 
-  // Render Working Hours Tab
+  // Working hours management disabled in UI for now
+  /*
   const renderHoursTab = () => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Working Hours</h3>
@@ -821,6 +833,7 @@ export default function Settings() {
       )}
     </div>
   );
+  */
 
   // Render Preferences Tab
   const renderPreferencesTab = () => (

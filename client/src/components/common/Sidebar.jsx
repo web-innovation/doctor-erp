@@ -365,6 +365,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
               <p className="text-2xl font-bold text-blue-600">{todayOPDCount}</p>
               <p className="text-xs text-gray-500">patients</p>
             </div>
+            <div className="mt-3">
+              {/* Quick upload invoice link */}
+              <a href="/pharmacy/upload" className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700">
+                Upload Invoice
+              </a>
+            </div>
           </div>
         )}
 

@@ -28,11 +28,15 @@ model User {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  clinic       Clinic?    @relation(fields: [clinicId], references: [id])
-  clinicId     String?
-  staffProfile Staff?
-  sessions     Session[]
-  auditLogs    AuditLog[]
+  clinic           Clinic?          @relation(fields: [clinicId], references: [id])
+  clinicId         String?
+  staffProfile     Staff?
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  purchaseUploads  PurchaseUpload[]
+  purchasesCreated Purchase[]
+  // Accounts created by this user
+  createdAccounts  Account[]
 
   // Relations for doctor-scoped entities
   primaryPatients          Patient[]         @relation("PatientPrimaryDoctor")
@@ -82,21 +86,32 @@ model Clinic {
   rolePermissions String? // JSON string mapping roles to allowed permission keys
   slotDuration    Int     @default(15)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Document AI flag: when true, this clinic will use Google Document AI for OCR parsing
+  documentAiEnabled Boolean  @default(false)
+  documentAiConfig  String? // JSON string containing processorId, project, location, etc.
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  users            User[]
-  staff            Staff[]
-  staffAssignments StaffAssignment[]
-  patients         Patient[]
-  appointments     Appointment[]
-  prescriptions    Prescription[]
-  bills            Bill[]
-  pharmacy         PharmacyProduct[]
-  labs             Lab[]
-  labTests         LabTest[]
-  agents           Agent[]
-  payments         Payment[]
+  users             User[]
+  staff             Staff[]
+  staffAssignments  StaffAssignment[]
+  patients          Patient[]
+  appointments      Appointment[]
+  prescriptions     Prescription[]
+  bills             Bill[]
+  pharmacy          PharmacyProduct[]
+  labs              Lab[]
+  labTests          LabTest[]
+  agents            Agent[]
+  payments          Payment[]
+  purchases         Purchase[]
+  suppliers         Supplier[]
+  purchaseUploads   PurchaseUpload[]
+  stockTransactions StockTransaction[]
+  ledgerEntries     LedgerEntry[]
+  // Chart of accounts for this clinic
+  accounts          Account[]
+  documentAiUsages  DocumentAiUsage[]
 }
 
 // ==========================================
@@ -357,12 +372,14 @@ model PharmacyProduct {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clinic        Clinic                 @relation(fields: [clinicId], references: [id])
-  clinicId      String
-  stockHistory  StockHistory[]
-  prescriptions PrescriptionMedicine[]
-  billItems     BillItem[]
-  batches       StockBatch[]
+  clinic            Clinic                 @relation(fields: [clinicId], references: [id])
+  clinicId          String
+  stockHistory      StockHistory[]
+  prescriptions     PrescriptionMedicine[]
+  billItems         BillItem[]
+  batches           StockBatch[]
+  purchaseItems     PurchaseItem[]
+  stockTransactions StockTransaction[]
 
   @@unique([clinicId, code])
   @@index([clinicId])
@@ -407,6 +424,171 @@ model StockBatch {
 
   @@index([productId])
   @@index([expiryDate])
+}
+
+// ==========================================
+// PURCHASES / SUPPLIER MANAGEMENT
+// ==========================================
+
+model Supplier {
+  id        String  @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  gstNumber String?
+  notes     String?
+
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  clinicId String
+
+  purchases Purchase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+}
+
+model Purchase {
+  id          String   @id @default(uuid())
+  invoiceNo   String
+  invoiceDate DateTime
+  status      String   @default("DRAFT") // DRAFT, PARSED, RECEIVED, PAID, CANCELLED
+  notes       String?
+  subtotal    Float    @default(0)
+  taxAmount   Float    @default(0)
+  totalAmount Float    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic      Clinic    @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId  String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdById String?
+
+  items   PurchaseItem[]
+  uploads PurchaseUpload[]
+
+  @@index([clinicId])
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id          String           @id @default(uuid())
+  productId   String?
+  product     PharmacyProduct? @relation(fields: [productId], references: [id])
+  name        String
+  quantity    Int
+  unitPrice   Float
+  taxAmount   Float            @default(0)
+  amount      Float
+  batchNumber String?
+  expiryDate  DateTime?
+
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  purchaseId String
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model PurchaseUpload {
+  id           String  @id @default(uuid())
+  filename     String
+  path         String
+  status       String  @default("UPLOADED") // UPLOADED, PARSING, PARSED, FAILED
+  rawText      String?
+  parsedJson   String? // store parsed result as JSON
+  provider     String? // tesseract | google_doc_ai
+  providerMeta String?
+
+  clinic       Clinic  @relation(fields: [clinicId], references: [id])
+  clinicId     String
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
+
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id])
+  purchaseId String?
+
+  documentAiUsages DocumentAiUsage[]
+
+  createdAt DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([status])
+}
+
+model StockTransaction {
+  id        String          @id @default(uuid())
+  clinic    Clinic          @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  product   PharmacyProduct @relation(fields: [productId], references: [id])
+  productId String
+  changeQty Int
+  type      String // PURCHASE, SALE, ADJUSTMENT, RETURN
+  refType   String? // PURCHASE, SALE, etc.
+  refId     String?
+  note      String?
+  createdAt DateTime        @default(now())
+
+  @@index([clinicId])
+  @@index([productId])
+}
+
+model LedgerEntry {
+  id        String   @id @default(uuid())
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  account   String // account name or accountId
+  accountId String?  
+  accountRef Account? @relation(fields: [accountId], references: [id])
+  type      String // DEBIT or CREDIT
+  amount    Float
+  refType   String? // PURCHASE, PAYMENT, etc.
+  refId     String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([accountId])
+  @@index([refType, refId])
+}
+
+// Chart of accounts (lightweight) to support ledger UI and account management
+model Account {
+  id          String   @id @default(uuid())
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  name        String
+  type        String? // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  meta        String? // optional JSON string for extra info (e.g., distributor id)
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  // Ledger entries linked to this account
+  ledgerEntries LedgerEntry[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model DocumentAiUsage {
+  id        String         @id @default(uuid())
+  clinic    Clinic         @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  upload    PurchaseUpload @relation(fields: [uploadId], references: [id])
+  uploadId  String
+  provider  String
+  cost      Float?
+  details   String? // metadata from provider
+  createdAt DateTime       @default(now())
+
+  @@index([clinicId])
 }
 
 // Assign staff members to specific doctors (optional). If absent, staff is considered shared.

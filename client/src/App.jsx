@@ -21,6 +21,8 @@ import Prescriptions from './pages/prescriptions/Prescriptions';
 import PrescriptionDetail from './pages/prescriptions/PrescriptionDetail';
 import NewPrescription from './pages/prescriptions/NewPrescription';
 import Pharmacy from './pages/pharmacy/Pharmacy';
+import UploadPurchase from './pages/pharmacy/UploadPurchase';
+import Ledger from './pages/pharmacy/Ledger';
 import Billing from './pages/billing/Billing';
 import NewBill from './pages/billing/NewBill';
 import Staff from './pages/staff/Staff';
@@ -107,6 +109,8 @@ function App() {
         
         {/* Pharmacy */}
         <Route path="/pharmacy" element={<Pharmacy />} />
+        <Route path="/pharmacy/upload" element={<UploadPurchase />} />
+        <Route path="/pharmacy/ledger" element={<Ledger />} />
         
         {/* Billing */}
         <Route path="/billing" element={<Billing />} />
