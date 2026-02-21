@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -27,6 +28,7 @@ const TABS = [
 
 export default function Pharmacy() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -237,6 +239,78 @@ export default function Pharmacy() {
     setIsStockModalOpen(true);
   };
 
+  const [isBatchesOpen, setIsBatchesOpen] = useState(false);
+  const [batches, setBatches] = useState([]);
+  const [batchesLoading, setBatchesLoading] = useState(false);
+  const [isOpeningImportModalOpen, setIsOpeningImportModalOpen] = useState(false);
+  const [openingImportFile, setOpeningImportFile] = useState(null);
+  const [openingImportDate, setOpeningImportDate] = useState(new Date().toISOString().slice(0, 10));
+  const [openingImportAccount, setOpeningImportAccount] = useState('Opening Stock Adjustment');
+  const [openingImportPreview, setOpeningImportPreview] = useState(null);
+  const [openingImportErrors, setOpeningImportErrors] = useState([]);
+
+  const openingImportMutation = useMutation({
+    mutationFn: async ({ dryRun }) => {
+      if (!openingImportFile) throw new Error('Please choose a CSV file');
+      const fd = new FormData();
+      fd.append('file', openingImportFile);
+      return pharmacyService.importOpeningStock(fd, {
+        dryRun,
+        openingDate: openingImportDate,
+        creditAccountName: openingImportAccount,
+      });
+    },
+    onSuccess: async (res, vars) => {
+      setOpeningImportPreview(res?.summary || null);
+      setOpeningImportErrors(res?.errors || []);
+      if (vars.dryRun) {
+        if ((res?.errors || []).length === 0) toast.success('Validation successful. You can import now.');
+        else toast.error('Validation found issues. Please fix the CSV and retry.');
+      } else {
+        toast.success('Opening stock imported successfully');
+        queryClient.invalidateQueries(['products']);
+        queryClient.invalidateQueries(['dashboardStats']);
+        setIsOpeningImportModalOpen(false);
+        setOpeningImportFile(null);
+        setOpeningImportPreview(null);
+        setOpeningImportErrors([]);
+      }
+    },
+    onError: (error) => {
+      toast.error(error?.response?.data?.message || error?.message || 'Opening stock import failed');
+    }
+  });
+
+  const downloadOpeningTemplate = async () => {
+    try {
+      const blob = await pharmacyService.downloadOpeningStockTemplate();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'opening_stock_import_sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error('Failed to download template');
+    }
+  };
+
+  const openBatchesModal = async (product) => {
+    setSelectedProduct(product);
+    setIsBatchesOpen(true);
+    setBatchesLoading(true);
+    try {
+      const r = await pharmacyService.getBatches(product.id);
+      setBatches(r.data || []);
+    } catch (e) {
+      setBatches([]);
+    } finally {
+      setBatchesLoading(false);
+    }
+  };
+
   const handleDelete = (product) => {
     if (window.confirm(`Are you sure you want to delete "${product.name}"?`)) {
       deleteMutation.mutate(product.id);
@@ -295,23 +369,49 @@ export default function Pharmacy() {
             )}
 
             {useHasPerm('purchases:create', ['SUPER_ADMIN', 'ACCOUNTANT', 'PHARMACIST']) && (
-              <a
-                href="/pharmacy/upload"
+              <button
+                type="button"
+                onClick={() => navigate('/pharmacy/upload')}
                 className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition"
               >
                 <FaBoxOpen />
                 Upload Invoice
-              </a>
+              </button>
             )}
 
-            {useHasPerm('ledger:read', ['SUPER_ADMIN', 'ACCOUNTANT']) && (
-              <a
-                href="/pharmacy/ledger"
-                className="inline-flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-amber-700 transition"
-              >
-                Ledger
-              </a>
+            {useHasPerm('pharmacy:create', ['SUPER_ADMIN', 'DOCTOR', 'PHARMACIST']) && (
+              <>
+                <button
+                  type="button"
+                  onClick={downloadOpeningTemplate}
+                  className="inline-flex items-center justify-center gap-2 bg-slate-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-slate-700 transition"
+                >
+                  Download Import Template
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOpeningImportModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 bg-violet-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-violet-700 transition"
+                >
+                  Import Opening Stock
+                </button>
+              </>
             )}
+
+            {useHasPerm('purchases:read', ['SUPER_ADMIN', 'ACCOUNTANT', 'PHARMACIST']) && (
+              <button
+                type="button"
+                onClick={() => navigate('/pharmacy/purchases')}
+                className="inline-flex items-center justify-center gap-2 bg-gray-700 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-gray-800 transition"
+              >
+                Draft Purchase
+              </button>
+            )}
+
+            {useHasPerm('purchases:read', ['SUPER_ADMIN', 'ACCOUNTANT', 'PHARMACIST']) && (
+              <button type="button" onClick={() => navigate('/pharmacy/suppliers')} className="inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-teal-700 transition">Suppliers</button>
+            )}
+
           </div>
         </div>
 
@@ -463,6 +563,13 @@ export default function Pharmacy() {
                             >
                               <FaPlus className="text-xs" />
                               Stock
+                            </button>
+                            <button
+                              onClick={() => openBatchesModal(product)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-100 transition"
+                            >
+                              <FaBoxOpen className="text-xs" />
+                              Batches
                             </button>
                             <button
                               onClick={() => openEditModal(product)}
@@ -806,7 +913,29 @@ export default function Pharmacy() {
               />
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex justify-between items-center gap-3 pt-4 border-t border-gray-100">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // navigate to manual entry with prefilled data
+                    const qty = (document.querySelector('input[name="quantity"]') || {}).value || '';
+                    const batch = (document.querySelector('input[name="batchNumber"]') || {}).value || '';
+                    const expiry = (document.querySelector('input[name="expiryDate"]') || {}).value || '';
+                    const typeMap = { 'addition': 'PURCHASE', 'subtraction': 'RETURN', 'adjustment': 'JOURNAL' };
+                    const typeEl = document.querySelector('select[name="type"]');
+                    const mode = typeEl ? (typeMap[typeEl.value] || 'JOURNAL') : 'JOURNAL';
+                    const items = [{ productId: selectedProduct.id, name: selectedProduct.name, quantity: Number(qty) || 0, unitPrice: selectedProduct.purchasePrice || selectedProduct.mrp || 0, gstPercent: selectedProduct.gstPercent || 0, batchNumber: batch || undefined, expiryDate: expiry || undefined }];
+                    // use localStorage as a fallback to pass complex state
+                    localStorage.setItem('manualPrefill', JSON.stringify({ mode, items }));
+                    navigate('/ledger/manual');
+                  }}
+                  className="px-3 py-2 text-sm border rounded text-gray-700 bg-yellow-50 hover:bg-yellow-100"
+                >
+                  Create Manual Entry
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -825,9 +954,150 @@ export default function Pharmacy() {
               >
                 {updateStockMutation.isPending ? 'Updating...' : 'Update Stock'}
               </button>
+              </div>
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Batches Modal */}
+      <Modal
+        isOpen={isBatchesOpen}
+        onClose={() => { setIsBatchesOpen(false); setSelectedProduct(null); setBatches([]); }}
+        title={`Batches — ${selectedProduct?.name || ''}`}
+        size="md"
+      >
+        {batchesLoading ? (
+          <div className="py-6 text-center text-gray-500">Loading batches…</div>
+        ) : batches.length === 0 ? (
+          <div className="py-6 text-center text-gray-500">No batches found for this product.</div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-gray-500 border-b">
+                <tr>
+                  <th className="text-left p-2">Batch</th>
+                  <th className="text-left p-2">Expiry</th>
+                  <th className="text-right p-2">Qty</th>
+                  <th className="text-right p-2">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((b) => (
+                  <tr key={b.id} className="border-b">
+                    <td className="p-2">{b.batchNumber || '-'}</td>
+                    <td className="p-2">{b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : '-'}</td>
+                    <td className="p-2 text-right">{b.quantity}</td>
+                    <td className="p-2 text-right">{formatCurrency(b.costPrice)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      {/* Opening Stock Import Modal */}
+      <Modal
+        isOpen={isOpeningImportModalOpen}
+        onClose={() => {
+          setIsOpeningImportModalOpen(false);
+          setOpeningImportPreview(null);
+          setOpeningImportErrors([]);
+        }}
+        title="Import Opening Stock"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-gray-600">
+            Upload the CSV or XLSX template to bulk add existing stock at clinic onboarding.
+            This creates one consolidated ledger entry: Debit <strong>Inventory</strong>, Credit <strong>{openingImportAccount || 'Opening Stock Adjustment'}</strong>.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Opening Date</label>
+              <input
+                type="date"
+                value={openingImportDate}
+                onChange={(e) => setOpeningImportDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Credit Account</label>
+              <input
+                value={openingImportAccount}
+                onChange={(e) => setOpeningImportAccount(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                placeholder="Opening Stock Adjustment"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">CSV or XLSX File</label>
+            <input
+              type="file"
+              accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={(e) => setOpeningImportFile(e.target.files?.[0] || null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+
+          {openingImportPreview && (
+            <div className="p-3 rounded border bg-gray-50 text-sm">
+              <div>Rows: <strong>{openingImportPreview.rows || 0}</strong></div>
+              <div>Total Stock Value: <strong>{formatCurrency(openingImportPreview.totalStockValue || 0)}</strong></div>
+              {openingImportPreview.ledgerPreview && (
+                <div className="text-gray-600 mt-1">
+                  Ledger Preview: Dr {openingImportPreview.ledgerPreview.debitAccount} / Cr {openingImportPreview.ledgerPreview.creditAccount}
+                </div>
+              )}
+              {openingImportPreview.ledgerPosted && (
+                <div className="text-gray-600 mt-1">
+                  Ledger Posted: Dr {openingImportPreview.ledgerPosted.debitAccount} / Cr {openingImportPreview.ledgerPosted.creditAccount}
+                </div>
+              )}
+            </div>
+          )}
+
+          {openingImportErrors.length > 0 && (
+            <div className="p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 max-h-40 overflow-auto">
+              {openingImportErrors.map((er, idx) => (
+                <div key={`${er.line}-${er.field}-${idx}`}>
+                  {er.sheet ? `Sheet ${er.sheet}, ` : ''}Line {er.line}: {er.field} - {er.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsOpeningImportModalOpen(false)}
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={openingImportMutation.isPending || !openingImportFile}
+              onClick={() => openingImportMutation.mutate({ dryRun: true })}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
+            >
+              {openingImportMutation.isPending ? 'Validating...' : 'Validate File'}
+            </button>
+            <button
+              type="button"
+              disabled={openingImportMutation.isPending || !openingImportFile}
+              onClick={() => openingImportMutation.mutate({ dryRun: false })}
+              className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition disabled:opacity-50"
+            >
+              {openingImportMutation.isPending ? 'Importing...' : 'Import Stock'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Edit Product Modal */}

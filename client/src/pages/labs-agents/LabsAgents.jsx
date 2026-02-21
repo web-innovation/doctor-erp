@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -9,8 +10,8 @@ import {
   FaEdit,
   FaTrash,
   FaFlask,
-  FaUserTie,
   FaHandHoldingUsd,
+  FaUserTie,
   FaChevronLeft,
   FaChevronRight,
   FaCheck,
@@ -20,10 +21,9 @@ import {
 } from 'react-icons/fa';
 import Modal from '../../components/common/Modal';
 import { useHasPerm } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import labsAgentsService from '../../services/labsAgentsService';
 
-const TABS = [
+const ALL_TABS = [
   { id: 'labs', label: 'Labs', icon: FaFlask },
   { id: 'agents', label: 'Agents', icon: FaUserTie },
   { id: 'commissions', label: 'Commissions', icon: FaHandHoldingUsd },
@@ -31,41 +31,40 @@ const TABS = [
 
 export default function LabsAgents() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const location = useLocation();
-  // Determine initial tab from URL: /agents -> agents, /labs -> labs, ?tab=... also supported
+  const isLabsRoute = location.pathname === '/labs' || location.pathname.startsWith('/labs/');
+  const tabs = isLabsRoute
+    ? ALL_TABS.filter((t) => t.id === 'labs')
+    : ALL_TABS.filter((t) => t.id !== 'labs');
   const searchParams = new URLSearchParams(location.search);
   const initialTabFromQuery = searchParams.get('tab');
-  const initialTab = location.pathname.startsWith('/agents')
-    ? 'agents'
-    : location.pathname.startsWith('/labs')
-    ? 'labs'
-    : (initialTabFromQuery || (location.hash ? location.hash.replace('#', '') : 'labs'));
+  const initialTab = tabs.some((t) => t.id === initialTabFromQuery) ? initialTabFromQuery : tabs[0].id;
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  // Determine which tabs should be visible depending on the current route
-  const path = location.pathname;
-  const showLabs = path.startsWith('/labs') || path.startsWith('/labs-agents');
-  const showAgents = path.startsWith('/agents') || path.startsWith('/labs-agents');
-  const visibleTabs = TABS.filter((tab) => {
-    if (tab.id === 'labs') return showLabs;
-    if (tab.id === 'agents' || tab.id === 'commissions') return showAgents;
-    return true;
-  });
-
-  // Ensure activeTab is valid when path or visibleTabs change
   useEffect(() => {
-    if (!visibleTabs.find((t) => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id || 'labs');
+    if (!tabs.find((t) => t.id === activeTab)) setActiveTab(tabs[0].id);
+  }, [activeTab, tabs]);
+
+  useEffect(() => {
+    const nextTabFromQuery = searchParams.get('tab');
+    const routeTabs = (location.pathname === '/labs' || location.pathname.startsWith('/labs/'))
+      ? ALL_TABS.filter((t) => t.id === 'labs')
+      : ALL_TABS.filter((t) => t.id !== 'labs');
+    const nextTab = routeTabs.some((t) => t.id === nextTabFromQuery) ? nextTabFromQuery : routeTabs[0].id;
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
+      setCurrentPage(1);
+      setSearchQuery('');
     }
-  }, [location.pathname, visibleTabs]);
+  }, [location.pathname, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [commissionFilter, setCommissionFilter] = useState('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [commissionFilter, setCommissionFilter] = useState('all');
   const pageSize = 10;
 
   const {
@@ -89,21 +88,18 @@ export default function LabsAgents() {
     reset: resetPayment,
   } = useForm();
 
-  // Fetch labs
   const { data: labsData, isLoading: labsLoading } = useQuery({
     queryKey: ['labs', currentPage, pageSize, searchQuery],
     queryFn: () => labsAgentsService.getLabs({ page: currentPage, limit: pageSize, search: searchQuery }),
     enabled: activeTab === 'labs',
   });
 
-  // Fetch agents
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['agents', currentPage, pageSize, searchQuery],
     queryFn: () => labsAgentsService.getAgents({ page: currentPage, limit: pageSize, search: searchQuery }),
     enabled: activeTab === 'agents',
   });
 
-  // Fetch commissions
   const { data: commissionsData, isLoading: commissionsLoading } = useQuery({
     queryKey: ['commissions', currentPage, pageSize, commissionFilter],
     queryFn: () =>
@@ -118,57 +114,29 @@ export default function LabsAgents() {
   const labs = labsData?.data || [];
   const agents = agentsData?.data || [];
   const commissions = commissionsData?.data || [];
-  const totalPages = activeTab === 'labs' 
-    ? (labsData?.pagination?.totalPages || 1) 
-    : activeTab === 'agents' 
-    ? (agentsData?.pagination?.totalPages || 1) 
-    : (commissionsData?.pagination?.totalPages || 1);
-  const totalCount = activeTab === 'labs' 
-    ? (labsData?.pagination?.total || 0) 
-    : activeTab === 'agents' 
-    ? (agentsData?.pagination?.total || 0) 
-    : (commissionsData?.pagination?.total || 0);
+  const totalPages = activeTab === 'labs'
+    ? (labsData?.pagination?.totalPages || 1)
+    : activeTab === 'agents'
+      ? (agentsData?.pagination?.totalPages || 1)
+      : (commissionsData?.pagination?.totalPages || 1);
+  const totalCount = activeTab === 'labs'
+    ? (labsData?.pagination?.total || 0)
+    : activeTab === 'agents'
+      ? (agentsData?.pagination?.total || 0)
+      : (commissionsData?.pagination?.total || 0);
 
-  // Lab mutations
-  const createLabMutation = useMutation({
-    mutationFn: (data) => labsAgentsService.createLab(data),
-    onSuccess: () => {
-      toast.success('Lab added successfully');
-      queryClient.invalidateQueries(['labs']);
-      setIsAddModalOpen(false);
-      reset();
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to add lab');
-    },
-  });
+  const totals = useMemo(() => {
+    const totalLabs = labsData?.pagination?.total || 0;
+    const activeLabsOnPage = labs.filter((l) => l.isActive !== false).length;
+    const totalAgents = agentsData?.pagination?.total || 0;
+    const activeAgentsOnPage = agents.filter((a) => a.isActive !== false).length;
+    const pendingCount = commissions.filter((c) => (c.status || '').toUpperCase() !== 'PAID').length;
+    const pendingAmount = commissions
+      .filter((c) => (c.status || '').toUpperCase() !== 'PAID')
+      .reduce((s, c) => s + Number(c.amount || 0), 0);
+    return { totalLabs, activeLabsOnPage, totalAgents, activeAgentsOnPage, pendingCount, pendingAmount };
+  }, [labs, agents, commissions, labsData, agentsData]);
 
-  const updateLabMutation = useMutation({
-    mutationFn: ({ id, data }) => labsAgentsService.updateLab(id, data),
-    onSuccess: () => {
-      toast.success('Lab updated successfully');
-      queryClient.invalidateQueries(['labs']);
-      setIsEditModalOpen(false);
-      setSelectedItem(null);
-      resetEdit();
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update lab');
-    },
-  });
-
-  const deleteLabMutation = useMutation({
-    mutationFn: (id) => labsAgentsService.deleteLab(id),
-    onSuccess: () => {
-      toast.success('Lab deleted successfully');
-      queryClient.invalidateQueries(['labs']);
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to delete lab');
-    },
-  });
-
-  // Agent mutations
   const createAgentMutation = useMutation({
     mutationFn: (data) => labsAgentsService.createAgent(data),
     onSuccess: () => {
@@ -207,7 +175,6 @@ export default function LabsAgents() {
     },
   });
 
-  // Commission payment mutation
   const markPaidMutation = useMutation({
     mutationFn: ({ id, data }) => labsAgentsService.markCommissionPaid(id, data),
     onSuccess: () => {
@@ -233,56 +200,31 @@ export default function LabsAgents() {
     setSearchQuery('');
   };
 
-  const onAddItem = (data) => {
-    if (activeTab === 'labs') {
-      createLabMutation.mutate({
-        name: data.name,
-        address: data.address,
-        phone: data.phone,
-        email: data.email,
-        contactPerson: data.contactPerson,
-        commissionType: 'PERCENTAGE',
-        commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : 0,
-      });
-    } else if (activeTab === 'agents') {
-      createAgentMutation.mutate({
-        name: data.name,
-        address: data.address,
-        phone: data.phone,
-        email: data.email,
-        commissionType: 'PERCENTAGE',
-        commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : 0,
-      });
-    }
+  const onAddAgent = (data) => {
+    createAgentMutation.mutate({
+      name: data.name,
+      address: data.address,
+      phone: data.phone,
+      email: data.email,
+      commissionType: 'PERCENTAGE',
+      commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : 0,
+      discountAllowed: data.discountAllowed ? parseFloat(data.discountAllowed) : 0,
+    });
   };
 
-  const onEditItem = (data) => {
+  const onEditAgent = (data) => {
     if (!selectedItem) return;
-
-    if (activeTab === 'labs') {
-      updateLabMutation.mutate({
-        id: selectedItem.id,
-        data: {
-          name: data.name,
-          address: data.address,
-          phone: data.phone,
-          email: data.email,
-          contactPerson: data.contactPerson,
-          commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : undefined,
-        },
-      });
-    } else if (activeTab === 'agents') {
-      updateAgentMutation.mutate({
-        id: selectedItem.id,
-        data: {
-          name: data.name,
-          address: data.address,
-          phone: data.phone,
-          email: data.email,
-          commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : undefined,
-        },
-      });
-    }
+    updateAgentMutation.mutate({
+      id: selectedItem.id,
+      data: {
+        name: data.name,
+        address: data.address,
+        phone: data.phone,
+        email: data.email,
+        commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : undefined,
+        discountAllowed: data.discountAllowed ? parseFloat(data.discountAllowed) : undefined,
+      },
+    });
   };
 
   const onPayment = (data) => {
@@ -304,14 +246,8 @@ export default function LabsAgents() {
     setEditValue('email', item.email);
     setEditValue('phone', item.phone);
     setEditValue('address', item.address);
-    setEditValue('commissionRate', item.commissionRate);
-    if (activeTab === 'labs') {
-      setEditValue('contactPerson', item.contactPerson);
-      setEditValue('services', item.services?.join(', '));
-    } else if (activeTab === 'agents') {
-      setEditValue('area', item.area);
-      setEditValue('bankDetails', item.bankDetails);
-    }
+    setEditValue('commissionRate', item.commissionRate || item.commissionValue);
+    setEditValue('discountAllowed', item.discountAllowed || 0);
     setIsEditModalOpen(true);
   };
 
@@ -322,21 +258,15 @@ export default function LabsAgents() {
 
   const handleDelete = (item) => {
     if (window.confirm(`Are you sure you want to delete "${item.name}"?`)) {
-      if (activeTab === 'labs') {
-        deleteLabMutation.mutate(item.id);
-      } else if (activeTab === 'agents') {
-        deleteAgentMutation.mutate(item.id);
-      }
+      deleteAgentMutation.mutate(item.id);
     }
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-    }).format(amount || 0);
-  };
+  const formatCurrency = (amount) => new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+  }).format(amount || 0);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -349,376 +279,222 @@ export default function LabsAgents() {
 
   const isLoading = labsLoading || agentsLoading || commissionsLoading;
 
-  // Permissions
-  const canCreateLabOrAgent = useHasPerm(activeTab === 'labs' ? 'labs:create' : 'agents:create', ['SUPER_ADMIN', 'DOCTOR']);
-  const canUpdateLab = useHasPerm('labs:update', ['SUPER_ADMIN', 'DOCTOR']);
-  const canManageLabs = useHasPerm('labs:manage', ['SUPER_ADMIN', 'DOCTOR']);
+  const canCreateAgent = useHasPerm('agents:create', ['SUPER_ADMIN', 'DOCTOR']);
   const canUpdateAgent = useHasPerm('agents:update', ['SUPER_ADMIN', 'DOCTOR']);
   const canManageAgents = useHasPerm('agents:manage', ['SUPER_ADMIN', 'DOCTOR']);
-  const canManageLabTests = useHasPerm('labs:tests', ['SUPER_ADMIN', 'DOCTOR', 'LAB_TECHNICIAN']);
   const canPayCommissions = useHasPerm('commissions:pay', ['SUPER_ADMIN', 'ACCOUNTANT']);
-
-  // Render Labs Table
-  const renderLabsTable = () => (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead className="bg-gray-50 border-b border-gray-100">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Lab Name
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Contact Person
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Phone
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Commission Rate
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Status
-            </th>
-            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {labs.map((lab) => (
-            <tr key={lab.id} className="hover:bg-gray-50 transition">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <FaFlask className="text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">{lab.name}</p>
-                    <p className="text-sm text-gray-500">{lab.email}</p>
-                  </div>
+  const renderLabs = () => (
+    <div className="grid gap-4">
+      {labs.map((lab) => (
+        <div key={lab.id} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                <FaFlask />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{lab.name}</h3>
+                <div className="text-sm text-gray-600 flex flex-wrap gap-4 mt-1">
+                  <span className="inline-flex items-center gap-2"><FaPhone /> {lab.phone || '-'}</span>
+                  <span className="inline-flex items-center gap-2"><FaEnvelope /> {lab.email || '-'}</span>
+                  <span className="inline-flex items-center gap-2"><FaMapMarkerAlt /> {lab.address || '-'}</span>
                 </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                {lab.contactPerson || '-'}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                {lab.phone || '-'}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                  {lab.commissionRate || 0}%
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                    lab.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {lab.isActive !== false ? 'Active' : 'Inactive'}
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-right">
-                <div className="flex items-center justify-end gap-2">
-                  {canUpdateLab && (
-                    <button
-                      onClick={() => openEditModal(lab)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                      title="Edit"
-                    >
-                      <FaEdit />
-                    </button>
-                  )}
-                  {canManageLabs && (
-                    <button
-                      onClick={() => handleDelete(lab)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                      title="Delete"
-                    >
-                      <FaTrash />
-                    </button>
-                  )}
-                  {canManageLabTests && (
-                    <button
-                      onClick={() => navigate(`/labs-agents/${lab.id}/tests`)}
-                      className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
-                      title="Manage Tests"
-                    >
-                      <FaFlask />
-                    </button>
-                  )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                    Commission: {lab.commissionValue || 0}%
+                  </span>
+                  <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                    lab.isActive !== false ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    {lab.isActive !== false ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  // Render Agents Table
-  const renderAgentsTable = () => (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead className="bg-gray-50 border-b border-gray-100">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Agent Name
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Area
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Phone
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Commission Rate
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Status
-            </th>
-            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {agents.map((agent) => (
-            <tr key={agent.id} className="hover:bg-gray-50 transition">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <FaUserTie className="text-orange-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">{agent.name}</p>
-                    <p className="text-sm text-gray-500">{agent.email}</p>
-                  </div>
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                {agent.area || '-'}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                {agent.phone || '-'}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                  {agent.commissionRate || 0}%
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                    agent.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {agent.isActive !== false ? 'Active' : 'Inactive'}
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-right">
-                <div className="flex items-center justify-end gap-2">
-                  {canUpdateAgent && (
-                    <button
-                      onClick={() => openEditModal(agent)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                      title="Edit"
-                    >
-                      <FaEdit />
-                    </button>
-                  )}
-                  {canManageAgents && (
-                    <button
-                      onClick={() => handleDelete(agent)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                      title="Delete"
-                    >
-                      <FaTrash />
-                    </button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  // Render Commissions Table
-  const renderCommissionsTable = () => (
-    <>
-      {/* Filter */}
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">Status:</span>
-          {['all', 'pending', 'paid'].map((status) => (
-            <button
-              key={status}
-              onClick={() => {
-                setCommissionFilter(status);
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 text-sm rounded-lg transition ${
-                commissionFilter === status
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/labs-agents/${lab.id}/tests`}
+                className="px-3 py-2 text-sm rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50"
+              >
+                Manage Tests
+              </Link>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Partner
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Type
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Reference
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Amount
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {commissions.map((commission) => (
-              <tr key={commission.id} className="hover:bg-gray-50 transition">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        commission.partnerType === 'lab' ? 'bg-purple-100' : 'bg-orange-100'
-                      }`}
-                    >
-                      {commission.partnerType === 'lab' ? (
-                        <FaFlask className="text-purple-600" />
-                      ) : (
-                        <FaUserTie className="text-orange-600" />
-                      )}
-                    </div>
-                    <p className="font-medium text-gray-900">{commission.partnerName}</p>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="capitalize text-gray-600">{commission.partnerType}</span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="font-mono text-sm text-gray-600">
-                    {commission.referenceNo || '-'}
+      ))}
+    </div>
+  );
+  const renderAgents = () => (
+    <div className="grid gap-4">
+      {agents.map((agent) => (
+        <div key={agent.id} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                <FaUserTie />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{agent.name}</h3>
+                <div className="text-sm text-gray-600 flex flex-wrap gap-4 mt-1">
+                  <span className="inline-flex items-center gap-2"><FaPhone /> {agent.phone || '-'}</span>
+                  <span className="inline-flex items-center gap-2"><FaEnvelope /> {agent.email || '-'}</span>
+                  <span className="inline-flex items-center gap-2"><FaMapMarkerAlt /> {agent.address || '-'}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                    Commission: {agent.commissionRate || agent.commissionValue || 0}%
                   </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(commission.amount)}
+                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">
+                    Discount Allowed: {agent.discountAllowed || 0}%
                   </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                  {formatDate(commission.createdAt)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                      commission.status === 'paid'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-yellow-100 text-yellow-700'
-                    }`}
-                  >
-                    {commission.status === 'paid' ? 'Paid' : 'Pending'}
+                  <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                    agent.isActive !== false ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    {agent.isActive !== false ? 'Active' : 'Inactive'}
                   </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                  {commission.status !== 'paid' && canPayCommissions && (
-                    <button
-                      onClick={() => openPaymentModal(commission)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition"
-                    >
-                      <FaCheck className="text-xs" />
-                      Mark Paid
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {canUpdateAgent && (
+                <button
+                  onClick={() => openEditModal(agent)}
+                  className="px-3 py-2 text-sm rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50"
+                >
+                  <FaEdit className="inline-block mr-2" /> Edit
+                </button>
+              )}
+              {canManageAgents && (
+                <button
+                  onClick={() => handleDelete(agent)}
+                  className="px-3 py-2 text-sm rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                >
+                  <FaTrash className="inline-block mr-2" /> Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 
-  const getEmptyIcon = () => {
-    if (activeTab === 'labs') return FaFlask;
-    if (activeTab === 'agents') return FaUserTie;
-    return FaHandHoldingUsd;
-  };
+  const renderCommissions = () => (
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead className="bg-gray-50 border-b border-gray-100">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Agent</th>
+            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Amount</th>
+            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
+            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {commissions.map((commission) => (
+            <tr key={commission.id} className="hover:bg-gray-50">
+              <td className="px-6 py-4">
+                <div className="font-medium text-gray-900">{commission.agent?.name || commission.partnerName || 'Agent'}</div>
+                <div className="text-sm text-gray-500">Ref: {commission.reference || commission.refNo || '-'}</div>
+              </td>
+              <td className="px-6 py-4 font-semibold text-gray-900">
+                {formatCurrency(commission.amount)}
+              </td>
+              <td className="px-6 py-4 text-gray-600">
+                {formatDate(commission.createdAt)}
+              </td>
+              <td className="px-6 py-4">
+                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                  (commission.status || '').toUpperCase() === 'PAID'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {(commission.status || 'PENDING').toUpperCase()}
+                </span>
+              </td>
+              <td className="px-6 py-4 text-right">
+                {canPayCommissions && (commission.status || '').toUpperCase() !== 'PAID' && (
+                  <button
+                    onClick={() => openPaymentModal(commission)}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700"
+                  >
+                    <FaCheck /> Mark Paid
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
-  const getEmptyMessage = () => {
-    if (activeTab === 'labs') return 'No labs found';
-    if (activeTab === 'agents') return 'No agents found';
-    return 'No commissions found';
-  };
-
-  const EmptyIcon = getEmptyIcon();
-  const currentData = activeTab === 'labs' ? labs : activeTab === 'agents' ? agents : commissions;
+  const title = activeTab === 'labs' ? 'Labs' : 'Agents & Commissions';
+  const subtitle = activeTab === 'labs'
+    ? 'Manage referral labs and open their test catalog from here.'
+    : 'Hire agents on commission to bring patients to your clinic. Track payouts in one place.';
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Labs & Agents</h1>
-            <p className="text-gray-500 mt-1">Manage labs, agents, and commissions</p>
+        <div className="bg-gradient-to-r from-amber-50 via-white to-blue-50 border border-gray-100 rounded-2xl p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+              <p className="text-gray-600 mt-1">{subtitle}</p>
+            </div>
+            {activeTab === 'agents' && canCreateAgent && (
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-amber-700"
+              >
+                <FaPlus /> Add Agent
+              </button>
+            )}
           </div>
-          {activeTab !== 'commissions' && canCreateLabOrAgent && (
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition"
-            >
-              <FaPlus />
-              Add {activeTab === 'labs' ? 'Lab' : 'Agent'}
-            </button>
-          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">{activeTab === 'labs' ? 'Total Labs' : 'Total Agents'}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{activeTab === 'labs' ? totals.totalLabs : totals.totalAgents}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Active (Page)</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{activeTab === 'labs' ? totals.activeLabsOnPage : totals.activeAgentsOnPage}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Pending Commissions</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{totals.pendingCount}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Pending Amount</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totals.pendingAmount)}</p>
+            </div>
+          </div>
         </div>
 
-        {/* Tabs */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-          <div className="flex border-b border-gray-100">
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition ${
-                  activeTab === tab.id
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <tab.icon />
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {tabs.length > 1 && (
+            <div className="flex border-b border-gray-100">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition ${
+                    activeTab === tab.id
+                      ? 'text-amber-700 border-b-2 border-amber-600 bg-amber-50/50'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <tab.icon />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Search (for labs and agents only) */}
-          {activeTab !== 'commissions' && (
+          {(activeTab === 'agents' || activeTab === 'labs') && (
             <div className="p-4">
               <div className="relative">
                 <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -726,77 +502,102 @@ export default function LabsAgents() {
                   type="text"
                   value={searchQuery}
                   onChange={handleSearch}
-                  placeholder={`Search ${activeTab}...`}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  placeholder={activeTab === 'labs' ? 'Search labs by name or contact person...' : 'Search agents by name or phone...'}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
             </div>
           )}
-        </div>
 
-        {/* Data Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          {activeTab === 'commissions' && (
+            <div className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="text-sm text-gray-500">Track commission payouts for patient referrals.</div>
+              <select
+                value={commissionFilter}
+                onChange={(e) => { setCommissionFilter(e.target.value); setCurrentPage(1); }}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+              </select>
             </div>
-          ) : currentData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-              <EmptyIcon className="text-4xl mb-4" />
-              <p className="font-medium">{getEmptyMessage()}</p>
-              <p className="text-sm mt-1">
-                {activeTab !== 'commissions'
-                  ? `Add your first ${activeTab === 'labs' ? 'lab' : 'agent'} to get started`
-                  : 'Commissions will appear here when generated'}
-              </p>
-            </div>
-          ) : (
-            <>
-              {activeTab === 'labs' && renderLabsTable()}
-              {activeTab === 'agents' && renderAgentsTable()}
-              {activeTab === 'commissions' && renderCommissionsTable()}
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-                <p className="text-sm text-gray-500">
-                  Showing {(currentPage - 1) * pageSize + 1} to{' '}
-                  {Math.min(currentPage * pageSize, totalCount)} of {totalCount} items
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                  >
-                    <FaChevronLeft className="text-gray-600" />
-                  </button>
-                  <span className="px-4 py-2 text-sm text-gray-600">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                  >
-                    <FaChevronRight className="text-gray-600" />
-                  </button>
-                </div>
-              </div>
-            </>
           )}
         </div>
 
-        {/* Add Modal */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600"></div>
+            </div>
+          ) : activeTab === 'labs' ? (
+            labs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                <FaFlask className="text-4xl mb-3" />
+                <p className="font-medium">No labs yet</p>
+                <p className="text-sm mt-1">Lab records will appear here once created.</p>
+              </div>
+            ) : (
+              renderLabs()
+            )
+          ) : activeTab === 'agents' ? (
+            agents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                <FaUserTie className="text-4xl mb-3" />
+                <p className="font-medium">No agents yet</p>
+                <p className="text-sm mt-1">Add your first agent to start tracking referrals.</p>
+              </div>
+            ) : (
+              renderAgents()
+            )
+          ) : commissions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+              <FaHandHoldingUsd className="text-4xl mb-3" />
+              <p className="font-medium">No commissions yet</p>
+              <p className="text-sm mt-1">Commission records will appear here when created.</p>
+            </div>
+          ) : (
+            renderCommissions()
+          )}
+
+          {(activeTab === 'labs' ? labs.length : activeTab === 'agents' ? agents.length : commissions.length) > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+              <p className="text-sm text-gray-500">
+                Showing {(currentPage - 1) * pageSize + 1} to{' '}
+                {Math.min(currentPage * pageSize, totalCount)} of {totalCount} items
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FaChevronLeft className="text-gray-600" />
+                </button>
+                <span className="px-4 py-2 text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FaChevronRight className="text-gray-600" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <Modal
           isOpen={isAddModalOpen}
           onClose={() => {
             setIsAddModalOpen(false);
             reset();
           }}
-          title={`Add ${activeTab === 'labs' ? 'Lab' : 'Agent'}`}
+          title="Add Agent"
           size="lg"
         >
-          <form onSubmit={handleSubmit(onAddItem)} className="space-y-4">
+          <form onSubmit={handleSubmit(onAddAgent)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -805,24 +606,20 @@ export default function LabsAgents() {
                 <input
                   type="text"
                   {...register('name', { required: 'Name is required' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={`Enter ${activeTab === 'labs' ? 'lab' : 'agent'} name`}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Agent name"
                 />
-                {errors.name && (
-                  <p className="mt-1 text-sm text-red-500">{errors.name.message}</p>
-                )}
+                {errors.name && <p className="mt-1 text-sm text-red-500">{errors.name.message}</p>}
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                 <input
                   type="email"
                   {...register('email')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter email"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Email"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone <span className="text-red-500">*</span>
@@ -830,64 +627,41 @@ export default function LabsAgents() {
                 <input
                   type="tel"
                   {...register('phone', { required: 'Phone is required' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter phone number"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Phone number"
                 />
-                {errors.phone && (
-                  <p className="mt-1 text-sm text-red-500">{errors.phone.message}</p>
-                )}
+                {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone.message}</p>}
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Commission Rate (%)
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%)</label>
                 <input
                   type="number"
                   step="0.1"
                   {...register('commissionRate')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter commission rate"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="10"
                 />
               </div>
-
-              {activeTab === 'labs' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Contact Person
-                  </label>
-                  <input
-                    type="text"
-                    {...register('contactPerson')}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter contact person name"
-                  />
-                </div>
-              )}
-
-              {activeTab === 'agents' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-                  <input
-                    type="text"
-                    {...register('area')}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter area/region"
-                  />
-                </div>
-              )}
-
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discount Allowed (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  {...register('discountAllowed')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="0"
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <textarea
                   {...register('address')}
                   rows={2}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter address"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Address"
                 />
               </div>
             </div>
-
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
@@ -895,24 +669,21 @@ export default function LabsAgents() {
                   setIsAddModalOpen(false);
                   reset();
                 }}
-                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
+                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={createLabMutation.isPending || createAgentMutation.isPending}
-                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                disabled={createAgentMutation.isPending}
+                className="px-4 py-2.5 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50"
               >
-                {createLabMutation.isPending || createAgentMutation.isPending
-                  ? 'Adding...'
-                  : `Add ${activeTab === 'labs' ? 'Lab' : 'Agent'}`}
+                {createAgentMutation.isPending ? 'Adding...' : 'Add Agent'}
               </button>
             </div>
           </form>
         </Modal>
 
-        {/* Edit Modal */}
         <Modal
           isOpen={isEditModalOpen}
           onClose={() => {
@@ -920,10 +691,10 @@ export default function LabsAgents() {
             setSelectedItem(null);
             resetEdit();
           }}
-          title={`Edit ${activeTab === 'labs' ? 'Lab' : 'Agent'}`}
+          title="Edit Agent"
           size="lg"
         >
-          <form onSubmit={handleEditSubmit(onEditItem)} className="space-y-4">
+          <form onSubmit={handleEditSubmit(onEditAgent)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -932,22 +703,18 @@ export default function LabsAgents() {
                 <input
                   type="text"
                   {...registerEdit('name', { required: 'Name is required' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
-                {editErrors.name && (
-                  <p className="mt-1 text-sm text-red-500">{editErrors.name.message}</p>
-                )}
+                {editErrors.name && <p className="mt-1 text-sm text-red-500">{editErrors.name.message}</p>}
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                 <input
                   type="email"
                   {...registerEdit('email')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone <span className="text-red-500">*</span>
@@ -955,59 +722,37 @@ export default function LabsAgents() {
                 <input
                   type="tel"
                   {...registerEdit('phone', { required: 'Phone is required' })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
-                {editErrors.phone && (
-                  <p className="mt-1 text-sm text-red-500">{editErrors.phone.message}</p>
-                )}
+                {editErrors.phone && <p className="mt-1 text-sm text-red-500">{editErrors.phone.message}</p>}
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Commission Rate (%)
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%)</label>
                 <input
                   type="number"
                   step="0.1"
                   {...registerEdit('commissionRate')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
-
-              {activeTab === 'labs' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Contact Person
-                  </label>
-                  <input
-                    type="text"
-                    {...registerEdit('contactPerson')}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
-              {activeTab === 'agents' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-                  <input
-                    type="text"
-                    {...registerEdit('area')}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discount Allowed (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  {...registerEdit('discountAllowed')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <textarea
                   {...registerEdit('address')}
                   rows={2}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
             </div>
-
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
@@ -1016,24 +761,21 @@ export default function LabsAgents() {
                   setSelectedItem(null);
                   resetEdit();
                 }}
-                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
+                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={updateLabMutation.isPending || updateAgentMutation.isPending}
-                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                disabled={updateAgentMutation.isPending}
+                className="px-4 py-2.5 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50"
               >
-                {updateLabMutation.isPending || updateAgentMutation.isPending
-                  ? 'Saving...'
-                  : 'Save Changes'}
+                {updateAgentMutation.isPending ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </form>
         </Modal>
 
-        {/* Payment Modal */}
         <Modal
           isOpen={isPaymentModalOpen}
           onClose={() => {
@@ -1047,7 +789,7 @@ export default function LabsAgents() {
           <form onSubmit={handlePaymentSubmit(onPayment)} className="space-y-4">
             {selectedItem && (
               <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-600">Partner: <span className="font-medium text-gray-900">{selectedItem.partnerName}</span></p>
+                <p className="text-sm text-gray-600">Agent: <span className="font-medium text-gray-900">{selectedItem.agent?.name || selectedItem.partnerName || 'Agent'}</span></p>
                 <p className="text-sm text-gray-600 mt-1">Amount: <span className="font-medium text-gray-900">{formatCurrency(selectedItem.amount)}</span></p>
               </div>
             )}
@@ -1058,7 +800,7 @@ export default function LabsAgents() {
               </label>
               <select
                 {...registerPayment('paymentMethod', { required: 'Payment method is required' })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
                 <option value="">Select payment method</option>
                 <option value="cash">Cash</option>
@@ -1069,26 +811,22 @@ export default function LabsAgents() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payment Reference
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Reference</label>
               <input
                 type="text"
                 {...registerPayment('paymentReference')}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Transaction ID / Cheque No."
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payment Date
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
               <input
                 type="date"
                 {...registerPayment('paymentDate')}
                 defaultValue={new Date().toISOString().split('T')[0]}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
 
@@ -1097,7 +835,7 @@ export default function LabsAgents() {
               <textarea
                 {...registerPayment('notes')}
                 rows={2}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Any additional notes..."
               />
             </div>
@@ -1110,14 +848,14 @@ export default function LabsAgents() {
                   setSelectedItem(null);
                   resetPayment();
                 }}
-                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition"
+                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={markPaidMutation.isPending}
-                className="px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition"
+                className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
                 {markPaidMutation.isPending ? 'Processing...' : 'Confirm Payment'}
               </button>

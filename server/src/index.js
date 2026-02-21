@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { PrismaClient } from '@prisma/client';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './config/logger.js';
+import { getPurchaseUploadMode, getLocalPurchaseUploadRoot, ensurePurchaseUploadTempDir } from './services/purchaseStorageService.js';
 
 // Log only the names of environment variables set at startup (no values)
 try {
@@ -123,6 +124,14 @@ app.use('/api/auth/login', loginLimiter);
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Purchase invoice uploads: use external local directory in local mode and expose via static route.
+if (getPurchaseUploadMode() === 'local') {
+  const localUploadRoot = getLocalPurchaseUploadRoot();
+  ensurePurchaseUploadTempDir();
+  app.use('/uploads/purchases', express.static(localUploadRoot));
+  logger.info(`Serving purchase uploads from: ${localUploadRoot}`);
+}
 
 // Request logging (for HIPAA audit trail)
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));

@@ -5,12 +5,15 @@ import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import { purchaseService } from '../../services/purchaseService';
 import { pharmacyService } from '../../services/pharmacyService';
+import appNotificationService from '../../services/appNotificationService';
 
 export default function UploadPurchase() {
   const [file, setFile] = useState(null);
   const [uploadId, setUploadId] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [supplierId, setSupplierId] = useState('');
+  const [supplierExists, setSupplierExists] = useState(true);
+  const [supplierCandidate, setSupplierCandidate] = useState(null);
   const [supplierQuery, setSupplierQuery] = useState('');
   const [supplierOptions, setSupplierOptions] = useState([]);
   const [supplierSearching, setSupplierSearching] = useState(false);
@@ -30,23 +33,147 @@ export default function UploadPurchase() {
   const [subtotal, setSubtotal] = useState(0);
   const [taxAmount, setTaxAmount] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [createAndReceiveFlag, setCreateAndReceiveFlag] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const abortControllerRef = useRef(null);
+  const pollingRef = useRef({ intervalId: null, timeoutId: null });
+  const notifiedUploadIdsRef = useRef(new Set());
 
   const uploadMut = useMutation({
-    mutationFn: (form) => purchaseService.uploadInvoice(form),
+    mutationFn: ({ form, signal }) => purchaseService.uploadInvoice(form, { signal, timeout: 300000 }),
     onSuccess: (res) => {
-      const data = res.data || res;
-      setUploadId(data.id || data?.data?.id);
-      const p = data.parsedJson ? JSON.parse(data.parsedJson) : null;
+      const data = res?.data || res || {};
+      const nested = data?.data || {};
+      const uploadIdVal = data.id || nested.id || data.uploadId || nested.uploadId || null;
+      setUploadId(uploadIdVal);
+      const parsedRaw = data.parsedJson || nested.parsedJson || data.parsed || nested.parsed || null;
+      let p = null;
+      try {
+        if (parsedRaw) {
+          if (typeof parsedRaw === 'string') p = JSON.parse(parsedRaw);
+          else p = parsedRaw;
+        }
+      } catch (e) {
+        // fallback: try to parse top-level fields if available
+        try { p = JSON.parse(JSON.stringify(parsedRaw)); } catch (ee) { p = null; }
+      }
       setParsed(p);
-      toast.success('File uploaded and parsed (preview)');
+      if (p) {
+        setIsUploading(false);
+      } else {
+        toast.success('File uploaded. Parsing in background — waiting for results...');
+        // start polling for parsed result
+        if (uploadIdVal) startPollingUpload(uploadIdVal);
+      }
     },
-    onError: (err) => toast.error('Upload failed')
+    onError: (err) => {
+      // Prefer server-provided error details when available (e.g., parsing failure)
+      const resp = err?.response;
+      if (resp && resp.data) {
+        const serverMsg = resp.data.message || resp.data.error || 'Upload failed';
+        // If server included the upload record, show parsedJson preview if present
+        const record = resp.data.data || resp.data.record || null;
+        let p = null;
+        try {
+          if (record && record.parsedJson) {
+            const raw = record.parsedJson;
+            p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            setUploadId(record.id || uploadId);
+            setParsed(p);
+            toast.error(`${serverMsg} — parsed preview available for review`);
+            return;
+          }
+        } catch (e) {
+          // ignore parse error of parsedJson
+        }
+        toast.error(serverMsg);
+      } else {
+        toast.error('Upload failed');
+      }
+    }
   });
+
+  // Poll upload status until PARSED, FAILED, or timeout (5 minutes)
+  const startPollingUpload = (id) => {
+    // clear any existing
+    stopPolling();
+    setIsUploading(true);
+    const start = Date.now();
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await purchaseService.getUpload(id);
+        const u = res?.data || res;
+        const record = u?.data || u;
+        if (!record) return;
+        const status = record.status;
+        if (status === 'PARSED' && record.parsedJson) {
+          let p = null;
+          try { p = typeof record.parsedJson === 'string' ? JSON.parse(record.parsedJson) : record.parsedJson; } catch (e) { p = null; }
+          setParsed(p);
+          setUploadId(id);
+          stopPolling();
+          setIsUploading(false);
+          return;
+        }
+        if (status === 'FAILED') {
+          toast.error('Parsing failed on server');
+          stopPolling();
+          setIsUploading(false);
+          return;
+        }
+        if (status === 'CANCELLED') {
+          toast('Upload cancelled');
+          stopPolling();
+          setIsUploading(false);
+          return;
+        }
+        // timeout after 5 minutes
+        if (Date.now() - start > 300000) {
+          toast.error('Parsing timed out after 5 minutes');
+          stopPolling();
+          setIsUploading(false);
+          return;
+        }
+      } catch (e) {
+        console.error('Polling error', e);
+      }
+    }, 3000);
+    const timeoutId = setTimeout(() => {
+      // safety stop
+      stopPolling();
+      setIsUploading(false);
+    }, 300000 + 5000);
+    pollingRef.current = { intervalId, timeoutId };
+  };
+
+  const stopPolling = () => {
+    try {
+      if (pollingRef.current.intervalId) clearInterval(pollingRef.current.intervalId);
+      if (pollingRef.current.timeoutId) clearTimeout(pollingRef.current.timeoutId);
+    } catch (e) {}
+    pollingRef.current = { intervalId: null, timeoutId: null };
+  };
 
   const createMut = useMutation({
     mutationFn: ({ id, body }) => purchaseService.createFromUpload(id, body),
-    onSuccess: (res) => {
+    onSuccess: async (res, vars) => {
+      const data = res?.data || res || {};
+      const purchase = data || data?.data;
       toast.success('Purchase created from upload');
+      // If user requested immediate receive/publish, call receive endpoint
+      try {
+        if (vars?.body?.createAndReceive) {
+          const id = purchase.id || purchase?.data?.id || (data?.id);
+          if (id) {
+            await purchaseService.receivePurchase(id);
+            toast.success('Purchase published and stock updated');
+          }
+        }
+      } catch (err) {
+        toast.error('Created purchase but failed to publish/receive');
+      }
+      // Navigate to purchases list for review
+      window.location.href = '/pharmacy/purchases';
     },
     onError: () => toast.error('Failed to create purchase')
   });
@@ -55,7 +182,33 @@ export default function UploadPurchase() {
     if (!file) return toast.error('Select a file');
     const fd = new FormData();
     fd.append('file', file);
-    uploadMut.mutate(fd);
+    // setup abort controller to allow cancel
+    if (abortControllerRef.current) { try { abortControllerRef.current.abort(); } catch (e) {} }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setIsUploading(true);
+    uploadMut.mutate({ form: fd, signal: controller.signal }, {
+      onSettled: () => { setIsUploading(false); abortControllerRef.current = null; }
+    });
+  };
+
+  const handleCancelUpload = async () => {
+    // abort in-flight request
+    try {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    } catch (e) { }
+    setIsUploading(false);
+    // if there is an upload record, ask server to cancel background parsing
+    if (uploadId) {
+      try {
+        await purchaseService.cancelUpload(uploadId);
+        toast.success('Upload cancelled');
+      } catch (e) {
+        toast.error('Failed to cancel upload on server');
+      }
+    } else {
+      toast('Upload request aborted');
+    }
   };
 
   const handleConfirm = async () => {
@@ -87,9 +240,39 @@ export default function UploadPurchase() {
       })) : []);
       setInvoiceNo(parsed.invoiceNo || '');
       setInvoiceDate(parsed.invoiceDate ? parsed.invoiceDate.split('T')[0] : '');
-      setSubtotal(parsed.subtotal || 0);
-      setTaxAmount(parsed.taxAmount || 0);
-      setTotalAmount(parsed.totalAmount || 0);
+      setSubtotal(parsed.subtotal || parsed.totals?.sub_total || 0);
+      // Prefer parsed.taxAmount; if missing but tax_summary present, sum sgst+cgst or use tax_amount
+      let taxVal = parsed.taxAmount;
+      if (!taxVal && Array.isArray(parsed.tax_summary) && parsed.tax_summary.length) {
+        const t = parsed.tax_summary[0];
+        taxVal = Number(t.tax_amount || (Number(t.sgst_amount || 0) + Number(t.cgst_amount || 0)) || 0);
+      }
+      setTaxAmount(taxVal || 0);
+      setTotalAmount(parsed.totalAmount || parsed.totals?.net_amount || +(Number(parsed.subtotal || 0) + Number(taxVal || 0)).toFixed(2));
+
+      // Supplier candidate detection: supplier must come from seller/pharmacy details only.
+      const supplierName = parsed.pharmacy_details?.name || null;
+      if (supplierName) {
+        setSupplierCandidate({
+          name: supplierName,
+          phone: parsed.pharmacy_details?.phone || '',
+          email: parsed.pharmacy_details?.email || '',
+          address: parsed.pharmacy_details?.address || '',
+          gstNumber: parsed.pharmacy_details?.gstin || ''
+        });
+        // quick check if supplier exists
+        (async () => {
+          try {
+            const r = await purchaseService.getSuppliers(supplierName);
+            const list = r?.data || r;
+            if (Array.isArray(list) && list.length) {
+              setSupplierExists(true);
+            } else {
+              setSupplierExists(false);
+            }
+          } catch (e) { setSupplierExists(false); }
+        })();
+      }
     } else {
       setItems([]);
       setInvoiceNo('');
@@ -98,6 +281,31 @@ export default function UploadPurchase() {
       setTaxAmount(0);
       setTotalAmount(0);
     }
+  }, [parsed]);
+
+  useEffect(() => {
+    if (!parsed) return;
+    const notifId = uploadId ? `draft-purchase-ready-${uploadId}` : `draft-purchase-ready-${Date.now()}`;
+    if (notifiedUploadIdsRef.current.has(notifId)) return;
+    notifiedUploadIdsRef.current.add(notifId);
+    appNotificationService.add({
+      id: notifId,
+      title: 'Draft Purchase Ready',
+      message: parsed?.invoiceNo ? `Invoice ${parsed.invoiceNo} is ready for review.` : 'A draft purchase is ready for review.',
+      path: '/pharmacy/purchases',
+      type: 'purchase',
+      unread: true
+    });
+  }, [parsed, uploadId]);
+
+  // Notify user when parsing completes and parsed data is available
+  useEffect(() => {
+    if (!parsed) return;
+    toast.success((t) => (
+      <div className="cursor-pointer" onClick={() => { window.location.href = '/pharmacy/purchases'; toast.dismiss(t.id); }}>
+        Draft purchase ready for invoice — check the draft purchase list
+      </div>
+    ), { duration: 8000 });
   }, [parsed]);
 
   useEffect(() => {
@@ -114,6 +322,14 @@ export default function UploadPurchase() {
     }, 350);
     return () => clearTimeout(t);
   }, [supplierQuery]);
+
+  useEffect(() => {
+    return () => {
+      // cleanup polling and abort controller on unmount
+      stopPolling();
+      try { if (abortControllerRef.current) abortControllerRef.current.abort(); } catch (e) {}
+    };
+  }, []);
 
   const createSupplier = async (name) => {
     try {
@@ -178,151 +394,19 @@ export default function UploadPurchase() {
       <h2 className="text-lg font-medium mb-4">Upload Purchase Invoice</h2>
       <div className="mb-4">
         <input type="file" onChange={(e) => setFile(e.target.files[0])} />
+        <div className="text-xs text-gray-600 mt-2">Note: Invoice scanning can take a few minutes. Please wait until parsing completes.</div>
       </div>
       <div className="flex gap-2">
-        <Button onClick={handleUpload} loading={uploadMut.isLoading}>Upload & Parse</Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleUpload} loading={uploadMut.isLoading || isUploading}>Upload & Parse</Button>
+          { (uploadMut.isLoading || isUploading) && (
+            <button className="px-3 py-1 bg-red-600 text-white rounded text-sm" onClick={handleCancelUpload}>Cancel Upload</button>
+          ) }
+        </div>
         <Button variant="secondary" onClick={() => setFile(null)}>Reset</Button>
       </div>
 
-      {parsed && (
-        <div className="mt-6">
-          <h3 className="font-medium">Parsed Preview & Confirmation</h3>
-          <div className="mt-3 grid grid-cols-2 gap-4">
-            <Input label="Invoice No" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
-            <Input type="date" label="Invoice Date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-            <div>
-              <label className="block text-sm text-gray-600">Supplier (search)</label>
-              <input value={supplierQuery || (supplierId ? supplierQuery : '')} onChange={(e) => { setSupplierQuery(e.target.value); if (!e.target.value) setSupplierId(''); }} className="w-full p-2 border rounded" placeholder="Search suppliers by name" />
-              {supplierSearching && <div className="text-xs text-gray-500">Searching...</div>}
-              {supplierOptions.length > 0 && (
-                <ul className="bg-white border rounded mt-1 max-h-48 overflow-auto text-sm">
-                  {supplierOptions.map((s) => (
-                    <li key={s.id} className="p-2 hover:bg-gray-50 cursor-pointer" onClick={() => { setSupplierId(s.id); setSupplierQuery(s.name); setSupplierOptions([]); }}>{s.name} {s.phone ? `· ${s.phone}` : ''}</li>
-                  ))}
-                </ul>
-              )}
-              {supplierOptions.length === 0 && supplierQuery && supplierQuery.length >= 2 && (
-                <div className="mt-1 text-sm">
-                  <button className="px-2 py-1 bg-green-600 text-white rounded text-sm" disabled={createSupplierMutState.loading} onClick={() => { setCreateSupplierForm((f) => ({ ...f, name: supplierQuery })); setShowCreateSupplierModal(true); }}>Create supplier "{supplierQuery}"</button>
-                </div>
-              )}
-
-              {showCreateSupplierModal && (
-                <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center">
-                  <div className="bg-white p-6 rounded shadow-lg w-96">
-                    <h3 className="text-lg font-medium mb-3">Create Supplier</h3>
-                    <div className="space-y-2">
-                      <input className="w-full p-2 border rounded" placeholder="Name" value={createSupplierForm.name} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, name: e.target.value }))} />
-                      <input className="w-full p-2 border rounded" placeholder="Phone" value={createSupplierForm.phone} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, phone: e.target.value }))} />
-                      <input className="w-full p-2 border rounded" placeholder="Email" value={createSupplierForm.email} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, email: e.target.value }))} />
-                      <input className="w-full p-2 border rounded" placeholder="Address" value={createSupplierForm.address} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, address: e.target.value }))} />
-                      <input className="w-full p-2 border rounded" placeholder="GST Number" value={createSupplierForm.gstNumber} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, gstNumber: e.target.value }))} />
-                      <textarea className="w-full p-2 border rounded" placeholder="Notes" value={createSupplierForm.notes} onChange={(e) => setCreateSupplierForm((s) => ({ ...s, notes: e.target.value }))} />
-                    </div>
-                    <div className="mt-4 flex justify-end gap-2">
-                      <button className="px-3 py-1 border rounded" onClick={() => setShowCreateSupplierModal(false)}>Cancel</button>
-                      <button className="px-3 py-1 bg-green-600 text-white rounded" onClick={async () => {
-                        try {
-                          setCreateSupplierMutState({ loading: true });
-                          const s = await purchaseService.createSupplier(createSupplierForm);
-                          const d = s.data || s;
-                          const sup = d || d?.data;
-                          setSupplierId(sup.id || sup?.id);
-                          setSupplierQuery(sup.name || createSupplierForm.name);
-                          setSupplierOptions([]);
-                          toast.success('Supplier created');
-                          setShowCreateSupplierModal(false);
-                        } catch (e) {
-                          toast.error('Failed to create supplier');
-                        } finally { setCreateSupplierMutState({ loading: false }); }
-                      }}>Create</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            <Input label="Notes" value={parsed.notes || ''} onChange={() => {}} disabled />
-          </div>
-
-          <div className="mt-4 overflow-auto">
-              <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left">
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Qty</th>
-                  <th className="p-2">Unit Price</th>
-                  <th className="p-2">Batch</th>
-                  <th className="p-2">Expiry</th>
-                  <th className="p-2">Amount</th>
-                  <th className="p-2"> </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => (
-                  <tr key={idx} className="border-t">
-                    <td className="p-2 relative">
-                      <input className="w-full p-1 border rounded" value={it.name} onChange={(e) => updateItem(idx, 'name', e.target.value)} />
-                      {productOptions[idx] && productOptions[idx].length > 0 && (
-                        <ul className="absolute left-0 right-0 bg-white border mt-1 max-h-56 overflow-auto z-20 text-sm">
-                          {productOptions[idx].map((p) => (
-                            <li key={p.id} className="p-2 hover:bg-gray-50 cursor-pointer" onClick={() => {
-                              // select product
-                              updateItem(idx, 'productId', p.id);
-                              updateItem(idx, 'name', p.name);
-                              updateItem(idx, 'unitPrice', p.purchasePrice || p.sellingPrice || 0);
-                              setProductOptions((po) => ({ ...po, [idx]: [] }));
-                            }}>{p.name} {p.genericName ? `· ${p.genericName}` : ''}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {productSearching[idx] && <div className="text-xs text-gray-500">Searching products...</div>}
-                      {(!productOptions[idx] || productOptions[idx].length === 0) && !productSearching[idx] && (it.name && it.name.length >= 2) && (
-                        <div className="mt-1">
-                          <button className="px-2 py-1 bg-blue-600 text-white rounded text-sm" onClick={() => { setCreateProductForm((f) => ({ ...f, name: it.name })); setCreatingProductRow(idx); setShowCreateProductModal(true); }}>Create product "{it.name}"</button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-2 w-24">
-                      <input type="number" min="0" className="w-full p-1 border rounded" value={it.quantity} onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))} />
-                    </td>
-                    <td className="p-2 w-32">
-                      <input type="number" min="0" step="0.01" className="w-full p-1 border rounded" value={it.unitPrice} onChange={(e) => updateItem(idx, 'unitPrice', Number(e.target.value))} />
-                    </td>
-                    <td className="p-2 w-36">
-                      <input className="w-full p-1 border rounded" value={it.batchNumber || ''} onChange={(e) => updateItem(idx, 'batchNumber', e.target.value)} placeholder="batch" />
-                    </td>
-                    <td className="p-2 w-36">
-                      <input type="date" className="w-full p-1 border rounded" value={it.expiryDate || ''} onChange={(e) => updateItem(idx, 'expiryDate', e.target.value)} />
-                    </td>
-                    <td className="p-2 w-32">{it.amount?.toFixed ? it.amount.toFixed(2) : it.amount}</td>
-                    <td className="p-2 w-24">
-                      <button className="text-sm text-red-600" onClick={() => { setItems((prev) => prev.filter((_, i) => i !== idx)); const st = items.filter((_, i) => i !== idx).reduce((s, it) => s + (Number(it.amount)||0), 0); setSubtotal(st); setTotalAmount(+(st + Number(taxAmount||0)).toFixed(2)); }}>Remove</button>
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && (
-                  <tr><td className="p-2" colSpan={5}>No line items detected. You can add items manually later.</td></tr>
-                )}
-              </tbody>
-            </table>
-            <div className="mt-2">
-              <button className="px-3 py-1 bg-gray-100 rounded text-sm" onClick={() => { setItems((prev) => [...prev, { name: 'Item', quantity: 1, unitPrice: 0, amount: 0, batchNumber: '', expiryDate: '' }]); }}>Add Item</button>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <div>
-              <div className="text-sm">Subtotal: {subtotal.toFixed(2)}</div>
-              <div className="text-sm">Tax: <input type="number" min="0" step="0.01" className="w-28 p-1 border rounded inline" value={taxAmount} onChange={(e) => { setTaxAmount(Number(e.target.value)); setTotalAmount(+(Number(subtotal) + Number(e.target.value)).toFixed(2)); }} /></div>
-              <div className="text-sm font-medium">Total: {totalAmount.toFixed(2)}</div>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleConfirm} loading={createMut.isLoading} disabled={uploadMut.isLoading || createMut.isLoading || createSupplierMutState.loading || createProductLoading}>Create Purchase Draft</Button>
-              <Button variant="secondary" onClick={() => { setParsed(null); setUploadId(null); setFile(null); }}>Close</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Data review / parsed preview section removed as requested */}
       {showCreateProductModal && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center">
           <div className="bg-white p-6 rounded shadow-lg w-96">

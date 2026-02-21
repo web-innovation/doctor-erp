@@ -43,6 +43,13 @@ const appointmentTypes = [
   { value: 'EMERGENCY', label: 'Emergency' },
 ];
 
+const toLocalDateString = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export default function Appointments() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -82,15 +89,15 @@ export default function Appointments() {
 
     if (dateFilter === 'today') {
       return {
-        startDate: today.toISOString().split('T')[0],
-        endDate: today.toISOString().split('T')[0],
+        startDate: toLocalDateString(today),
+        endDate: toLocalDateString(today),
       };
     } else if (dateFilter === 'week') {
       const weekEnd = new Date(today);
       weekEnd.setDate(today.getDate() + 7);
       return {
-        startDate: today.toISOString().split('T')[0],
-        endDate: weekEnd.toISOString().split('T')[0],
+        startDate: toLocalDateString(today),
+        endDate: toLocalDateString(weekEnd),
       };
     } else if (dateFilter === 'custom' && customDateRange.start && customDateRange.end) {
       return {

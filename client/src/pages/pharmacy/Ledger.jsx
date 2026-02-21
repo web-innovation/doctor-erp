@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import ledgerService from '../../services/ledgerService';
 import { pharmacyService } from '../../services/pharmacyService';
 import { purchaseService } from '../../services/purchaseService';
 import { useHasPerm } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
 
 export default function Ledger() {
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
-  const [filters, setFilters] = useState({ account: '', type: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ account: '', type: '', refType: '', from: '', to: '' });
+  const [exporting, setExporting] = useState(false);
   const [accountQuery, setAccountQuery] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
   const canCreateAccount = useHasPerm('ledger:create', ['ADMIN', 'SUPER_ADMIN']);
   const canCreateManual = useHasPerm('ledger:create');
+  const navigate = useNavigate();
 
   // Manual entry state
   const [showManualModal, setShowManualModal] = useState(false);
@@ -24,9 +28,18 @@ export default function Ledger() {
   const [manualDate, setManualDate] = useState('');
   const [manualMode, setManualMode] = useState('JOURNAL'); // JOURNAL | PURCHASE | RETURN
   const [supplierName, setSupplierName] = useState('');
+  const [supplierQuery, setSupplierQuery] = useState('');
+  const [supplierOptions, setSupplierOptions] = useState([]);
+  const [supplierSelected, setSupplierSelected] = useState(null);
+  const [showCreateSupplierModal, setShowCreateSupplierModal] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [supplierError, setSupplierError] = useState('');
   const [itemsList, setItemsList] = useState([]); // {productId?, name, quantity, unitPrice, gstPercent}
   const [productQuery, setProductQuery] = useState('');
   const [productOptions, setProductOptions] = useState([]);
+  const [showCreateProductModal, setShowCreateProductModal] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name: '', mrp: '', purchasePrice: '', sellingPrice: '', gstPercent: '' });
+  const [productError, setProductError] = useState('');
   // Autocomplete helpers
   const [debitQuery, setDebitQuery] = useState('');
   const [debitOptions, setDebitOptions] = useState([]);
@@ -85,6 +98,21 @@ export default function Ledger() {
     return () => clearTimeout(t);
   }, [productQuery]);
 
+  // supplier search for manual purchase
+  useEffect(() => {
+    if (!supplierQuery) return setSupplierOptions([]);
+    const t = setTimeout(async () => {
+      try {
+        const r = await purchaseService.getSuppliers(supplierQuery);
+        const list = r?.data?.data || r?.data || [];
+        setSupplierOptions(list);
+      } catch (e) {
+        setSupplierOptions([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [supplierQuery]);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['ledger', page, limit, filters],
     queryFn: () => ledgerService.getEntries({ page, limit, ...filters }),
@@ -109,6 +137,41 @@ export default function Ledger() {
     refetchSummary();
   };
 
+  const handleExport = async () => {
+    if (!filters.from || !filters.to) {
+      toast.error('Select both From and To dates for export');
+      return;
+    }
+    if (new Date(filters.from) > new Date(filters.to)) {
+      toast.error('From date cannot be after To date');
+      return;
+    }
+    try {
+      setExporting(true);
+      const res = await ledgerService.exportEntries({
+        from: filters.from,
+        to: filters.to,
+        account: filters.account || undefined,
+        type: filters.type || undefined,
+      });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ledger-${filters.from}-to-${filters.to}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Ledger export downloaded');
+    } catch (err) {
+      console.error('Ledger export failed', err);
+      toast.error(err?.response?.data?.message || 'Failed to export ledger');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Detail modal
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -117,7 +180,7 @@ export default function Ledger() {
 
   // Return form state
   const [showReturnForm, setShowReturnForm] = useState(false);
-  const [returnMap, setReturnMap] = useState({}); // { purchaseItemId: { qty: string, gstAmount: string } }
+  const [returnMap, setReturnMap] = useState({}); // { purchaseItemId: { qty: string } }
 
   const openDetail = async (id) => {
     setDetailOpen(true);
@@ -139,7 +202,7 @@ export default function Ledger() {
   const openReturn = () => {
     if (!detail?.purchase) return;
     const map = {};
-    detail.purchase.items.forEach((it) => { map[it.id] = { qty: '', gstAmount: String(it.taxAmount ? (it.taxAmount / (it.quantity || 1)) * 1 : 0) }; });
+    detail.purchase.items.forEach((it) => { map[it.id] = { qty: '' }; });
     setReturnMap(map);
     setShowReturnForm(true);
   };
@@ -148,14 +211,15 @@ export default function Ledger() {
     setReturnMap((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), qty: qty } }));
   };
 
-  const setReturnGst = (itemId, gst) => {
-    setReturnMap((m) => ({ ...m, [itemId]: { ...(m[itemId] || {}), gstAmount: gst } }));
-  };
-
   const submitReturn = async () => {
     if (!detail?.purchase) return;
-    const payloadItems = Object.entries(returnMap).map(([purchaseItemId, obj]) => ({ purchaseItemId, quantity: Number(obj.qty || 0), gstAmount: obj.gstAmount ? Number(obj.gstAmount) : undefined })).filter(it => it.quantity > 0);
-    if (payloadItems.length === 0) return alert('Select at least one item with quantity > 0');
+    const payloadItems = Object.entries(returnMap)
+      .map(([purchaseItemId, obj]) => ({
+        purchaseItemId,
+        quantity: Number(obj.qty || 0)
+      }))
+      .filter((it) => it.quantity > 0);
+    if (payloadItems.length === 0) return toast.error('Select at least one item with quantity > 0');
     try {
       await purchaseService.returnPurchase(detail.purchase.id, { items: payloadItems, note: 'Return created from ledger UI' });
       setShowReturnForm(false);
@@ -163,10 +227,10 @@ export default function Ledger() {
       setPage(1);
       await refetch();
       await refetchSummary();
-      alert('Return processed');
+      toast.success('Return processed');
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to process return');
+      toast.error(err.response?.data?.message || 'Failed to process return');
     }
   };
 
@@ -174,17 +238,17 @@ export default function Ledger() {
   const returnTotals = React.useMemo(() => {
     if (!detail?.purchase) return { items: 0, tax: 0, total: 0 };
     let itemsTotal = 0;
-    let taxTotal = 0;
+    const effectiveGstPercent = Number(detail?.purchase?.subtotal || 0) > 0
+      ? (Number(detail?.purchase?.taxAmount || 0) / Number(detail?.purchase?.subtotal || 1)) * 100
+      : 0;
     detail.purchase.items.forEach((it) => {
       const entry = returnMap[it.id];
       const qty = Number(entry?.qty || 0);
       if (qty <= 0) return;
       const base = Number(it.unitPrice || 0) * qty;
-      const taxPerUnit = (Number(it.taxAmount || 0) / (it.quantity || 1));
-      const gst = entry && entry.gstAmount !== undefined && entry.gstAmount !== '' ? Number(entry.gstAmount || 0) : taxPerUnit * qty;
       itemsTotal += base;
-      taxTotal += gst;
     });
+    const taxTotal = Number((itemsTotal * (effectiveGstPercent / 100)).toFixed(2));
     return { items: itemsTotal, tax: taxTotal, total: itemsTotal + taxTotal };
   }, [detail, returnMap]);
 
@@ -214,9 +278,63 @@ export default function Ledger() {
       setFilters((s) => ({ ...s, account: newAccountName.trim() }));
       refetch();
       refetchSummary();
+      toast.success('Account created');
     } catch (err) {
       console.error('Create account failed', err);
-      alert(err.response?.data?.message || 'Failed to create account');
+      toast.error(err.response?.data?.message || 'Failed to create account');
+    }
+  };
+
+  // Create supplier from modal
+  const handleCreateSupplier = async () => {
+    const name = newSupplierName?.trim();
+    setSupplierError('');
+    if (!name) {
+      setSupplierError('Enter supplier name');
+      return;
+    }
+    try {
+      const res = await purchaseService.createSupplier({ name });
+      const s = res.data?.data || res.data || res;
+      setSupplierSelected(s);
+      setSupplierName(s.name);
+      setNewSupplierName('');
+      setShowCreateSupplierModal(false);
+      toast.success('Supplier created');
+    } catch (err) {
+      console.error('Create supplier failed', err);
+      toast.error(err.response?.data?.message || 'Failed to create supplier');
+    }
+  };
+
+  // Create product inline and add to items list
+  const handleCreateProduct = async () => {
+    setProductError('');
+    if (!newProduct.name || !newProduct.mrp) {
+      setProductError('Provide product name and MRP');
+      return;
+    }
+    try {
+      const payload = {
+        name: newProduct.name,
+        code: newProduct.sku || undefined,
+        category: newProduct.category || 'medicine',
+        mrp: parseFloat(newProduct.mrp),
+        sellingPrice: newProduct.sellingPrice ? parseFloat(newProduct.sellingPrice) : parseFloat(newProduct.mrp),
+        purchasePrice: newProduct.purchasePrice ? parseFloat(newProduct.purchasePrice) : parseFloat(newProduct.mrp),
+        gstPercent: newProduct.gstPercent ? parseFloat(newProduct.gstPercent) : 0,
+        quantity: newProduct.initialStock ? parseInt(newProduct.initialStock, 10) : 0,
+      };
+      const res = await pharmacyService.createProduct(payload);
+      const p = res.data?.data || res.data || res;
+      // add to items list
+      setItemsList((s) => [...s, { productId: p.id, name: p.name, quantity: 1, unitPrice: p.purchasePrice || p.mrp || 0, gstPercent: p.gstPercent || 0 }]);
+      setShowCreateProductModal(false);
+      setNewProduct({ name: '', mrp: '', purchasePrice: '', sellingPrice: '', gstPercent: '' });
+      toast.success('Product created and added');
+    } catch (err) {
+      console.error('Create product failed', err);
+      toast.error(err.response?.data?.message || 'Failed to create product');
     }
   };
 
@@ -230,15 +348,20 @@ export default function Ledger() {
           </div>
           <div>
             {canCreateManual && (
-              <button onClick={() => setShowManualModal(true)} className="px-3 py-2 bg-green-600 text-white rounded">Add Manual Entry</button>
+              <button onClick={() => navigate('/ledger/manual')} className="px-3 py-2 bg-green-600 text-white rounded">Add Manual Entry</button>
             )}
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div className="relative">
-              <input type="text" placeholder="Account (search or create)" value={filters.account} onChange={(e) => { handleFilterChange('account', e.target.value); setAccountQuery(e.target.value); }} className="p-2 border rounded w-full" />
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">Search Ledger</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Filter by account, type, reference, and date period.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="relative md:col-span-4">
+              <label className="block text-xs text-gray-500 mb-1">Account</label>
+              <input type="text" placeholder="Search account name" value={filters.account} onChange={(e) => { handleFilterChange('account', e.target.value); setAccountQuery(e.target.value); }} className="h-10 px-3 border rounded-lg w-full" />
               {accountQuery && (
                 <div className="absolute z-20 bg-white border rounded mt-1 w-full max-h-48 overflow-auto">
                   {(accounts.length === 0) ? (
@@ -253,23 +376,49 @@ export default function Ledger() {
                 </div>
               )}
             </div>
-            <select value={filters.type} onChange={(e) => handleFilterChange('type', e.target.value)} className="p-2 border rounded">
+            <div className="md:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Entry Type</label>
+              <select value={filters.type} onChange={(e) => handleFilterChange('type', e.target.value)} className="h-10 px-3 border rounded-lg w-full">
               <option value="">All Types</option>
               <option value="DEBIT">Debit</option>
               <option value="CREDIT">Credit</option>
             </select>
-            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="p-2 border rounded" />
-            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="p-2 border rounded" />
-            <div className="flex gap-2">
-              <button onClick={applyFilters} className="px-3 py-2 bg-blue-600 text-white rounded">Apply</button>
-              <button onClick={() => { setFilters({ account: '', type: '', from: '', to: '' }); setPage(1); refetch(); }} className="px-3 py-2 bg-gray-100 rounded">Reset</button>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Ref Type</label>
+              <select value={filters.refType} onChange={(e) => handleFilterChange('refType', e.target.value)} className="h-10 px-3 border rounded-lg w-full">
+              <option value="">All Ref Types</option>
+              <option value="BILL">BILL</option>
+              <option value="BILL_PAYMENT">BILL_PAYMENT</option>
+              <option value="PURCHASE">PURCHASE</option>
+              <option value="RETURN">RETURN</option>
+              <option value="PAYMENT">PAYMENT</option>
+              <option value="ADJUSTMENT">ADJUSTMENT</option>
+              <option value="MANUAL">MANUAL</option>
+              <option value="STOCK">STOCK</option>
+              <option value="OPENING_STOCK_IMPORT">OPENING_STOCK_IMPORT</option>
+            </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">From Date</label>
+              <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">To Date</label>
+              <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
+            </div>
+
+            <div className="md:col-span-12 flex flex-wrap gap-2 justify-start md:justify-end pt-1">
+              <button onClick={applyFilters} className="h-10 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium">Apply Filters</button>
+              <button onClick={handleExport} disabled={exporting} className="h-10 px-4 bg-emerald-600 text-white rounded-lg text-sm font-medium disabled:opacity-60">{exporting ? 'Exporting...' : 'Export CSV'}</button>
+              <button onClick={() => { setFilters({ account: '', type: '', refType: '', from: '', to: '' }); setPage(1); refetch(); }} className="h-10 px-4 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">Reset</button>
             </div>
           </div>
         </div>
           {/* Detail modal */}
           {detailOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-              <div className="bg-white rounded-lg w-full max-w-3xl p-4">
+              <div className="bg-white rounded-lg w-full max-w-3xl p-4 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-lg font-semibold">Ledger Entry Detail</h3>
                   <button onClick={() => setDetailOpen(false)} className="text-gray-600">Close</button>
@@ -315,15 +464,20 @@ export default function Ledger() {
                           {showReturnForm && (
                             <div className="mt-4 bg-gray-50 p-3 rounded">
                               <h5 className="font-semibold">Return Items</h5>
-                              <div className="mt-2">
-                                {detail.purchase.items.map((it) => (
-                                  <div key={it.id} className="flex items-center gap-3 py-2 border-b">
-                                    <div className="flex-1">{it.name} <span className="text-xs text-gray-500">(available {it.quantity})</span></div>
-                                    <div className="w-24"><input type="number" min={0} max={it.quantity} value={(returnMap[it.id]?.qty ?? '')} onChange={(e) => setReturnQty(it.id, e.target.value)} className="p-1 border rounded w-full" /></div>
-                                    <div className="w-28 text-xs text-gray-600">GST amt</div>
-                                    <div className="w-28"><input type="number" min={0} step="0.01" value={(returnMap[it.id]?.gstAmount ?? '')} onChange={(e) => setReturnGst(it.id, e.target.value)} className="p-1 border rounded w-full" /></div>
+                              <div className="mt-2 max-h-64 overflow-y-auto pr-1">
+                                  <div className="hidden md:flex items-center gap-3 text-xs text-gray-500 mb-2 px-2">
+                                    <div className="flex-1">Item</div>
+                                    <div className="w-24 text-right">Qty</div>
+                                    <div className="w-28" />
                                   </div>
-                                ))}
+                                  {detail.purchase.items.map((it) => (
+                                    <div key={it.id} className="flex items-center gap-3 py-2 border-b">
+                                      <div className="flex-1">{it.name} <span className="text-xs text-gray-500">(available {it.quantity})</span></div>
+                                      <div className="w-24"><input aria-label={`return-qty-${it.id}`} placeholder="Qty" type="number" min={0} max={it.quantity} value={(returnMap[it.id]?.qty ?? '')} onChange={(e) => setReturnQty(it.id, e.target.value)} className="p-1 border rounded w-full text-right" /></div>
+                                      <div className="w-28 text-right text-sm text-gray-700">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(it.unitPrice || 0) * Number(returnMap[it.id]?.qty || 0))}</div>
+                                      <div className="w-8"><button className="px-2 py-1 text-sm bg-red-100 rounded" onClick={() => setReturnQty(it.id, 0)}>Clear</button></div>
+                                    </div>
+                                  ))}
                               </div>
                               <div className="mt-3">
                                 <div className="text-right text-sm text-gray-700">Items: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(returnTotals.items)} • GST: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(returnTotals.tax)} • Total: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(returnTotals.total)}</div>
@@ -367,8 +521,10 @@ export default function Ledger() {
           <div className="lg:col-span-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <h3 className="text-sm font-semibold text-gray-700">Account Balances</h3>
+              <input className="flex-1 p-2 border rounded" placeholder="Search account" value={filters.account} onChange={(e) => { handleFilterChange('account', e.target.value); setAccountQuery(e.target.value); }} />
+              <button className="px-2 py-1 border rounded" onClick={() => { setShowCreateAccount((s) => !s); setNewAccountName(''); }}>{showCreateAccount ? 'Close' : 'New'}</button>
               {summaryLoading ? (
-                <div className="mt-3 text-gray-500">Loading balances…</div>
+                <div className="mt-3 py-4 text-sm text-gray-500">Loading balances…</div>
               ) : (
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(summaryData?.data?.data?.accounts || []).map((a) => (
@@ -396,131 +552,9 @@ export default function Ledger() {
             </div>
           )}
 
-          {/* Manual entry modal */}
-          {showManualModal && (
-            <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-40">
-              <div className="bg-white rounded p-4 w-full max-w-md">
-                <h3 className="text-lg font-semibold">Create Manual Ledger Entry</h3>
-                <div className="mt-3 space-y-2">
-                  <div>
-                    <div className="text-xs text-gray-500 mb-1">Debit account</div>
-                                      <div className="mt-3">
-                                        <div className="text-xs text-gray-500 mb-1">Mode</div>
-                                        <select value={manualMode} onChange={(e) => setManualMode(e.target.value)} className="p-2 border rounded w-full">
-                                          <option value="JOURNAL">Journal (debit/credit)</option>
-                                          <option value="PURCHASE">Manual Purchase (add stock)</option>
-                                          <option value="RETURN">Manual Return (reduce stock)</option>
-                                        </select>
-                                      </div>
+          {/* (Create supplier/product are shown inline inside Manual modal to avoid stacked overlays) */}
 
-                                      {manualMode !== 'JOURNAL' && (
-                                        <>
-                                          <div className="mt-3">
-                                            <div className="text-xs text-gray-500 mb-1">Supplier / Distributor</div>
-                                            <input className="w-full p-2 border rounded" placeholder="Supplier name" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} />
-                                          </div>
-
-                                          <div className="mt-3">
-                                            <div className="text-xs text-gray-500 mb-1">Add product</div>
-                                            <input className="w-full p-2 border rounded" placeholder="Search medicine" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} />
-                                            {productOptions.length > 0 && productQuery && (
-                                              <div className="border bg-white max-h-44 overflow-auto mt-1">
-                                                {productOptions.map(p => (
-                                                  <div key={p.id} className="p-2 hover:bg-gray-50 cursor-pointer" onClick={() => {
-                                                    // add product to items list
-                                                    setItemsList((s) => [...s, { productId: p.id, name: p.name, quantity: 1, unitPrice: p.purchasePrice || p.mrp || 0, gstPercent: p.gstPercent || 0 }]);
-                                                    setProductQuery(''); setProductOptions([]);
-                                                  }}>{p.name} — {p.code || ''}</div>
-                                                ))}
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          <div className="mt-3">
-                                            <div className="text-xs text-gray-500 mb-1">Items</div>
-                                            <div className="space-y-2">
-                                              {itemsList.map((it, idx) => (
-                                                <div key={idx} className="flex gap-2 items-center">
-                                                  <div className="flex-1">{it.name}</div>
-                                                  <input type="number" min={1} className="w-20 p-1 border rounded" value={it.quantity} onChange={(e) => setItemsList((s) => s.map((x,i) => i===idx?{...x,quantity: Number(e.target.value)}:x))} />
-                                                  <input type="number" step="0.01" className="w-28 p-1 border rounded" value={it.unitPrice} onChange={(e) => setItemsList((s) => s.map((x,i) => i===idx?{...x,unitPrice: Number(e.target.value)}:x))} />
-                                                  <input type="number" step="0.01" className="w-20 p-1 border rounded" value={it.gstPercent} onChange={(e) => setItemsList((s) => s.map((x,i) => i===idx?{...x,gstPercent: Number(e.target.value)}:x))} />
-                                                  <button className="px-2 py-1 text-sm bg-red-100 rounded" onClick={() => setItemsList((s) => s.filter((_,i) => i!==idx))}>Remove</button>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        </>
-                                      )}
-                    <input className="w-full p-2 border rounded" placeholder="Search debit account" value={debitQuery || manualDebitAccount} onChange={(e) => { setDebitQuery(e.target.value); setManualDebitAccount(e.target.value); setDebitSelected(null); }} />
-                    {debitOptions.length > 0 && debitQuery && (
-                      <div className="border bg-white max-h-44 overflow-auto mt-1">
-                        {debitOptions.map(a => (
-                          <div key={a.id} className="p-2 hover:bg-gray-50 cursor-pointer" onClick={() => { setDebitSelected(a); setDebitQuery(a.name); setManualDebitAccount(a.name); setDebitOptions([]); }}>{a.name}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-gray-500 mb-1">Credit account</div>
-                    <input className="w-full p-2 border rounded" placeholder="Search credit account" value={creditQuery || manualCreditAccount} onChange={(e) => { setCreditQuery(e.target.value); setManualCreditAccount(e.target.value); setCreditSelected(null); }} />
-                    {creditOptions.length > 0 && creditQuery && (
-                      <div className="border bg-white max-h-44 overflow-auto mt-1">
-                        {creditOptions.map(a => (
-                          <div key={a.id} className="p-2 hover:bg-gray-50 cursor-pointer" onClick={() => { setCreditSelected(a); setCreditQuery(a.name); setManualCreditAccount(a.name); setCreditOptions([]); }}>{a.name}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <input className="w-full p-2 border rounded" placeholder="Amount" type="number" value={manualAmount} onChange={(e) => setManualAmount(e.target.value)} />
-                  <input className="w-full p-2 border rounded" placeholder="Date (optional)" type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
-                  <textarea className="w-full p-2 border rounded" placeholder="Note (optional)" value={manualNote} onChange={(e) => setManualNote(e.target.value)} />
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <button className="px-3 py-1 border rounded" onClick={() => setShowManualModal(false)}>Cancel</button>
-                  <button className="px-3 py-1 bg-green-600 text-white rounded" onClick={async () => {
-                    try {
-                      if (manualMode === 'JOURNAL') {
-                        if ((!debitSelected && !manualDebitAccount) || (!creditSelected && !manualCreditAccount) || !manualAmount) return alert('Provide debit, credit and amount');
-                        // Ensure accounts exist: if selected use id, otherwise create
-                        let debitId = debitSelected?.id;
-                        let creditId = creditSelected?.id;
-                        if (!debitId) {
-                          const created = await ledgerService.createAccount({ name: manualDebitAccount.trim() });
-                          debitId = created.data?.data?.id || created.data?.id || created.data?.data?.id;
-                        }
-                        if (!creditId) {
-                          const created = await ledgerService.createAccount({ name: manualCreditAccount.trim() });
-                          creditId = created.data?.data?.id || created.data?.id || created.data?.data?.id;
-                        }
-                        await ledgerService.createManualEntry({ debitAccountId: debitId, creditAccountId: creditId, amount: Number(manualAmount), note: manualNote || undefined, date: manualDate || undefined });
-                      } else {
-                        if (itemsList.length === 0) return alert('Add at least one item');
-                        // submit manual purchase/return
-                        await ledgerService.createManualPurchase({ mode: manualMode, supplierName: supplierName || undefined, items: itemsList, note: manualNote || undefined, date: manualDate || undefined });
-                      }
-
-                      setShowManualModal(false);
-                      setManualDebitAccount(''); setManualCreditAccount(''); setManualAmount(''); setManualNote(''); setManualDate('');
-                      setDebitQuery(''); setDebitOptions([]); setDebitSelected(null);
-                      setCreditQuery(''); setCreditOptions([]); setCreditSelected(null);
-                      // clear purchase fields
-                      setSupplierName(''); setItemsList([]);
-                      setPage(1);
-                      await refetch();
-                      await refetchSummary();
-                      alert('Manual entry created');
-                    } catch (err) {
-                      console.error('Manual entry failed', err);
-                      alert(err?.response?.data?.message || 'Failed to create manual entry');
-                    }
-                  }}>Create</button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Manual entry moved to its own page: /ledger/manual */}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -552,7 +586,7 @@ export default function Ledger() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{it.type}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(it.amount)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{it.refType} {it.refId || ''}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{it.notes || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{it.note || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           <button onClick={() => openDetail(it.id)} className="px-2 py-1 text-sm bg-gray-100 rounded">View</button>
                         </td>

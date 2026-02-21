@@ -110,6 +110,40 @@ const pharmacyService = {
     const response = await api.get('/pharmacy/stock-history', { params });
     return response.data;
   },
+  /**
+   * Get stock batches for a product
+   * @param {string} productId
+   */
+  getBatches: async (productId) => {
+    const response = await api.get(`/pharmacy/products/${productId}/batches`);
+    return response.data;
+  },
+  /**
+   * Download opening stock import template CSV
+   */
+  downloadOpeningStockTemplate: async () => {
+    const response = await api.get('/pharmacy/stock/opening-import/template', { responseType: 'blob' });
+    return response.data;
+  },
+  /**
+   * Import opening stock CSV
+   * @param {FormData} formData
+   * @param {Object} options
+   * @param {boolean} [options.dryRun]
+   * @param {string} [options.openingDate]
+   * @param {string} [options.creditAccountName]
+   */
+  importOpeningStock: async (formData, options = {}) => {
+    const params = {};
+    if (typeof options.dryRun !== 'undefined') params.dryRun = options.dryRun;
+    if (options.openingDate) params.openingDate = options.openingDate;
+    if (options.creditAccountName) params.creditAccountName = options.creditAccountName;
+    const response = await api.post('/pharmacy/stock/opening-import', formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
 };
 
 export { pharmacyService };

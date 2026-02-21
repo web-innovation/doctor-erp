@@ -14,7 +14,7 @@ const DEFAULT_PERMISSIONS = [
   'prescriptions:read','prescriptions:create',
   'pharmacy:read','pharmacy:create','billing:read','billing:create','billing:edit','reports:opd',
   // Purchases / Ledger permissions
-  'purchases:read','purchases:create','ledger:read'
+  'purchases:read','purchases:create','ledger:read','ledger:create','ledger:update','ledger:delete'
 ];
 
 // Add leave permissions to default set so Access Management can control Leave access
@@ -74,6 +74,9 @@ export default function RolePermissions() {
     'agents:create': ['agents:read'],
     'agents:update': ['agents:read'],
     'commissions:pay': ['commissions:read'],
+    'ledger:create': ['ledger:read'],
+    'ledger:update': ['ledger:read'],
+    'ledger:delete': ['ledger:read'],
     // Leave create/update should imply read
     'leaves:create': ['leaves:read'],
     'leaves:update': ['leaves:read'],

@@ -9,6 +9,116 @@ const router = express.Router();
 const BILL_TYPES = ['CONSULTATION', 'PHARMACY', 'LAB_TEST', 'PROCEDURE', 'MIXED'];
 const PAYMENT_METHODS = ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'INSURANCE'];
 
+async function ensureAccount(tx, clinicId, name, type, userId) {
+  let acct = await tx.account.findFirst({ where: { clinicId, name } });
+  if (!acct) {
+    acct = await tx.account.create({
+      data: {
+        clinicId,
+        name,
+        type: type || undefined,
+        createdById: userId || undefined,
+      },
+    });
+  }
+  return acct;
+}
+
+function paymentMethodToAccount(method) {
+  const m = String(method || '').toUpperCase();
+  if (m === 'UPI') return 'UPI';
+  if (m === 'BANK_TRANSFER') return 'Bank';
+  if (m === 'CARD') return 'Bank';
+  if (m === 'INSURANCE') return 'Insurance Receivable';
+  return 'Cash';
+}
+
+async function postBillAccrualEntries(tx, { clinicId, billId, billNo, taxableAmount, taxAmount, totalAmount, userId }) {
+  const arAcct = await ensureAccount(tx, clinicId, 'Accounts Receivable', 'ASSET', userId);
+  const revenueAcct = await ensureAccount(tx, clinicId, 'Billing Revenue', 'REVENUE', userId);
+  const gstOutputAcct = await ensureAccount(tx, clinicId, 'GST Output', 'LIABILITY', userId);
+
+  const total = Number(totalAmount || 0);
+  const taxable = Number(taxableAmount || 0);
+  const tax = Number(taxAmount || 0);
+
+  if (total > 0) {
+    await tx.ledgerEntry.create({
+      data: {
+        clinicId,
+        account: arAcct.name,
+        accountId: arAcct.id,
+        type: 'DEBIT',
+        amount: total,
+        refType: 'BILL',
+        refId: billId,
+        note: `Bill ${billNo} receivable`,
+      },
+    });
+  }
+  if (taxable > 0) {
+    await tx.ledgerEntry.create({
+      data: {
+        clinicId,
+        account: revenueAcct.name,
+        accountId: revenueAcct.id,
+        type: 'CREDIT',
+        amount: taxable,
+        refType: 'BILL',
+        refId: billId,
+        note: `Bill ${billNo} revenue`,
+      },
+    });
+  }
+  if (tax > 0) {
+    await tx.ledgerEntry.create({
+      data: {
+        clinicId,
+        account: gstOutputAcct.name,
+        accountId: gstOutputAcct.id,
+        type: 'CREDIT',
+        amount: tax,
+        refType: 'BILL',
+        refId: billId,
+        note: `Bill ${billNo} GST output`,
+      },
+    });
+  }
+}
+
+async function postBillPaymentEntries(tx, { clinicId, billId, billNo, amount, method, userId }) {
+  const paymentAccountName = paymentMethodToAccount(method);
+  const paymentAcct = await ensureAccount(tx, clinicId, paymentAccountName, 'ASSET', userId);
+  const arAcct = await ensureAccount(tx, clinicId, 'Accounts Receivable', 'ASSET', userId);
+  const amt = Number(amount || 0);
+  if (amt <= 0) return;
+
+  await tx.ledgerEntry.create({
+    data: {
+      clinicId,
+      account: paymentAcct.name,
+      accountId: paymentAcct.id,
+      type: 'DEBIT',
+      amount: amt,
+      refType: 'BILL_PAYMENT',
+      refId: billId,
+      note: `Payment received for ${billNo} via ${method}`,
+    },
+  });
+  await tx.ledgerEntry.create({
+    data: {
+      clinicId,
+      account: arAcct.name,
+      accountId: arAcct.id,
+      type: 'CREDIT',
+      amount: amt,
+      refType: 'BILL_PAYMENT',
+      refId: billId,
+      note: `Payment adjustment for ${billNo}`,
+    },
+  });
+}
+
 // Helper: Calculate GST
 const calculateTax = (amount, taxConfig) => {
   // Default to 0% GST if not specified (user can select GST rate)
@@ -343,84 +453,108 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
       }
     }
 
-    // Create bill with items
-    const bill = await prisma.bill.create({
-      data: {
-        billNo,
-        clinicId: req.user.clinicId,
-        doctorId: req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined),
-        labId: labId || null,
-        patientId,
-        type,
-        subtotal,
-        discountPercent,
-        discountAmount,
-        taxAmount: tax.totalTax,
-        taxBreakdown: JSON.stringify({ cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst }),
-        totalAmount,
-        paidAmount: 0,
-        dueAmount: totalAmount,
-        paymentStatus: 'PENDING',
-        notes,
-        items: {
-          create: processedItems.map(item => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            gstPercent: item.gstPercent || 0,
-            amount: item.amount,
-            productId: item.productId || null,
-            labId: item.labId || null,
-            labTestId: item.labTestId || null,
-            doctorId: item.doctorId || null
-          }))
-        }
-      },
-      include: {
-        patient: { select: { id: true, name: true, phone: true, primaryDoctor: { select: { id: true, name: true } } } },
-        items: true,
-        doctor: { select: { id: true, name: true } }
-      }
-    });
-    
-    // Handle immediate payment if provided
-    if (req.body.payment && req.body.payment.amount > 0) {
-      const paymentAmount = Math.min(req.body.payment.amount, bill.totalAmount);
-      const method = req.body.payment.method?.toUpperCase() || 'CASH';
-      
-      await prisma.payment.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const createdBill = await tx.bill.create({
         data: {
-          billId: bill.id,
+          billNo,
           clinicId: req.user.clinicId,
-          amount: paymentAmount,
-          method: PAYMENT_METHODS.includes(method) ? method : 'CASH',
-          reference: req.body.payment.reference || null
-        }
-      });
-      
-      const newPaidAmount = paymentAmount;
-      const newDueAmount = bill.totalAmount - newPaidAmount;
-      const newStatus = newDueAmount <= 0 ? 'PAID' : 'PARTIAL';
-      
-      const updatedBill = await prisma.bill.update({
-        where: { id: bill.id },
-        data: {
-          paidAmount: newPaidAmount,
-          dueAmount: newDueAmount,
-          paymentStatus: newStatus,
-          paymentMethod: method
+          doctorId: req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined),
+          labId: labId || null,
+          patientId,
+          type,
+          subtotal,
+          discountPercent,
+          discountAmount,
+          taxAmount: tax.totalTax,
+          taxBreakdown: JSON.stringify({ cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst }),
+          totalAmount,
+          paidAmount: 0,
+          dueAmount: totalAmount,
+          paymentStatus: 'PENDING',
+          notes,
+          items: {
+            create: processedItems.map(item => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              gstPercent: item.gstPercent || 0,
+              amount: item.amount,
+              productId: item.productId || null,
+              labId: item.labId || null,
+              labTestId: item.labTestId || null,
+              doctorId: item.doctorId || null
+            }))
+          }
         },
         include: {
-          patient: { select: { id: true, name: true, phone: true } },
+          patient: { select: { id: true, name: true, phone: true, primaryDoctor: { select: { id: true, name: true } } } },
           items: true,
-          payments: true
+          doctor: { select: { id: true, name: true } }
         }
       });
-      
-      return res.status(201).json({ success: true, data: updatedBill, message: 'Bill created with payment recorded' });
+
+      await postBillAccrualEntries(tx, {
+        clinicId: req.user.clinicId,
+        billId: createdBill.id,
+        billNo: createdBill.billNo,
+        taxableAmount,
+        taxAmount: tax.totalTax,
+        totalAmount: createdBill.totalAmount,
+        userId: req.user.id,
+      });
+
+      if (req.body.payment && req.body.payment.amount > 0) {
+        const paymentAmount = Math.min(req.body.payment.amount, createdBill.totalAmount);
+        const method = req.body.payment.method?.toUpperCase() || 'CASH';
+        const normalizedMethod = PAYMENT_METHODS.includes(method) ? method : 'CASH';
+
+        await tx.payment.create({
+          data: {
+            billId: createdBill.id,
+            clinicId: req.user.clinicId,
+            amount: paymentAmount,
+            method: normalizedMethod,
+            reference: req.body.payment.reference || null
+          }
+        });
+
+        await postBillPaymentEntries(tx, {
+          clinicId: req.user.clinicId,
+          billId: createdBill.id,
+          billNo: createdBill.billNo,
+          amount: paymentAmount,
+          method: normalizedMethod,
+          userId: req.user.id,
+        });
+
+        const newPaidAmount = paymentAmount;
+        const newDueAmount = createdBill.totalAmount - newPaidAmount;
+        const newStatus = newDueAmount <= 0 ? 'PAID' : 'PARTIAL';
+
+        const updatedBill = await tx.bill.update({
+          where: { id: createdBill.id },
+          data: {
+            paidAmount: newPaidAmount,
+            dueAmount: newDueAmount,
+            paymentStatus: newStatus,
+            paymentMethod: normalizedMethod
+          },
+          include: {
+            patient: { select: { id: true, name: true, phone: true } },
+            items: true,
+            payments: true
+          }
+        });
+        return { bill: updatedBill, withPayment: true };
+      }
+
+      return { bill: createdBill, withPayment: false };
+    });
+
+    if (result.withPayment) {
+      return res.status(201).json({ success: true, data: result.bill, message: 'Bill created with payment recorded' });
     }
-    
-    res.status(201).json({ success: true, data: bill, message: 'Bill created successfully' });
+    res.status(201).json({ success: true, data: result.bill, message: 'Bill created successfully' });
   } catch (error) {
     console.error('Error creating bill:', error);
     res.status(500).json({ success: false, message: 'Failed to create bill', error: error.message });
@@ -577,8 +711,8 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
     const newDueAmount = bill.totalAmount - newPaidAmount;
     const newStatus = newDueAmount <= 0 ? 'PAID' : 'PARTIAL';
     
-    const [payment, updatedBill] = await prisma.$transaction([
-      prisma.payment.create({
+    const { payment, updatedBill } = await prisma.$transaction(async (tx) => {
+      const createdPayment = await tx.payment.create({
         data: {
           billId: id,
           clinicId: req.user.clinicId,
@@ -588,8 +722,18 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
           notes,
           imageUrl
         }
-      }),
-      prisma.bill.update({
+      });
+
+      await postBillPaymentEntries(tx, {
+        clinicId: req.user.clinicId,
+        billId: bill.id,
+        billNo: bill.billNo,
+        amount: paymentAmount,
+        method,
+        userId: req.user.id,
+      });
+
+      const newBill = await tx.bill.update({
         where: { id },
         data: {
           paidAmount: newPaidAmount,
@@ -602,8 +746,10 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
           items: true,
           payments: true
         }
-      })
-    ]);
+      });
+
+      return { payment: createdPayment, updatedBill: newBill };
+    });
     
     res.json({
       success: true,

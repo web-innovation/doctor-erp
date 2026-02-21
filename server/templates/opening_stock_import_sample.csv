@@ -1,0 +1,6 @@
+name,code,batch_number,expiry_date,quantity,mrp,purchase_price,gst_percent,unit,category,supplier_name
+Paracetamol 500mg,PAR500,BT-OPEN-001,2027-12-31,120,25,18,12,strip,Tablet,Distributor A
+Amoxicillin 500mg,AMX500,BT-OPEN-002,2027-10-31,80,85,60,12,strip,Capsule,Distributor B
+Cetirizine 10mg,CETRIZ,BT-OPEN-003,2028-02-28,150,35,22,12,strip,Tablet,Distributor A
+Omeprazole 20mg,OMEP20,BT-OPEN-004,2027-09-30,70,65,45,12,strip,Capsule,Distributor C
+B-Complex Syrup,BCOMP,BT-OPEN-005,2027-08-31,40,95,70,12,bottle,Syrup,Distributor B

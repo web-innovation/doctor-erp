@@ -7,6 +7,31 @@ import { logAuthEvent } from '../middleware/hipaaAudit.js';
 const router = express.Router();
 router.use(authenticate);
 
+async function enforceClinicStaffLimit(clinicId) {
+  const controls = await prisma.clinicSettings.findUnique({
+    where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
+    select: { value: true }
+  }).catch(() => null);
+  if (!controls?.value) return;
+  let limit = null;
+  try {
+    const parsed = JSON.parse(controls.value);
+    const n = Number(parsed?.staffLimit || 0);
+    limit = Number.isFinite(n) && n > 0 ? n : null;
+  } catch (_err) {
+    limit = null;
+  }
+  if (!limit) return;
+  const existing = await prisma.user.count({
+    where: { clinicId, role: { not: 'SUPER_ADMIN' } }
+  });
+  if (existing >= limit) {
+    const err = new Error(`Staff limit reached for clinic (${limit})`);
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
 // GET / - List staff
 router.get('/', checkPermission('staff', 'read'), async (req, res, next) => {
   try {
@@ -49,6 +74,7 @@ router.post('/', checkPermission('staff', 'create'), async (req, res, next) => {
   try {
     const { name, email, phone, employeeId, department, designation, joinDate, salary, role = 'STAFF', password } = req.body;
     const clinicId = req.user.clinicId;
+    await enforceClinicStaffLimit(clinicId);
 
     // Create user and staff in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -76,6 +102,7 @@ router.post('/', checkPermission('staff', 'create'), async (req, res, next) => {
 
     res.status(201).json({ success: true, data: result });
   } catch (error) {
+    if (error?.statusCode === 400) return res.status(400).json({ success: false, message: error.message });
     if (error.code === 'P2002') {
       return res.status(400).json({ success: false, message: 'Email or Employee ID already exists' });
     }
@@ -99,6 +126,7 @@ router.post('/link-user', checkPermission('staff', 'create'), async (req, res, n
     // If a staff record already exists for this user, return it
     const existing = await prisma.staff.findUnique({ where: { userId } });
     if (existing) return res.status(200).json({ success: true, data: existing, message: 'Staff record already exists for this user' });
+    await enforceClinicStaffLimit(clinicId);
 
     const staff = await prisma.staff.create({
       data: {
@@ -115,6 +143,7 @@ router.post('/link-user', checkPermission('staff', 'create'), async (req, res, n
 
     res.status(201).json({ success: true, data: staff });
   } catch (error) {
+    if (error?.statusCode === 400) return res.status(400).json({ success: false, message: error.message });
     if (error.code === 'P2002') {
       return res.status(400).json({ success: false, message: 'Employee ID already exists' });
     }
@@ -146,6 +175,7 @@ router.post('/ensure-staff', checkPermission('staff', 'create'), async (req, res
     // Create staff if missing
     const existing = await prisma.staff.findUnique({ where: { userId: user.id } });
     if (existing) return res.status(200).json({ success: true, data: existing, message: 'Staff already exists for this user' });
+    await enforceClinicStaffLimit(clinicId);
 
     const staff = await prisma.staff.create({
       data: {
@@ -162,6 +192,7 @@ router.post('/ensure-staff', checkPermission('staff', 'create'), async (req, res
 
     res.status(201).json({ success: true, data: staff });
   } catch (error) {
+    if (error?.statusCode === 400) return res.status(400).json({ success: false, message: error.message });
     if (error.code === 'P2002') return res.status(400).json({ success: false, message: 'Unique constraint failed' });
     next(error);
   }

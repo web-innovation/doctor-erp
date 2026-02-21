@@ -5,6 +5,28 @@ import { authenticate, checkPermission } from '../middleware/auth.js';
 const router = express.Router();
 router.use(authenticate);
 
+function normalizeAccessControls(value) {
+  const src = value && typeof value === 'object' ? value : {};
+  const disabledPermissions = Array.isArray(src.disabledPermissions)
+    ? [...new Set(src.disabledPermissions.map((p) => String(p || '').trim()).filter(Boolean))]
+    : [];
+  const normalizeLimit = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    if (n < 0) return null;
+    return n;
+  };
+  return {
+    disabledPermissions,
+    invoiceUploadLimit: {
+      monthly: normalizeLimit(src?.invoiceUploadLimit?.monthly),
+      yearly: normalizeLimit(src?.invoiceUploadLimit?.yearly)
+    },
+    staffLimit: normalizeLimit(src?.staffLimit)
+  };
+}
+
 // Helper function to get clinic data
 async function getClinicData(clinicId, res, next) {
   try {
@@ -183,6 +205,22 @@ router.get('/role-permissions', async (req, res, next) => {
     const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
     const data = clinic.rolePermissions ? JSON.parse(clinic.rolePermissions) : null;
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /access-controls - super admin access controls for the clinic (read-only)
+router.get('/access-controls', async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const row = await prisma.clinicSettings.findUnique({
+      where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
+      select: { value: true }
+    });
+    const parsed = row?.value ? JSON.parse(row.value) : null;
+    const data = normalizeAccessControls(parsed || {});
     res.json({ success: true, data });
   } catch (error) {
     next(error);

@@ -2,47 +2,45 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../index.js';
 import { AppError } from './errorHandler.js';
 
-// Verify JWT token
+// Authenticate: verify JWT and attach user + clinic + staffProfile
 export async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AppError('No token provided', 401);
-    }
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return next(new AppError('No token provided', 401));
 
     const token = authHeader.split(' ')[1];
-    
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      include: {
-        clinic: true,
-        staffProfile: true
-      }
-    });
 
-    if (!user || !user.isActive) {
-      throw new AppError('User not found or inactive', 401);
-    }
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { clinic: true, staffProfile: true } });
+    if (!user || !user.isActive) return next(new AppError('User not found or inactive', 401));
 
+    // attach raw user and clinicId
     req.user = user;
-    // Compute an effective role: some users are stored with role 'STAFF' but
-    // have a staffProfile.designation that indicates they are a doctor. Set
-    // `effectiveRole` to allow permission checks to consider this.
+    req.clinicId = user.clinicId;
+
+    // Build an effectiveRole string that may contain multiple tokens.
+    // Example: role='STAFF', designation='Admin Doctor' -> effectiveRole='STAFF DOCTOR ADMIN'
     try {
-      let effective = (user.role || '').toString().toUpperCase();
-      if (effective === 'STAFF' && user.staffProfile && user.staffProfile.designation) {
+      const parts = [];
+      if (user.role) parts.push(user.role.toString().toUpperCase());
+      if (user.staffProfile && user.staffProfile.designation) {
         const des = user.staffProfile.designation.toString().toLowerCase();
-        if (des.includes('doctor')) effective = 'DOCTOR';
+        if (des.includes('doctor')) parts.push('DOCTOR');
+        if (des.includes('admin') || des.includes('clinic admin')) parts.push('ADMIN');
       }
-      req.user.effectiveRole = effective;
+      // dedupe and attach
+      req.user.effectiveRole = [...new Set(parts)].join(' ');
+      // also expose a boolean for convenience: isClinicAdmin
+      try {
+        const tokens = getUserRoleTokens(req);
+        req.user.isClinicAdmin = tokens.has('ADMIN') || (req.user.role || '').toString().toUpperCase() === 'ADMIN';
+      } catch (e) {
+        req.user.isClinicAdmin = (req.user.role || '').toString().toUpperCase() === 'ADMIN';
+      }
     } catch (e) {
       req.user.effectiveRole = (req.user.role || '').toString().toUpperCase();
     }
-    req.clinicId = user.clinicId;
-    
+
     next();
   } catch (error) {
     next(error);
@@ -53,7 +51,8 @@ export async function authenticate(req, res, next) {
 export function isEffectiveDoctor(req) {
   try {
     const eff = (req.user && (req.user.effectiveRole || req.user.role) || '').toString().toUpperCase();
-    return eff === 'DOCTOR';
+    // tokenized check
+    return eff.split(/[^A-Z0-9]+/i).map(s => s.trim()).filter(Boolean).includes('DOCTOR');
   } catch (e) {
     return false;
   }
@@ -87,12 +86,11 @@ export function authorize(...allowedRoles) {
     if (!req.user) {
       return next(new AppError('Not authenticated', 401));
     }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return next(new AppError('Insufficient permissions', 403));
-    }
-
-    next();
+    // allow if any of the allowedRoles appear in user's role tokens
+    const tokens = getUserRoleTokens(req);
+    const ok = allowedRoles.some(r => tokens.has((r || '').toString().toUpperCase()));
+    if (!ok) return next(new AppError('Insufficient permissions', 403));
+    return next();
   };
 }
 
@@ -113,15 +111,13 @@ export function requireRoleLevel(minRole) {
     if (!req.user) {
       return next(new AppError('Not authenticated', 401));
     }
-
-    const userLevel = roleHierarchy[req.user.role] || 0;
+    const tokens = getUserRoleTokens(req);
+    // compute highest user level across tokens
+    let userLevel = 0;
+    for (const t of tokens) userLevel = Math.max(userLevel, roleHierarchy[t] || 0);
     const requiredLevel = roleHierarchy[minRole] || 0;
-
-    if (userLevel < requiredLevel) {
-      return next(new AppError('Insufficient permissions', 403));
-    }
-
-    next();
+    if (userLevel < requiredLevel) return next(new AppError('Insufficient permissions', 403));
+    return next();
   };
 }
 
@@ -234,11 +230,15 @@ PERMISSIONS['purchases:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST
 PERMISSIONS['purchases:update'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT'];
 PERMISSIONS['purchases:read'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];
 PERMISSIONS['purchases:receive'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT'];
+// Allow delete for purchases to appropriate admin roles
+PERMISSIONS['purchases:delete'] = ['SUPER_ADMIN', 'ADMIN'];
 
-// Ledger permissions (read-only for now)
+// Ledger permissions
 PERMISSIONS['ledger'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
 PERMISSIONS['ledger:read'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
 PERMISSIONS['ledger:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
+PERMISSIONS['ledger:update'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST'];
+PERMISSIONS['ledger:delete'] = ['SUPER_ADMIN', 'ADMIN'];
 
 // Document AI usage permission (UI flag)
 PERMISSIONS['document_ai:use'] = ['SUPER_ADMIN', 'PHARMACIST', 'ACCOUNTANT'];
@@ -260,11 +260,18 @@ export function checkPermission(resource, action) {
 
       // Start with global permission definitions
       const allowedRolesSet = new Set(PERMISSIONS[permission] || []);
+      let permissionDisabled = false;
 
       // Try to fetch clinic-level overrides (additive)
       try {
         if (req.user && req.user.clinicId) {
-          const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
+          const [clinic, controls] = await Promise.all([
+            prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } }),
+            prisma.clinicSettings.findUnique({
+              where: { clinicId_key: { clinicId: req.user.clinicId, key: 'super_admin_controls' } },
+              select: { value: true }
+            }).catch(() => null)
+          ]);
           if (clinic && clinic.rolePermissions) {
             try {
               const overrides = JSON.parse(clinic.rolePermissions);
@@ -279,25 +286,87 @@ export function checkPermission(resource, action) {
               console.warn('Invalid clinic.rolePermissions JSON', err);
             }
           }
+
+          // Super-admin clinic controls can hard-disable specific permissions for clinic users.
+          try {
+            const payload = controls?.value ? JSON.parse(controls.value) : null;
+            const disabled = Array.isArray(payload?.disabledPermissions) ? payload.disabledPermissions : [];
+            const normalizeDisabled = (value) => {
+              const raw = String(value || '').trim().toLowerCase();
+              if (!raw) return '';
+              // tolerate common typo: leader -> ledger
+              if (raw.startsWith('leader')) return raw.replace(/^leader/, 'ledger');
+              return raw;
+            };
+            const disabledSet = new Set(disabled.map(normalizeDisabled).filter(Boolean));
+            const perm = String(permission || '').toLowerCase();
+            const resource = perm.split(':')[0];
+            const isDisabled = disabledSet.has(perm)
+              || disabledSet.has(resource)
+              || disabledSet.has(`${resource}:*`)
+              || (disabledSet.has('*'));
+            if (isDisabled) {
+              allowedRolesSet.clear();
+              permissionDisabled = true;
+            }
+          } catch (_err) {
+            // ignore invalid controls payload
+          }
         }
       } catch (err) {
         // If clinic lookup fails, fall back to global permissions
         console.warn('Failed to load clinic rolePermissions', err);
       }
 
-      // Allow if user's stored role OR computed effectiveRole is permitted
-      const userRolesToCheck = new Set([ (req.user.role || '').toString().toUpperCase(), (req.user.effectiveRole || '').toString().toUpperCase() ]);
+      const userTokens = getUserRoleTokens(req);
+      if (permissionDisabled && !userTokens.has('SUPER_ADMIN')) {
+        return next(new AppError(`Permission disabled by super admin: ${permission}`, 403));
+      }
+
+      // Short-circuit: SUPER_ADMIN and clinic ADMINs may bypass per-clinic checks
+      if (userTokens.has('SUPER_ADMIN')) return next();
+      if (userTokens.has('ADMIN')) return next();
+
       const allowedRolesList = [...allowedRolesSet];
-      const userRolesArray = [...userRolesToCheck];
-      const allowed = allowedRolesList.some(r => userRolesToCheck.has(r.toString().toUpperCase()));
+      const allowed = allowedRolesList.some(r => userTokens.has(r.toString().toUpperCase()));
+
       if (!allowed) {
-        console.warn('Permission denied check', { permission, allowedRoles: allowedRolesList, userRoles: userRolesArray, clinicId: req.user.clinicId, userId: req.user.id });
+        // Fallback: allow if user's highest role level >= minimum allowed role level
+        try {
+          const allowedLevels = allowedRolesList.map(r => roleHierarchy[(r || '').toString().toUpperCase()] || 0).filter(l => l > 0);
+          const minAllowedLevel = allowedLevels.length ? Math.min(...allowedLevels) : 0;
+          let userMaxLevel = 0;
+          for (const ur of userTokens) userMaxLevel = Math.max(userMaxLevel, roleHierarchy[(ur || '').toString().toUpperCase()] || 0);
+          if (userMaxLevel >= minAllowedLevel && minAllowedLevel > 0) return next();
+        } catch (e) {
+          // ignore
+        }
+
+        console.warn('Permission denied check', { permission, allowedRoles: allowedRolesList, userRoles: [...userTokens], clinicId: req.user.clinicId, userId: req.user.id });
         return next(new AppError(`Permission denied: ${permission}`, 403));
       }
 
-      next();
+      return next();
     } catch (error) {
       next(error);
     }
   };
+}
+
+// Helper: produce normalized role tokens Set from req.user
+function getUserRoleTokens(req) {
+  const out = new Set();
+  try {
+    const raw = [ (req.user && req.user.role) || '', (req.user && req.user.effectiveRole) || '' ];
+    for (const r of raw) {
+      const up = (r || '').toString().toUpperCase().trim();
+      if (!up) continue;
+      out.add(up);
+      const parts = up.split(/[^A-Z0-9]+/i).map(p => p.trim()).filter(Boolean);
+      for (const p of parts) out.add(p);
+    }
+  } catch (e) {
+    // ignore
+  }
+  return out;
 }

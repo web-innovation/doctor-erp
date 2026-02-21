@@ -180,6 +180,9 @@ const Clinics = () => {
                       Stats
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Limits
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -190,7 +193,7 @@ const Clinics = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {clinics.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                         No clinics found
                       </td>
                     </tr>
@@ -219,6 +222,14 @@ const Clinics = () => {
                           </div>
                           <div className="text-gray-500">
                             {clinic._count?.patients || 0} patients
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-xs">
+                          <div className="text-gray-900">
+                            Staff: {clinic?.accessControls?.staffLimit ?? 'No limit'}
+                          </div>
+                          <div className="text-gray-500">
+                            Upload/month: {clinic?.accessControls?.invoiceUploadLimit?.monthly ?? 'No limit'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

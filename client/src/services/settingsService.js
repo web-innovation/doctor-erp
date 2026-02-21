@@ -192,6 +192,12 @@ const settingsService = {
     const response = await api.put('/clinic/role-permissions', { rolePermissions: data });
     return response.data;
   },
+
+  // Super admin access controls (read-only for clinic users)
+  getAccessControls: async () => {
+    const response = await api.get('/clinic/access-controls');
+    return response.data;
+  },
 };
 
 export { settingsService };

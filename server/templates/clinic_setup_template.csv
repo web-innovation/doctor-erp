@@ -1,0 +1,9 @@
+entity,name,email,phone,role,password,employeeId,department,designation,joinDate,salary,code,genericName,category,manufacturer,mrp,purchasePrice,sellingPrice,gstPercent,quantity,minStock,unit,batchNumber,expiryDate,rackNumber,address,contactPerson,commissionType,commissionValue,discountAllowed,labName,testCode,testName,testCategory,testPrice,currency,description
+staff,Anita Sharma,anita.reception@clinic.com,9876543201,RECEPTIONIST,password123,EMP-001,Front Desk,Reception Executive,2026-01-01,22000,,,,,,,,,,,,,,,,,,,,,,,,
+staff,Raj Verma,raj.pharmacist@clinic.com,9876543202,PHARMACIST,password123,EMP-002,Pharmacy,Pharmacist,2026-01-01,30000,,,,,,,,,,,,,,,,,,,,,,,,
+pharmacy,Azithromycin 500,,,"","","","","","","",MED-001,,Antibiotic,ABC Pharma,165,120,145,12,100,15,pcs,B001,2027-06-30,R1-A1,,,,,,,,,,
+pharmacy,Paracetamol 650,,,"","","","","","","",MED-002,,Analgesic,XYZ Pharma,38,24,30,5,500,50,pcs,B010,2027-09-30,R1-A2,,,,,,,,,,
+agent,City Referral Desk,referral.agent@sample.com,9876543299,,,,,,,,,,,,,,,,,,,,,12 Park Street,Ref Manager,PERCENTAGE,10,5,,,,,,
+lab,Prime Diagnostics,support@primediag.com,9123456780,,,,,,,,,,,,,,,,,,,,,19 MG Road,Dr. Kunal,PERCENTAGE,20,0,,,,,,
+lab_test,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Prime Diagnostics,CBC,CBC,Pathology,350,INR,Complete blood count
+lab_test,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Prime Diagnostics,LFT,Liver Function Test,Biochemistry,900,INR,Liver function profile

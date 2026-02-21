@@ -13,6 +13,8 @@ import {
   FiLock,
   FiUnlock,
   FiKey,
+  FiUpload,
+  FiSettings,
 } from 'react-icons/fi';
 import adminService from '../../services/adminService';
 import Button from '../../components/common/Button';
@@ -43,6 +45,15 @@ const ClinicDetail = () => {
     role: 'RECEPTIONIST',
     password: '',
   });
+  const [accessControls, setAccessControls] = useState({
+    invoiceUploadLimit: { monthly: '', yearly: '' },
+    staffLimit: '',
+    disabledPermissionsText: ''
+  });
+  const [savingControls, setSavingControls] = useState(false);
+  const [setupFile, setSetupFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [lastImportResult, setLastImportResult] = useState(null);
 
   const roleOptions = [
     { value: 'DOCTOR', label: 'Doctor' },
@@ -62,6 +73,15 @@ const ClinicDetail = () => {
       setLoading(true);
       const data = await adminService.getClinic(id);
       setClinic(data);
+      const controls = data.accessControls || {};
+      setAccessControls({
+        invoiceUploadLimit: {
+          monthly: controls?.invoiceUploadLimit?.monthly ?? '',
+          yearly: controls?.invoiceUploadLimit?.yearly ?? ''
+        },
+        staffLimit: controls?.staffLimit ?? '',
+        disabledPermissionsText: Array.isArray(controls?.disabledPermissions) ? controls.disabledPermissions.join('\n') : ''
+      });
       setFormData({
         name: data.name,
         phone: data.phone || '',
@@ -151,6 +171,69 @@ const ClinicDetail = () => {
     } catch (error) {
       console.error('Failed to reset password:', error);
       alert(error.response?.data?.message || 'Failed to reset password');
+    }
+  };
+
+  const handleSaveControls = async () => {
+    try {
+      setSavingControls(true);
+      const disabledPermissions = accessControls.disabledPermissionsText
+        .split(/[\n,]+/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+      await adminService.updateClinicAccessControls(id, {
+        invoiceUploadLimit: {
+          monthly: accessControls.invoiceUploadLimit.monthly === '' ? null : Number(accessControls.invoiceUploadLimit.monthly),
+          yearly: accessControls.invoiceUploadLimit.yearly === '' ? null : Number(accessControls.invoiceUploadLimit.yearly)
+        },
+        staffLimit: accessControls.staffLimit === '' ? null : Number(accessControls.staffLimit),
+        disabledPermissions
+      });
+      alert('Access controls updated');
+      fetchClinic();
+    } catch (error) {
+      console.error('Failed to save controls:', error);
+      alert(error.response?.data?.message || 'Failed to update controls');
+    } finally {
+      setSavingControls(false);
+    }
+  };
+
+  const handleImportSetup = async (dryRun = false) => {
+    if (!setupFile) {
+      alert('Please select a CSV or XLSX file');
+      return;
+    }
+    try {
+      setImporting(true);
+      const fd = new FormData();
+      fd.append('file', setupFile);
+      const result = await adminService.importClinicSetup(id, fd, { dryRun });
+      setLastImportResult(result?.data || null);
+      alert(dryRun ? 'Dry run completed' : 'Clinic setup import completed');
+      fetchClinic();
+    } catch (error) {
+      console.error('Failed to import setup:', error);
+      alert(error.response?.data?.message || 'Failed to import setup');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await adminService.downloadSetupTemplate();
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'clinic_setup_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Template download failed:', error);
+      alert(error.response?.data?.message || 'Failed to download template');
     }
   };
 
@@ -253,6 +336,94 @@ const ClinicDetail = () => {
             <label className="block text-sm font-medium text-gray-500">License Number</label>
             <p className="mt-1 text-gray-900">{clinic.licenseNumber || '-'}</p>
           </div>
+        </div>
+      </div>
+
+      {/* Controls & Setup */}
+      <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
+        <div className="flex items-center gap-2">
+          <FiSettings className="text-purple-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Clinic Access Controls</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input
+            type="number"
+            min="0"
+            label="Monthly Invoice Upload Limit"
+            value={accessControls.invoiceUploadLimit.monthly}
+            onChange={(e) => setAccessControls((s) => ({
+              ...s,
+              invoiceUploadLimit: { ...s.invoiceUploadLimit, monthly: e.target.value }
+            }))}
+          />
+          <Input
+            type="number"
+            min="0"
+            label="Yearly Invoice Upload Limit"
+            value={accessControls.invoiceUploadLimit.yearly}
+            onChange={(e) => setAccessControls((s) => ({
+              ...s,
+              invoiceUploadLimit: { ...s.invoiceUploadLimit, yearly: e.target.value }
+            }))}
+          />
+          <Input
+            type="number"
+            min="0"
+            label="Staff Limit"
+            value={accessControls.staffLimit}
+            onChange={(e) => setAccessControls((s) => ({ ...s, staffLimit: e.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Disabled Permissions (one per line or comma separated)
+          </label>
+          <textarea
+            className="w-full rounded-lg border border-gray-300 p-3 text-sm"
+            rows={4}
+            placeholder="Example: billing:create"
+            value={accessControls.disabledPermissionsText}
+            onChange={(e) => setAccessControls((s) => ({ ...s, disabledPermissionsText: e.target.value }))}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={handleSaveControls} loading={savingControls}>Save Controls</Button>
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center px-4 py-2 border rounded-lg text-sm hover:bg-gray-50"
+          >
+            Download Setup Template
+          </button>
+        </div>
+
+        <div className="border-t pt-5">
+          <h3 className="font-semibold text-gray-900 mb-2">One-click Clinic Setup Import</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Upload the template spreadsheet (XLSX) to create staff, pharmacy products, agents, labs, and lab tests.
+          </p>
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <input type="file" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setSetupFile(e.target.files?.[0] || null)} />
+            <Button variant="outline" onClick={() => handleImportSetup(true)} loading={importing}>
+              Dry Run
+            </Button>
+            <Button onClick={() => handleImportSetup(false)} loading={importing}>
+              <FiUpload className="mr-2" /> Import Setup
+            </Button>
+          </div>
+          {lastImportResult?.summary && (
+            <div className="mt-4 text-sm bg-gray-50 border rounded-lg p-3 space-y-1">
+              <p>Rows: {lastImportResult.summary.rows}</p>
+              <p>Staff created/updated: {lastImportResult.summary.staff?.created || 0}/{lastImportResult.summary.staff?.updated || 0}</p>
+              <p>Pharmacy created/updated: {lastImportResult.summary.pharmacy?.created || 0}/{lastImportResult.summary.pharmacy?.updated || 0}</p>
+              <p>Labs created/updated: {lastImportResult.summary.labs?.created || 0}/{lastImportResult.summary.labs?.updated || 0}</p>
+              <p>Lab tests created/updated: {lastImportResult.summary.labTests?.created || 0}/{lastImportResult.summary.labTests?.updated || 0}</p>
+              <p>Agents created/updated: {lastImportResult.summary.agents?.created || 0}/{lastImportResult.summary.agents?.updated || 0}</p>
+              {(lastImportResult.summary.errors || []).length > 0 && (
+                <p className="text-red-600">Errors: {(lastImportResult.summary.errors || []).slice(0, 3).join(' | ')}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

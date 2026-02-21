@@ -1,8 +1,8 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import { logger } from '../config/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { prisma } from '../index.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -15,12 +15,14 @@ router.get('/', checkPermission('ledger', 'read'), async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 200);
     const account = req.query.account || undefined;
     const type = req.query.type || undefined; // 'DEBIT'|'CREDIT'
+    const refType = req.query.refType || undefined;
     const from = req.query.from ? new Date(req.query.from) : undefined;
     const to = req.query.to ? new Date(req.query.to) : undefined;
 
     const where = { clinicId };
     if (account) where.account = account;
     if (type) where.type = type;
+    if (refType) where.refType = refType;
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = from;
@@ -48,20 +50,22 @@ router.get('/summary', checkPermission('ledger', 'read'), async (req, res, next)
   try {
     const clinicId = req.user.clinicId;
     const account = req.query.account || undefined;
+    const refType = req.query.refType || undefined;
     const from = req.query.from ? new Date(req.query.from) : undefined;
     const to = req.query.to ? new Date(req.query.to) : undefined;
 
     const where = { clinicId };
     if (account) where.account = account;
+    if (refType) where.refType = refType;
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = from;
       if (to) where.createdAt.lte = to;
     }
 
-    // Group by accountId (preferred) and type to compute debit/credit sums per account
+    // Group by accountId (preferred), account name and type to compute debit/credit sums per account
     const groups = await prisma.ledgerEntry.groupBy({
-      by: ['accountId', 'type'],
+      by: ['accountId', 'account', 'type'],
       where,
       _sum: { amount: true },
     });
@@ -75,12 +79,18 @@ router.get('/summary', checkPermission('ledger', 'read'), async (req, res, next)
     }
 
     for (const g of groups) {
-      const acctKey = g.accountId || g.account || 'Unspecified';
       const acctName = g.accountId ? (acctMap[g.accountId] || g.account || 'Unknown') : (g.account || 'Unspecified');
-      if (!map[acctKey]) map[acctKey] = { accountId: g.accountId || null, account: acctName, debit: 0, credit: 0 };
-      const s = g._sum?.amount || 0;
-      if (g.type === 'DEBIT') map[acctKey].debit = Number(s);
-      else if (g.type === 'CREDIT') map[acctKey].credit = Number(s);
+      // Merge same logical account even when some legacy entries have null accountId.
+      const normalized = (acctName || '').toString().trim().toLowerCase();
+      const acctKey = normalized || (g.accountId ? `id:${g.accountId}` : 'unspecified');
+      if (!map[acctKey]) {
+        map[acctKey] = { accountId: g.accountId || null, account: acctName, debit: 0, credit: 0 };
+      } else if (!map[acctKey].accountId && g.accountId) {
+        map[acctKey].accountId = g.accountId;
+      }
+      const s = Number(g._sum?.amount || 0);
+      if (g.type === 'DEBIT') map[acctKey].debit += s;
+      else if (g.type === 'CREDIT') map[acctKey].credit += s;
     }
 
     const accounts = Object.values(map).map((a) => ({ ...a, balance: Number((a.debit || 0) - (a.credit || 0)) }));
@@ -93,6 +103,80 @@ router.get('/summary', checkPermission('ledger', 'read'), async (req, res, next)
     totals.balance = totals.debit - totals.credit;
 
     res.json({ success: true, data: { accounts, totals } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /export - download ledger entries as CSV (spreadsheet-compatible)
+router.get('/export', checkPermission('ledger', 'read'), async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const account = req.query.account || undefined;
+    const type = req.query.type || undefined;
+    const refType = req.query.refType || undefined;
+    const from = req.query.from ? new Date(req.query.from) : undefined;
+    const to = req.query.to ? new Date(req.query.to) : undefined;
+
+    const where = { clinicId };
+    if (account) where.account = account;
+    if (type) where.type = type;
+    if (refType) where.refType = refType;
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = from;
+      if (to) where.createdAt.lte = to;
+    }
+
+    const items = await prisma.ledgerEntry.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const esc = (v) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const headers = [
+      'Entry ID',
+      'Date',
+      'Account',
+      'Account ID',
+      'Type',
+      'Amount',
+      'Ref Type',
+      'Ref ID',
+      'Note',
+      'Clinic ID',
+    ];
+
+    const rows = items.map((it) => ([
+      it.id,
+      it.createdAt ? new Date(it.createdAt).toISOString() : '',
+      it.account || '',
+      it.accountId || '',
+      it.type || '',
+      Number(it.amount || 0).toFixed(2),
+      it.refType || '',
+      it.refId || '',
+      it.note || '',
+      it.clinicId || '',
+    ]));
+
+    const csv = [
+      headers.map(esc).join(','),
+      ...rows.map((r) => r.map(esc).join(',')),
+    ].join('\n');
+
+    const fromPart = req.query.from || 'all';
+    const toPart = req.query.to || 'all';
+    const filename = `ledger-${fromPart}-to-${toPart}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
   } catch (err) {
     next(err);
   }
@@ -138,6 +222,122 @@ router.post('/manual', checkPermission('ledger', 'create'), async (req, res, nex
     ]);
 
     res.json({ success: true, data: { entries } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /manual-purchase - create a manual purchase (create Purchase, items, update stock, create ledger entries)
+router.post('/manual-purchase', checkPermission('purchases', 'create'), async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const { supplierId, supplierName, invoiceNo, invoiceDate, items, payment, note } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, message: 'Items required' });
+
+    // Resolve or create supplier
+    let supplier = null;
+    if (supplierId) supplier = await prisma.supplier.findFirst({ where: { id: supplierId, clinicId } });
+    if (!supplier && supplierName) {
+      supplier = await prisma.supplier.findFirst({ where: { clinicId, name: supplierName } });
+      if (!supplier) supplier = await prisma.supplier.create({ data: { clinicId, name: supplierName } });
+    }
+
+    const calcSubtotal = (items || []).reduce((s, it) => s + (Number(it.unitPrice || 0) * Number(it.quantity || 0)), 0);
+    const calcTax = (items || []).reduce((s, it) => {
+      if (it.gstAmount !== undefined && it.gstAmount !== null) return s + Number(it.gstAmount || 0);
+      const pct = Number(it.gstPercent || 0) / 100;
+      return s + (Number(it.unitPrice || 0) * Number(it.quantity || 0) * pct);
+    }, 0);
+    const totalAmount = calcSubtotal + calcTax;
+
+    // Create purchase
+    const purchase = await prisma.purchase.create({ data: { invoiceNo: invoiceNo || `M-${Date.now()}`, invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(), status: 'RECEIVED', notes: note || null, subtotal: calcSubtotal, taxAmount: calcTax, totalAmount, clinicId, supplierId: supplier?.id || null } });
+
+    const createdItems = [];
+    // For each item: create PurchaseItem, update/create product, stock batch/history/transaction
+    for (const it of items) {
+      const quantity = Math.max(0, Number(it.quantity || 0));
+      const unitPrice = Number(it.unitPrice || 0);
+      const gstPercent = it.gstPercent !== undefined ? Number(it.gstPercent) : (it.gstAmount ? 0 : 0);
+      const taxAmount = it.gstAmount !== undefined && it.gstAmount !== null ? Number(it.gstAmount) : (quantity * unitPrice * (gstPercent / 100));
+      const amount = unitPrice * quantity;
+
+      // Resolve or create product
+      let product = null;
+      if (it.productId) product = await prisma.pharmacyProduct.findFirst({ where: { id: it.productId, clinicId } });
+      if (!product && it.name) {
+        product = await prisma.pharmacyProduct.findFirst({ where: { clinicId, name: it.name } });
+      }
+      if (!product && it.name && it.allowCreate) {
+        // Create minimal product
+        product = await prisma.pharmacyProduct.create({ data: { clinicId, name: it.name, code: `M-${Date.now() % 100000}`, mrp: it.mrp || unitPrice, purchasePrice: unitPrice, sellingPrice: it.sellingPrice || unitPrice * 1.2, gstPercent: it.gstPercent || 0, quantity: 0, category: it.category || 'GENERAL' } });
+      }
+
+      const pItem = await prisma.purchaseItem.create({ data: { purchaseId: purchase.id, productId: product?.id || null, name: it.name || (product && product.name) || 'Unknown', quantity, unitPrice, taxAmount, amount, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate ? new Date(it.expiryDate) : null } });
+      createdItems.push(pItem);
+
+      if (product) {
+        // update quantity and create batch/history/transaction
+        const prev = await prisma.pharmacyProduct.findUnique({ where: { id: product.id } });
+        const previousQty = prev?.quantity || 0;
+        const newQty = previousQty + quantity;
+        let batch = null;
+        try {
+          batch = await prisma.stockBatch.create({ data: { productId: product.id, quantity, costPrice: unitPrice, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate ? new Date(it.expiryDate) : null } });
+        } catch (err) {
+          logger.error(`stockBatch.create failed (manual-purchase): product=${product.id} err=${err.message}`);
+        }
+        try {
+          await prisma.pharmacyProduct.update({ where: { id: product.id }, data: { quantity: newQty } });
+        } catch (err) {
+          logger.error(`pharmacyProduct.update failed (manual-purchase): product=${product.id} err=${err.message}`);
+        }
+        try {
+          await prisma.stockHistory.create({ data: { productId: product.id, batchId: batch?.id || null, type: 'PURCHASE', quantity, previousQty: previousQty, newQty, reference: `Manual purchase ${purchase.invoiceNo}`, notes: `Received ${quantity} x ${product.name}`, createdBy: req.user.id } });
+        } catch (err) {
+          logger.error(`stockHistory.create failed (manual-purchase): product=${product.id} err=${err.message}`);
+        }
+        try {
+          await prisma.stockTransaction.create({ data: { clinicId, productId: product.id, changeQty: quantity, type: 'PURCHASE', refType: 'PURCHASE', refId: purchase.id, note: `Manual purchase ${purchase.invoiceNo}` } });
+        } catch (err) {
+          logger.error(`stockTransaction.create failed (manual-purchase): product=${product.id} err=${err.message}`);
+        }
+      }
+    }
+
+    // Ensure accounts exist: Inventory, GST Input, Payable - supplier, Cash, Bank
+    async function ensureAccount(name, type = null) {
+      let a = await prisma.account.findFirst({ where: { clinicId, name } });
+      if (!a) a = await prisma.account.create({ data: { clinicId, name, type: type || undefined, createdById: req.user.id } });
+      return a;
+    }
+
+    const inventoryAcct = await ensureAccount('Inventory', 'ASSET');
+    const gstInputAcct = await ensureAccount('GST Input', 'ASSET');
+    const payableAcctName = supplier ? `Payable - ${supplier.name}` : 'Accounts Payable';
+    const payableAcct = await ensureAccount(payableAcctName, 'LIABILITY');
+
+    // Create ledger entries for purchase: Debit Inventory (subtotal), Debit GST Input (tax), Credit Payable (total)
+    const entries = await prisma.$transaction([
+      prisma.ledgerEntry.create({ data: { clinicId, account: inventoryAcct.name, accountId: inventoryAcct.id, type: 'DEBIT', amount: calcSubtotal, note: `Manual purchase ${purchase.invoiceNo}`, refType: 'PURCHASE', refId: purchase.id, createdAt: purchase.invoiceDate } }),
+      prisma.ledgerEntry.create({ data: { clinicId, account: gstInputAcct.name, accountId: gstInputAcct.id, type: 'DEBIT', amount: calcTax, note: `GST on ${purchase.invoiceNo}`, refType: 'PURCHASE', refId: purchase.id, createdAt: purchase.invoiceDate } }),
+      prisma.ledgerEntry.create({ data: { clinicId, account: payableAcct.name, accountId: payableAcct.id, type: 'CREDIT', amount: totalAmount, note: `Purchase payable ${purchase.invoiceNo}`, refType: 'PURCHASE', refId: purchase.id, createdAt: purchase.invoiceDate } }),
+    ]);
+
+    // If payment provided, create payment ledger entries to clear payable
+    if (payment && payment.amount && Number(payment.amount) > 0) {
+      const payAmt = Number(payment.amount);
+      const payAcctName = payment.method === 'BANK' ? 'Bank' : 'Cash';
+      const payAcct = await ensureAccount(payAcctName, 'ASSET');
+      await prisma.$transaction([
+        prisma.ledgerEntry.create({ data: { clinicId, account: payableAcct.name, accountId: payableAcct.id, type: 'DEBIT', amount: payAmt, note: `Payment for ${purchase.invoiceNo}`, refType: 'PAYMENT', refId: purchase.id, createdAt: new Date() } }),
+        prisma.ledgerEntry.create({ data: { clinicId, account: payAcct.name, accountId: payAcct.id, type: 'CREDIT', amount: payAmt, note: `Payment for ${purchase.invoiceNo}`, refType: 'PAYMENT', refId: purchase.id, createdAt: new Date() } })
+      ]);
+    }
+
+    const result = { purchase, items: createdItems, ledgerEntries: entries };
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }
@@ -208,15 +408,31 @@ router.post('/manual/purchase', checkPermission('purchases', 'create'), async (r
       // create stock batch for additions
       let batch = null;
       if (mode !== 'RETURN') {
-        batch = await prisma.stockBatch.create({ data: { productId: product.id, quantity: qty, costPrice: unitPrice, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate ? new Date(it.expiryDate) : null, clinicId } }).catch(() => null);
+        try {
+          batch = await prisma.stockBatch.create({ data: { productId: product.id, quantity: qty, costPrice: unitPrice, batchNumber: it.batchNumber || null, expiryDate: it.expiryDate ? new Date(it.expiryDate) : null } });
+        } catch (err) {
+          logger.error(`stockBatch.create failed (manual/purchase loop): product=${product.id} err=${err.message}`);
+        }
       }
 
       // update product quantity
-      await prisma.pharmacyProduct.update({ where: { id: product.id }, data: { quantity: newQty, purchasePrice: unitPrice } }).catch(() => null);
+      try {
+        await prisma.pharmacyProduct.update({ where: { id: product.id }, data: { quantity: newQty, purchasePrice: unitPrice } });
+      } catch (err) {
+        logger.error(`pharmacyProduct.update failed (manual/purchase loop): product=${product.id} err=${err.message}`);
+      }
 
       // create stock history and transaction
-      await prisma.stockHistory.create({ data: { productId: product.id, batchId: batch?.id || null, type: mode === 'RETURN' ? 'RETURN' : 'PURCHASE', quantity: changeQty, previousQty, newQty, reference: `Manual ${mode} ${invoiceNo}`, notes: note || null, createdBy: req.user.id } }).catch(() => null);
-      await prisma.stockTransaction.create({ data: { clinicId, productId: product.id, changeQty, type: mode === 'RETURN' ? 'RETURN' : 'PURCHASE', refType: 'PURCHASE', refId: purchase.id, note: `Manual ${mode}` } }).catch(() => null);
+      try {
+        await prisma.stockHistory.create({ data: { productId: product.id, batchId: batch?.id || null, type: mode === 'RETURN' ? 'RETURN' : 'PURCHASE', quantity: changeQty, previousQty, newQty, reference: `Manual ${mode} ${invoiceNo}`, notes: note || null, createdBy: req.user.id } });
+      } catch (err) {
+        logger.error(`stockHistory.create failed (manual/purchase loop): product=${product.id} err=${err.message}`);
+      }
+      try {
+        await prisma.stockTransaction.create({ data: { clinicId, productId: product.id, changeQty, type: mode === 'RETURN' ? 'RETURN' : 'PURCHASE', refType: 'PURCHASE', refId: purchase.id, note: `Manual ${mode}` } });
+      } catch (err) {
+        logger.error(`stockTransaction.create failed (manual/purchase loop): product=${product.id} err=${err.message}`);
+      }
     }
 
     const total = subtotal + taxTotal;
@@ -225,9 +441,17 @@ router.post('/manual/purchase', checkPermission('purchases', 'create'), async (r
 
     // Ledger entries: Inventory +/- subtotal, GST (as separate) and Payable
     const payableAccountName = supplier ? `Payable - ${supplier.name}` : 'Accounts Payable';
-    const inventoryAcct = await prisma.account.findFirst({ where: { clinicId, name: 'Inventory' } });
-    const payableAcct = await prisma.account.findFirst({ where: { clinicId, name: payableAccountName } });
-    const gstAcct = await prisma.account.findFirst({ where: { clinicId, name: 'GST Payable' } });
+
+    // ensureAccount helper: create account if missing
+    async function ensureAccount(name, type = null) {
+      let a = await prisma.account.findFirst({ where: { clinicId, name } });
+      if (!a) a = await prisma.account.create({ data: { clinicId, name, type: type || undefined, createdById: req.user.id } });
+      return a;
+    }
+
+    const inventoryAcct = await ensureAccount('Inventory', 'ASSET');
+    const payableAcct = await ensureAccount(payableAccountName, 'LIABILITY');
+    const gstAcct = await ensureAccount('GST Payable', 'LIABILITY');
 
     // Build ledger creations
     const entriesToCreate = [];
@@ -269,7 +493,7 @@ router.get('/:id', checkPermission('ledger', 'read'), async (req, res, next) => 
 
         // Find related payments/adjustments ledger entries for this purchase
         const related = await prisma.ledgerEntry.findMany({
-          where: { clinicId, refId: entry.refId, refType: { in: ['PAYMENT', 'ADJUSTMENT', 'PURCHASE'] } },
+          where: { clinicId, refId: entry.refId, refType: { in: ['PAYMENT', 'ADJUSTMENT', 'PURCHASE', 'RETURN'] } },
           orderBy: { createdAt: 'asc' }
         });
         result.relatedEntries = related;

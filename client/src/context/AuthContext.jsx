@@ -225,7 +225,31 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
   });
   const rolePermissions = rolePermResp?.data || rolePermResp || null;
 
+  const { data: accessResp } = useQuery({
+    queryKey: ['accessControls'],
+    queryFn: () => settingsService.getAccessControls(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const accessControls = accessResp?.data || accessResp || null;
+
   const effectiveRole = (activeViewUser && activeViewUser.role) || (user && normalizeRole(user.role)) || 'STAFF';
+
+  const normalizeDisabled = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw.startsWith('leader')) return raw.replace(/^leader/, 'ledger');
+    return raw;
+  };
+  const isPermissionDisabled = (() => {
+    const list = Array.isArray(accessControls?.disabledPermissions) ? accessControls.disabledPermissions : [];
+    const set = new Set(list.map(normalizeDisabled).filter(Boolean));
+    const perm = String(permKey || '').toLowerCase();
+    const resource = perm.split(':')[0];
+    return set.has(perm) || set.has(resource) || set.has(`${resource}:*`) || set.has('*');
+  })();
+
+  // If super admin disabled this permission, block for clinic users (including clinic admins)
+  if (isPermissionDisabled && (effectiveRole || '').toString().toUpperCase() !== 'SUPER_ADMIN') return false;
 
   // Clinic admin (primary clinic doctor) should be able to see most things when NOT viewing-as
   if (user?.isClinicAdmin && !(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id)) return true;

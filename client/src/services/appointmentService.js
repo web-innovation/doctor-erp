@@ -1,5 +1,12 @@
 import api from './api';
 
+const toLocalDateString = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 const appointmentService = {
   /**
    * Get list of appointments with filters
@@ -105,7 +112,7 @@ const appointmentService = {
    * @returns {Promise} - Today's appointments array
    */
   getTodayAppointments: async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toLocalDateString(new Date());
     const response = await api.get('/appointments', { 
       params: { startDate: today, endDate: today, limit: 50 } 
     });

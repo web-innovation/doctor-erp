@@ -23,6 +23,9 @@ import NewPrescription from './pages/prescriptions/NewPrescription';
 import Pharmacy from './pages/pharmacy/Pharmacy';
 import UploadPurchase from './pages/pharmacy/UploadPurchase';
 import Ledger from './pages/pharmacy/Ledger';
+import ManualEntry from './pages/pharmacy/ManualEntry';
+import Suppliers from './pages/pharmacy/Suppliers';
+import Purchases from './pages/pharmacy/Purchases';
 import Billing from './pages/billing/Billing';
 import NewBill from './pages/billing/NewBill';
 import Staff from './pages/staff/Staff';
@@ -42,6 +45,10 @@ import Users from './pages/admin/Users';
 // Landing Page
 import Landing from './pages/Landing';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import PatientManagementClinics from './pages/features/PatientManagementClinics';
+import PharmacyManagementTricity from './pages/features/PharmacyManagementTricity';
+import OnlineReportDashboardClinicsHospitals from './pages/features/OnlineReportDashboardClinicsHospitals';
+import SmartPrescriptionDoctors from './pages/features/SmartPrescriptionDoctors';
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
@@ -80,6 +87,10 @@ function App() {
       {/* Public Routes */}
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/features/patient-management-system-for-clinics" element={<PatientManagementClinics />} />
+      <Route path="/features/pharmacy-management-software-tricity" element={<PharmacyManagementTricity />} />
+      <Route path="/features/online-report-dashboard-software-for-clinics-hospitals" element={<OnlineReportDashboardClinicsHospitals />} />
+      <Route path="/features/smart-prescription-software-for-doctors" element={<SmartPrescriptionDoctors />} />
       
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
@@ -109,8 +120,16 @@ function App() {
         
         {/* Pharmacy */}
         <Route path="/pharmacy" element={<Pharmacy />} />
+        <Route path="/pharmacy/suppliers" element={<Suppliers />} />
+        <Route path="/pharmacy/purchases" element={<Purchases />} />
         <Route path="/pharmacy/upload" element={<UploadPurchase />} />
-        <Route path="/pharmacy/ledger" element={<Ledger />} />
+        {/* Legacy ledger paths: keep redirects for backward compatibility */}
+        <Route path="/pharmacy/ledger" element={<Navigate to="/ledger" replace />} />
+        <Route path="/pharmacy/ledger/manual" element={<Navigate to="/ledger/manual" replace />} />
+
+        {/* Global Ledger */}
+        <Route path="/ledger" element={<Ledger />} />
+        <Route path="/ledger/manual" element={<ManualEntry />} />
         
         {/* Billing */}
         <Route path="/billing" element={<Billing />} />
@@ -127,24 +146,24 @@ function App() {
         
         {/* Labs & Agents */}
         <Route path="/labs-agents" element={
-          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'ADMIN']}>
             <LabsAgents />
           </ProtectedRoute>
         } />
         <Route path="/labs" element={
-          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'ADMIN']}>
             <LabsAgents />
           </ProtectedRoute>
         } />
         <Route path="/labs-agents/:labId/tests" element={
-          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'ADMIN']}>
             <LabTests />
           </ProtectedRoute>
         } />
 
         {/* Separate Agents & Commissions route (not tied to Labs menu) */}
         <Route path="/agents" element={
-          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']}>
+          <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'ADMIN']}>
             <LabsAgents />
           </ProtectedRoute>
         } />

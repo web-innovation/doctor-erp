@@ -85,6 +85,7 @@ model Clinic {
   workingHours    String? // JSON string
   rolePermissions String? // JSON string mapping roles to allowed permission keys
   slotDuration    Int     @default(15)
+  isActive        Boolean @default(true)
 
   // Document AI flag: when true, this clinic will use Google Document AI for OCR parsing
   documentAiEnabled Boolean  @default(false)

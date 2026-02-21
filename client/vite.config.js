@@ -19,7 +19,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://13.232.84.217:3001',
+        target: 'https://docsyerp.com', // replace with your server URL
         changeOrigin: true
       }
     }

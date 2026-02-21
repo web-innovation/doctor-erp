@@ -20,8 +20,11 @@ const adminService = {
       newClinicsLastMonth: result.stats?.newClinicsLastMonth || 0,
       newUsersThisMonth: result.stats?.newUsersThisMonth || 0,
       newPatientsThisMonth: result.stats?.newPatientsThisMonth || 0,
+      failedUploads24h: result.stats?.failedUploads24h || 0,
+      draftPurchasesCount: result.stats?.draftPurchasesCount || 0,
       monthlyGrowth: result.monthlyGrowth || [],
-      recentClinics: result.recentClinics || []
+      recentClinics: result.recentClinics || [],
+      infrastructure: result.infrastructure || null
     };
   },
 
@@ -70,6 +73,29 @@ const adminService = {
 
   unblockClinic: async (id) => {
     const response = await api.post(`/admin/clinics/${id}/unblock`);
+    return response.data;
+  },
+
+  getClinicAccessControls: async (clinicId) => {
+    const response = await api.get(`/admin/clinics/${clinicId}/access-controls`);
+    return response.data?.data || null;
+  },
+
+  updateClinicAccessControls: async (clinicId, data) => {
+    const response = await api.put(`/admin/clinics/${clinicId}/access-controls`, data);
+    return response.data;
+  },
+
+  importClinicSetup: async (clinicId, formData, params = {}) => {
+    const response = await api.post(`/admin/clinics/${clinicId}/setup-import`, formData, {
+      params,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+
+  downloadSetupTemplate: async () => {
+    const response = await api.get('/admin/clinic-setup/template', { responseType: 'blob' });
     return response.data;
   },
 

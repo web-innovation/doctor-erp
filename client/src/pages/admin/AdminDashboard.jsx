@@ -11,6 +11,9 @@ import {
   FiCalendar,
   FiUserPlus,
   FiShield,
+  FiAlertTriangle,
+  FiCpu,
+  FiHardDrive,
 } from 'react-icons/fi';
 import {
   LineChart,
@@ -274,6 +277,31 @@ const AdminDashboard = () => {
             No revenue data available
           </div>
         )}
+      </div>
+
+      {/* Infrastructure */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard
+          title="AWS Critical Alerts"
+          value={stats?.infrastructure?.awsCriticalAlerts || 0}
+          icon={FiAlertTriangle}
+          color={(stats?.infrastructure?.awsCriticalAlerts || 0) > 0 ? 'red' : 'green'}
+          subtitle="Based on failed ingestion signals"
+        />
+        <StatCard
+          title="Instance Uptime"
+          value={`${Math.floor((stats?.infrastructure?.instanceUptimeSec || 0) / 3600)}h`}
+          icon={FiCpu}
+          color="blue"
+          subtitle={stats?.infrastructure?.platform || 'Runtime info'}
+        />
+        <StatCard
+          title="Memory Used"
+          value={`${stats?.infrastructure?.memoryUsedMb || 0} MB`}
+          icon={FiHardDrive}
+          color="indigo"
+          subtitle={`Draft purchases: ${stats?.draftPurchasesCount || 0}`}
+        />
       </div>
 
       {/* Quick Actions */}

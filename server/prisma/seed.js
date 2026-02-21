@@ -26,6 +26,7 @@ async function main() {
     gstNumber: '09AAACH1234F1ZH',
     licenseNumber: 'DL-2024-12345',
     slotDuration: 15,
+    isActive: true,
     workingHours: JSON.stringify({
       monday: { start: '09:00', end: '18:00' },
       tuesday: { start: '09:00', end: '18:00' },
@@ -737,7 +738,7 @@ async function main() {
   console.log('='.repeat(50));
   console.log('\n📊 Summary:');
   console.log(`   • 1 Clinic: ${clinic.name}`);
-  console.log(`   • 4 Users (Doctor, Receptionist, Pharmacist, Accountant)`);
+  console.log(`   • 5 Users (Super Admin, Doctor, Receptionist, Pharmacist, Accountant)`);
   console.log(`   • ${patients.length} Patients with vitals`);
   console.log(`   • ${products.length} Pharmacy Products`);
   console.log(`   • ${labs.length} Labs`);
@@ -747,10 +748,11 @@ async function main() {
   console.log(`   • ${bills.length} Bills`);
   
   console.log('\n🔐 Login Credentials:');
-  console.log('   Doctor:       doctor@demo.com / demo123');
-  console.log('   Receptionist: receptionist@demo.com / demo123');
-  console.log('   Pharmacist:   pharmacist@demo.com / demo123');
-  console.log('   Accountant:   accountant@demo.com / demo123');
+  console.log('   Super Admin:  superadmin@demo.com / Super@Demo!2024');
+  console.log('   Doctor:       doctor@demo.com / D0ct0r@Demo!2024');
+  console.log('   Receptionist: receptionist@demo.com / Recept!0n@Demo24');
+  console.log('   Pharmacist:   pharmacist@demo.com / Pharm@c1st!Demo24');
+  console.log('   Accountant:   accountant@demo.com / Acc0unt@Demo!2024');
   
   console.log('\n✅ Ready for demo!\n');
 
@@ -761,9 +763,37 @@ async function main() {
 
   const hashedDemoPass = await bcrypt.hash('D0ct0r@Demo!2024', 10);
 
+  await ensure('user', { email: 'superadmin@demo.com' }, {
+    email: 'superadmin@demo.com',
+    phone: '9001000000',
+    name: 'Super Admin',
+    role: 'SUPER_ADMIN',
+    password: await bcrypt.hash('Super@Demo!2024', 10),
+    clinicId: null
+  });
+
+  // Ensure clinic is active (in case it already existed)
+  try {
+    if (clinic.isActive !== true) {
+      await prisma.clinic.update({ where: { id: clinic.id }, data: { isActive: true } });
+    }
+  } catch (e) {
+    console.warn('Failed to enforce clinic isActive=true', e?.message || e);
+  }
+
   const doctorUser = await ensure('user', { email: 'doctor@demo.com' }, {
     email: 'doctor@demo.com', phone: '9001000100', name: 'Dr. Demo', role: 'DOCTOR', password: hashedDemoPass, clinicId: clinic.id
   });
+
+  // Ensure demo doctor is also a clinic ADMIN for demos where appropriate
+  try {
+    if (doctorUser.role !== 'ADMIN') {
+      await prisma.user.update({ where: { id: doctorUser.id }, data: { role: 'ADMIN' } });
+      console.log('   • Updated doctor@demo.com role -> ADMIN');
+    }
+  } catch (e) {
+    console.warn('Failed to promote doctor@demo.com to ADMIN', e?.message || e);
+  }
 
   const receptionistUser = await ensure('user', { email: 'receptionist@demo.com' }, {
     email: 'receptionist@demo.com', phone: '9001000101', name: 'Reception Demo', role: 'RECEPTIONIST', password: await bcrypt.hash('Recept!0n@Demo24', 10), clinicId: clinic.id
@@ -825,6 +855,16 @@ async function main() {
   const doctorBUser = await ensure('user', { email: 'doctorb@demo.com' }, {
     email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Demo B', role: 'STAFF', password: await bcrypt.hash('D0ct0rB@Demo!2024', 10), clinicId: clinic.id
   });
+
+  // Enforce staff role for doctorB if it already existed with a different role
+  try {
+    if (doctorBUser.role !== 'STAFF') {
+      await prisma.user.update({ where: { id: doctorBUser.id }, data: { role: 'STAFF' } });
+      console.log('   • Updated doctorb@demo.com role -> STAFF');
+    }
+  } catch (e) {
+    console.warn('Failed to enforce doctorb@demo.com role -> STAFF', e?.message || e);
+  }
 
   const staffDoctorB = await ensure('staff', { userId: doctorBUser.id }, {
     userId: doctorBUser.id, employeeId: 'EMP-DR-002', designation: 'Doctor', department: 'Medical', joinDate: new Date(), salary: 0, clinicId: clinic.id
@@ -1034,6 +1074,55 @@ async function main() {
 
   console.log('   ✅ Created demo purchases, distributor accounts and payments (full/partial/adjustment)');
 
+  // Ensure GST Input account exists (purchase-side tax input)
+  await prisma.account.upsert({ where: { clinicId_name: { clinicId: clinic.id, name: 'GST Input' } }, update: {}, create: { clinicId: clinic.id, name: 'GST Input', type: 'ASSET' } });
+
+  // Create a manual purchase example (demonstrates manual purchase flow with GST input)
+  let distributorD = await prisma.supplier.findFirst({ where: { clinicId: clinic.id, email: 'distD@demo.com' } });
+  if (!distributorD) {
+    distributorD = await prisma.supplier.create({ data: { name: 'Distributor D', phone: '9002000004', email: 'distD@demo.com', clinicId: clinic.id } });
+  }
+
+  const manualItems = [
+    { name: 'Ibuprofen 200mg', quantity: 50, unitPrice: 15, gstPercent: 12, allowCreate: true },
+    { name: 'Multivitamin Tablets', quantity: 30, unitPrice: 40, gstPercent: 12, allowCreate: true }
+  ];
+
+  const manualSubtotal = manualItems.reduce((s, it) => s + (it.unitPrice * it.quantity), 0);
+  const manualTax = manualItems.reduce((s, it) => s + ((it.unitPrice * it.quantity) * (it.gstPercent || 0) / 100), 0);
+  const manualTotal = manualSubtotal + manualTax;
+
+  const manualPurchase = await prisma.purchase.create({ data: { invoiceNo: 'MAN-EX-001', invoiceDate: new Date(), status: 'RECEIVED', notes: 'Demo manual purchase', subtotal: manualSubtotal, taxAmount: manualTax, totalAmount: manualTotal, clinicId: clinic.id, supplierId: distributorD.id } });
+
+  for (const it of manualItems) {
+    // Resolve or create product
+    let prod = await prisma.pharmacyProduct.findFirst({ where: { clinicId: clinic.id, name: it.name } });
+    if (!prod && it.allowCreate) {
+      prod = await prisma.pharmacyProduct.create({ data: { clinicId: clinic.id, name: it.name, code: `MAN-${Math.random().toString(36).slice(2,7)}`, category: 'medicine', mrp: it.mrp || Math.round(it.unitPrice * 1.3), purchasePrice: it.unitPrice, sellingPrice: Math.round(it.unitPrice * 1.25), gstPercent: it.gstPercent || 0, quantity: 0 } });
+    }
+
+    const taxAmount = ((it.unitPrice * it.quantity) * (it.gstPercent || 0)) / 100;
+    await prisma.purchaseItem.create({ data: { purchaseId: manualPurchase.id, productId: prod?.id || null, name: it.name, quantity: it.quantity, unitPrice: it.unitPrice, taxAmount, amount: it.unitPrice * it.quantity } });
+
+    if (prod) {
+      const prev = await prisma.pharmacyProduct.findUnique({ where: { id: prod.id } });
+      const prevQty = prev?.quantity || 0;
+      const newQty = prevQty + it.quantity;
+      const batch = await prisma.stockBatch.create({ data: { productId: prod.id, quantity: it.quantity, costPrice: it.unitPrice, batchNumber: `MANB-${Date.now() % 100000}`, expiryDate: null, clinicId: clinic.id } }).catch(() => null);
+      await prisma.pharmacyProduct.update({ where: { id: prod.id }, data: { quantity: newQty } }).catch(() => null);
+      await prisma.stockHistory.create({ data: { productId: prod.id, batchId: batch?.id || null, type: 'PURCHASE', quantity: it.quantity, previousQty: prevQty, newQty, reference: `Manual demo purchase ${manualPurchase.invoiceNo}`, notes: `Received ${it.quantity} x ${it.name}`, createdBy: null } }).catch(() => null);
+      await prisma.stockTransaction.create({ data: { clinicId: clinic.id, productId: prod.id, changeQty: it.quantity, type: 'PURCHASE', refType: 'PURCHASE', refId: manualPurchase.id, note: `Manual demo purchase` } }).catch(() => null);
+    }
+  }
+
+  // Ledger entries: Debit Inventory, Debit GST Input, Credit Payable
+  const inventoryAcctDemo = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: 'Inventory' } });
+  const gstInputAcctDemo = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: 'GST Input' } });
+  const payableAcctDemo = await prisma.account.findFirst({ where: { clinicId: clinic.id, name: `Payable - ${distributorD.name}` } });
+
+  await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: inventoryAcctDemo?.name || 'Inventory', accountId: inventoryAcctDemo?.id || null, type: 'DEBIT', amount: manualSubtotal, refType: 'PURCHASE', refId: manualPurchase.id, note: `Demo manual purchase ${manualPurchase.invoiceNo}` } });
+  if (manualTax > 0) await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: gstInputAcctDemo?.name || 'GST Input', accountId: gstInputAcctDemo?.id || null, type: 'DEBIT', amount: manualTax, refType: 'PURCHASE', refId: manualPurchase.id, note: `GST for demo manual purchase ${manualPurchase.invoiceNo}` } });
+  await prisma.ledgerEntry.create({ data: { clinicId: clinic.id, account: payableAcctDemo?.name || `Payable - ${distributorD.name}`, accountId: payableAcctDemo?.id || null, type: 'CREDIT', amount: manualTotal, refType: 'PURCHASE', refId: manualPurchase.id, note: `Demo manual purchase payable ${manualPurchase.invoiceNo}` } });
 }
 
 main()

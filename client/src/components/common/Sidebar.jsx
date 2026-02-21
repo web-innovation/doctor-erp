@@ -28,6 +28,7 @@ const menuItems = [
   { name: 'Appointments', path: '/appointments', icon: CalendarDaysIcon, roles: ['admin', 'doctor', 'nurse', 'receptionist', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Prescriptions', path: '/prescriptions', icon: DocumentTextIcon, roles: ['admin', 'doctor', 'DOCTOR', 'SUPER_ADMIN'] },
   { name: 'Pharmacy', path: '/pharmacy', icon: BuildingStorefrontIcon, roles: ['admin', 'pharmacist', 'DOCTOR', 'PHARMACIST', 'SUPER_ADMIN'] },
+  { name: 'Ledger', path: '/ledger', icon: DocumentTextIcon, roles: ['admin', 'doctor', 'pharmacist', 'accountant', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Billing', path: '/billing', icon: CurrencyDollarIcon, roles: ['admin', 'receptionist', 'accountant', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Staff', path: '/staff', icon: UsersIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
@@ -61,6 +62,14 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   });
 
   const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || null;
+
+  const { data: accessResp } = useQuery({
+    queryKey: ['accessControls'],
+    queryFn: () => settingsService.getAccessControls(),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && !isAdminRoute,
+  });
+  const accessControls = accessResp?.data || accessResp || null;
   
   // Get user role from AuthContext — if viewing as another staff, use their role
   const userRoleRaw = activeViewUser?.role || user?.role || 'DOCTOR';
@@ -105,11 +114,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
   // Map menu paths to permission keys used in rolePermissions
   const menuPermissionMap = {
-    '/dashboard': 'dashboard:view',
+    '/dashboard': 'dashboard:read',
     '/patients': 'patients:read',
     '/appointments': 'appointments:read',
     '/prescriptions': 'prescriptions:read',
     '/pharmacy': 'pharmacy:read',
+    '/ledger': 'ledger:read',
     '/billing': 'billing:read',
     '/staff': 'staff:read',
     '/staff/attendance': 'staff:read',
@@ -128,12 +138,30 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
   // Filter menu items based on user role and clinic-level rolePermissions (if present)
   const filteredMenuItems = menuItems.filter((item) => {
-    // Admin clinic doctor or super admin can always see everything
+    const normalizeDisabled = (value) => {
+      const raw = String(value || '').trim().toLowerCase();
+      if (!raw) return '';
+      if (raw.startsWith('leader')) return raw.replace(/^leader/, 'ledger');
+      return raw;
+    };
+    const disabledList = Array.isArray(accessControls?.disabledPermissions) ? accessControls.disabledPermissions : [];
+    const disabledSet = new Set(disabledList.map(normalizeDisabled).filter(Boolean));
+    const requiredPerm = menuPermissionMap[item.path];
+    const perm = String(requiredPerm || '').toLowerCase();
+    const resource = perm.split(':')[0];
+    const isDisabled = perm
+      ? (disabledSet.has(perm) || disabledSet.has(resource) || disabledSet.has(`${resource}:*`) || disabledSet.has('*'))
+      : (disabledSet.has('*'));
+
+    // Super admin disables should hide for clinic users (including clinic admin)
+    if (isDisabled && normalizedRole !== 'SUPER_ADMIN') return false;
+
+    // Admin clinic doctor or super admin can always see everything (unless disabled)
     if (bypassPermissions) return true;
 
     const roleMatch = item.roles.some(r => r.toString().toUpperCase() === effectiveRoleForMatch);
     const roleKey = normalizedRole;
-    const requiredPerm = menuPermissionMap[item.path];
+    const requiredPermKey = requiredPerm;
     // Determine which role key to use when looking up clinic overrides. If the
     // clinic has an explicit override for the normalizedRole, use it. Otherwise
     // fall back to the effectiveRoleForMatch (e.g., treat STAFF as DOCTOR when
@@ -145,12 +173,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
     // If clinic-level overrides are configured, they are authoritative for mapped permissions.
     if (rolePermissions) {
-      if (requiredPerm) {
+      if (requiredPermKey) {
         // If this role has no override (undefined or empty array), deny access
         // to any menu item that depends on a mapped permission. This ensures
         // explicit Access Management settings are enforced.
         if (!Array.isArray(permsForRole) || permsForRole.length === 0) return false;
-        return permsForRole.includes(requiredPerm);
+        return permsForRole.includes(requiredPermKey);
       }
       return roleMatch;
     }
@@ -158,7 +186,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     // If there are NO clinic-level overrides, hide any menu item that has a mapped permission
     // (require explicit Access Management entry). If no mapped permission exists, fall back
     // to static role membership.
-    if (requiredPerm) return false;
+    if (requiredPermKey) return false;
     return roleMatch;
   });
 

@@ -6,6 +6,7 @@ const ledgerService = {
   getAccounts: (q) => api.get('/accounts', { params: { q } }),
   createAccount: (payload) => api.post('/accounts', payload),
   getDetail: (id) => api.get(`/ledger/${id}`),
+  exportEntries: (params = {}) => api.get('/ledger/export', { params, responseType: 'blob' }),
   createManualEntry: (payload) => api.post('/ledger/manual', payload),
   createManualPurchase: (payload) => api.post('/ledger/manual/purchase', payload),
 };

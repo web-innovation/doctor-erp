@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FaUserInjured,
@@ -12,7 +13,15 @@ import {
   FaHospital,
   FaShieldAlt,
   FaClock,
+  FaRobot,
+  FaBolt,
+  FaLayerGroup,
+  FaFileUpload,
+  FaTable,
+  FaBook,
+  FaCheckCircle,
 } from 'react-icons/fa';
+import SEO from '../components/seo/SEO';
 
 const features = [
   {
@@ -51,6 +60,43 @@ const benefits = [
   { icon: FaClock, text: 'Save hours daily on administrative work' },
   { icon: FaShieldAlt, text: 'HIPAA compliant data security and routine security audits' },
   { icon: FaHospital, text: 'Startup-friendly — built for growing clinics' },
+];
+
+const uniqueHighlights = [
+  {
+    icon: FaLayerGroup,
+    title: 'One flow from appointment to billing',
+    description: 'Appointments, prescriptions, pharmacy, billing, and reports are connected so staff never re-enter the same data.',
+  },
+  {
+    icon: FaBolt,
+    title: 'Built for fast OPD operations',
+    description: 'Faster front-desk workflow, smart templates, and quick updates during rush hours.',
+  },
+  {
+    icon: FaRobot,
+    title: 'AI-powered daily assistance',
+    description: 'Smart suggestions for prescription, notes, and follow-up handling to reduce repetitive clinical work.',
+  },
+];
+
+const featurePages = [
+  {
+    path: '/features/patient-management-system-for-clinics',
+    label: 'Patient Management System for Clinics',
+  },
+  {
+    path: '/features/pharmacy-management-software-tricity',
+    label: 'Pharmacy Management Software',
+  },
+  {
+    path: '/features/online-report-dashboard-software-for-clinics-hospitals',
+    label: 'Online Report Dashboard Software',
+  },
+  {
+    path: '/features/smart-prescription-software-for-doctors',
+    label: 'Smart Prescription Software for Doctors',
+  },
 ];
 
 const pricingPlans = [
@@ -106,8 +152,29 @@ const pricingPlans = [
 const testimonials = [];
 
 export default function Landing() {
+  const [showDemoModal, setShowDemoModal] = useState(false);
+
   return (
     <div className="min-h-screen bg-white">
+      <SEO
+        title="Docsy ERP | Clinic Management Software for Doctors, Pharmacy, Billing & Reports"
+        description="Docsy ERP is a cloud clinic management software for doctors and healthcare teams. Manage patient records, smart prescriptions, pharmacy, billing, and live performance reports in one secure platform."
+        path="/"
+        schema={[
+          {
+            '@context': 'https://schema.org',
+            '@type': 'Organization',
+            name: 'Docsy ERP',
+            url: 'https://docsyerp.in',
+          },
+          {
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            name: 'Docsy ERP',
+            url: 'https://docsyerp.in',
+          },
+        ]}
+      />
       {/* Navigation */}
       <nav className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -119,6 +186,7 @@ export default function Landing() {
 
             <div className="hidden md:flex items-center space-x-8">
               <a href="#features" className="text-gray-600 hover:text-blue-600 transition">Features</a>
+              <a href="#why-choose" className="text-gray-600 hover:text-blue-600 transition">Why Choose Us</a>
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
               <Link
@@ -154,10 +222,13 @@ export default function Landing() {
                   to="/register"
                   className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition shadow-lg shadow-blue-600/30"
                 >
-                  Get Started Free
+                  Get Started
                   <FaArrowRight className="ml-2" />
                 </Link>
-                <button className="inline-flex items-center justify-center border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition">
+                <button
+                  onClick={() => setShowDemoModal(true)}
+                  className="inline-flex items-center justify-center border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition"
+                >
                   Book a Demo
                 </button>
               </div>
@@ -212,26 +283,144 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* SEO Feature Pages */}
+      <section className="py-14 bg-gray-50 border-y border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">Specialized Solutions by Department</h2>
+          <p className="text-gray-600 mb-6">Explore detailed feature pages designed around high-intent clinic management keywords.</p>
+          <div className="grid md:grid-cols-2 gap-3">
+            {featurePages.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className="group flex items-center justify-between bg-white rounded-xl border border-gray-200 px-5 py-4 hover:border-blue-200 hover:shadow-sm transition"
+              >
+                <span className="font-medium text-gray-800 group-hover:text-blue-700">{item.label}</span>
+                <FaArrowRight className="text-gray-400 group-hover:text-blue-600" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Unique Highlights */}
+      <section className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">What Makes Docsy ERP Different</h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Focused on connected clinic workflows, practical automation, and faster staff execution.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {uniqueHighlights.map((item) => (
+              <div key={item.title} className="rounded-2xl border border-gray-100 p-7 bg-white shadow-sm">
+                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center mb-5">
+                  <item.icon className="text-blue-700 text-xl" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">{item.title}</h3>
+                <p className="text-gray-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Invoice & Ledger Section */}
+      <section className="py-24 bg-gradient-to-br from-slate-50 to-blue-50 border-y border-blue-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Invoice Upload Review & Smart Ledger</h2>
+            <p className="text-xl text-gray-600 max-w-4xl mx-auto">
+              Two powerful features that remove tedious manual work and keep your clinic accounts accurate.
+            </p>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-8">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <FaFileUpload className="text-blue-700" />
+                </div>
+                <h3 className="text-2xl font-semibold text-gray-900">Invoice Upload & Review</h3>
+              </div>
+              <p className="text-gray-600 mb-5">
+                Upload supplier invoices, review extracted values, and confirm in minutes instead of entering line-by-line manually.
+              </p>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-center">
+                  <FaFileUpload className="mx-auto mb-2 text-blue-600" />
+                  Upload
+                </div>
+                <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-center">
+                  <FaTable className="mx-auto mb-2 text-indigo-600" />
+                  Review
+                </div>
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-center">
+                  <FaCheckCircle className="mx-auto mb-2 text-emerald-600" />
+                  Finalize
+                </div>
+              </div>
+              <ul className="mt-6 space-y-3 text-gray-700">
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Reduces data-entry effort for pharmacy purchase bills.</li>
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Cuts human mistakes by adding a review step before final save.</li>
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Saves staff time during high-volume billing days.</li>
+              </ul>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <FaBook className="text-amber-700" />
+                </div>
+                <h3 className="text-2xl font-semibold text-gray-900">Ledger That Stays Updated</h3>
+              </div>
+              <p className="text-gray-600 mb-5">
+                Automatically connected ledger entries help clinics track payable/receivable flow and make better cash decisions every day.
+              </p>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                <div className="flex items-center justify-between py-2 border-b border-slate-200">
+                  <span className="text-sm text-gray-600">Purchase Entry</span>
+                  <span className="text-sm font-semibold text-gray-900">Posted to Ledger</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-slate-200">
+                  <span className="text-sm text-gray-600">Sales Collection</span>
+                  <span className="text-sm font-semibold text-gray-900">Auto Reconciled</span>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-gray-600">Daily Summary</span>
+                  <span className="text-sm font-semibold text-gray-900">Ready for Review</span>
+                </div>
+              </div>
+              <ul className="mt-6 space-y-3 text-gray-700">
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Reduces bookkeeping confusion across counter, billing, and pharmacy.</li>
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Makes audit and month-end reconciliation faster.</li>
+                <li className="flex items-start gap-2"><FaCheck className="text-green-500 mt-1" />Improves visibility of clinic financial health in real time.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Benefits Section */}
-      <section className="py-24 bg-gradient-to-br from-blue-600 to-indigo-700">
+      <section id="why-choose" className="py-24 bg-gradient-to-br from-blue-600 to-indigo-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
               <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-                Why Doctors Love Docsy
+                Why Doctors Choose Docsy ERP
               </h2>
               <p className="text-blue-100 text-lg mb-8">
-                Join thousands of healthcare professionals who have transformed their practice
-                with our comprehensive clinic management solution.
+                Built to improve consultation speed, reduce billing leakages, and increase repeat patient retention through better follow-up and service quality.
               </p>
               <ul className="space-y-4">
                 {[
-                  'Reduce administrative work by 70%',
-                  'Never miss a follow-up appointment',
-                  'Instant access to patient history',
-                  'Secure cloud backup of all data',
-                  'Works on any device, anywhere',
-                  '24/7 customer support',
+                  'Faster front desk and OPD execution with fewer manual errors',
+                  'Higher patient trust with clear digital prescriptions and records',
+                  'Follow-up tracking helps improve revisit conversion',
+                  'Revenue visibility by doctor, service, and billing category',
+                  'Cloud access for owners to monitor clinic performance anywhere',
+                  'Dedicated onboarding and support for clinic teams',
                 ].map((item, index) => (
                   <li key={index} className="flex items-center text-white">
                     <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
@@ -308,21 +497,21 @@ export default function Landing() {
       <section id="customization" className="py-24 bg-gradient-to-br from-blue-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Custom Dashboard & Powerful Features</h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">Personalize your clinic dashboard and workflows — no extra charges for core customizations.</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">How Docsy ERP Makes Daily Work Awesome</h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">From reception to doctor to pharmacy, every step is faster, clearer, and easier to manage.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-2xl border">
               <h3 className="font-semibold mb-2">Custom Dashboard</h3>
-              <p className="text-gray-600">Choose widgets, arrange key KPIs, and create role-based views for doctors, reception and accountants.</p>
+              <p className="text-gray-600">Choose widgets, arrange KPIs, and create role-based screens for doctors, reception, and accountants.</p>
             </div>
             <div className="bg-white p-6 rounded-2xl border">
               <h3 className="font-semibold mb-2">Prescription & Billing</h3>
-              <p className="text-gray-600">Send prescriptions and bills via Email and WhatsApp instantly. PDF & XLS exports available.</p>
+              <p className="text-gray-600">Generate prescriptions and invoices quickly, then share by WhatsApp or print in one click.</p>
             </div>
             <div className="bg-white p-6 rounded-2xl border">
               <h3 className="font-semibold mb-2">WhatsApp Bot (Upcoming)</h3>
-              <p className="text-gray-600">Soon: operate clinic features via WhatsApp — book appointments, get reports and patient summaries without logging in.</p>
+              <p className="text-gray-600">Operate key clinic actions through WhatsApp commands like reminders, summaries, and updates.</p>
             </div>
           </div>
         </div>
@@ -331,8 +520,22 @@ export default function Landing() {
       {/* AI & Mobile Section */}
       <section id="ai-mobile" className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">AI Language Control & Mobile Apps</h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-8">Multi-language AI assistant (English & Hindi) to help with notes, prescriptions and smart suggestions. Native Android & iOS apps coming soon.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">How AI Makes Clinic Life Easier</h2>
+          <p className="text-xl text-gray-600 max-w-4xl mx-auto mb-8">Docsy ERP uses practical AI support for prescription drafting, consultation note structuring, and smart operational suggestions so doctors and staff can finish routine tasks faster with confidence.</p>
+          <div className="grid md:grid-cols-3 gap-4 text-left">
+            <div className="border border-gray-100 rounded-xl p-5">
+              <h3 className="font-semibold text-gray-900 mb-2">Smarter Documentation</h3>
+              <p className="text-gray-600">AI helps standardize notes and avoid missing important consultation details.</p>
+            </div>
+            <div className="border border-gray-100 rounded-xl p-5">
+              <h3 className="font-semibold text-gray-900 mb-2">Prescription Support</h3>
+              <p className="text-gray-600">Assistive suggestions reduce repetitive typing and improve clarity for patients.</p>
+            </div>
+            <div className="border border-gray-100 rounded-xl p-5">
+              <h3 className="font-semibold text-gray-900 mb-2">Operational Guidance</h3>
+              <p className="text-gray-600">AI-backed signals highlight pending follow-ups and bottlenecks before they grow.</p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -361,15 +564,51 @@ export default function Landing() {
               to="/register"
               className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
             >
-              Get Started Free
+              Get Started
               <FaArrowRight className="ml-2" />
             </Link>
-            <button className="inline-flex items-center justify-center border-2 border-gray-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:border-white transition">
+            <button
+              onClick={() => setShowDemoModal(true)}
+              className="inline-flex items-center justify-center border-2 border-gray-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:border-white transition"
+            >
               Schedule Demo
             </button>
           </div>
         </div>
       </section>
+
+      {showDemoModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">Book a Demo</h3>
+                <p className="mt-1 text-sm text-gray-600">Contact us to schedule your demo.</p>
+              </div>
+              <button
+                onClick={() => setShowDemoModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Email</p>
+                <a href="mailto:docsy360@gmail.com" className="text-blue-700 font-medium">
+                  docsy360@gmail.com
+                </a>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Phone</p>
+                <a href="tel:8284073790" className="block text-blue-700 font-medium">8284073790</a>
+                <a href="tel:9306845764" className="block text-blue-700 font-medium">9306845764</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="bg-gray-900 pt-16 pb-8">
@@ -389,9 +628,9 @@ export default function Landing() {
               <h4 className="text-white font-semibold mb-4">Product</h4>
               <ul className="space-y-2">
                 <li><a href="#features" className="text-gray-400 hover:text-white transition">Features</a></li>
-                <li><a href="#pricing" className="text-gray-400 hover:text-white transition">Pricing</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Integrations</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Updates</a></li>
+                <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
+                <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
+                <li><Link to="/features/smart-prescription-software-for-doctors" className="text-gray-400 hover:text-white transition">Smart Prescription</Link></li>
               </ul>
             </div>
             <div>
@@ -406,7 +645,7 @@ export default function Landing() {
             <div>
               <h4 className="text-white font-semibold mb-4">Legal</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Privacy Policy</a></li>
+                <li><Link to="/privacy" className="text-gray-400 hover:text-white transition">Privacy Policy</Link></li>
                 <li><a href="#" className="text-gray-400 hover:text-white transition">Terms of Service</a></li>
                 <li><a href="#" className="text-gray-400 hover:text-white transition">Cookie Policy</a></li>
               </ul>

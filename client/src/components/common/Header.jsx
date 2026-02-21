@@ -18,12 +18,14 @@ import staffService from '../../services/staffService';
 import authService from '../../services/authService';
 import { useQueryClient } from '@tanstack/react-query';
 import { dashboardService } from '../../services/dashboardService';
+import appNotificationService from '../../services/appNotificationService';
 
 const Header = ({ onMenuClick }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [customNotifications, setCustomNotifications] = useState([]);
   
   const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -46,7 +48,7 @@ const Header = ({ onMenuClick }) => {
   });
 
   // Convert alerts to notifications format
-  const notifications = (alertsData?.data?.alerts || []).map((alert, index) => ({
+  const dashboardNotifications = (alertsData?.data?.alerts || []).map((alert, index) => ({
     id: index + 1,
     title: alert.title,
     message: alert.message,
@@ -58,7 +60,7 @@ const Header = ({ onMenuClick }) => {
   // Add upcoming appointments as notifications
   const upcomingAppointments = alertsData?.data?.upcomingAppointments || [];
   upcomingAppointments.forEach((apt, index) => {
-    notifications.push({
+    dashboardNotifications.push({
       id: 100 + index,
       title: 'Upcoming Appointment',
       message: `${apt.patient?.name} at ${apt.timeSlot || 'scheduled'}`,
@@ -66,6 +68,13 @@ const Header = ({ onMenuClick }) => {
       unread: true
     });
   });
+
+  const localNotifications = (customNotifications || []).map((n) => ({
+    ...n,
+    time: n?.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now'
+  }));
+
+  const notifications = [...localNotifications, ...dashboardNotifications];
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
@@ -173,6 +182,19 @@ const Header = ({ onMenuClick }) => {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setCustomNotifications(appNotificationService.list());
+    };
+    sync();
+    window.addEventListener(appNotificationService.updateEvent, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(appNotificationService.updateEvent, sync);
+      window.removeEventListener('storage', sync);
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -325,6 +347,17 @@ const Header = ({ onMenuClick }) => {
     }
   };
 
+  const handleNotificationClick = (notification) => {
+    if (!notification) return;
+    if (notification.source === 'local' && notification.id) {
+      appNotificationService.remove(notification.id);
+    }
+    if (notification.path) {
+      navigate(notification.path);
+    }
+    setShowNotifications(false);
+  };
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
       <div className="px-4 md:px-6 lg:px-8">
@@ -456,6 +489,7 @@ const Header = ({ onMenuClick }) => {
                           className={`px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 ${
                             notification.unread ? 'bg-blue-50/50' : ''
                           }`}
+                          onClick={() => handleNotificationClick(notification)}
                         >
                           <div className="flex items-start">
                             {notification.unread && (

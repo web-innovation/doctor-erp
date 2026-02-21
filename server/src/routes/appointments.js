@@ -36,8 +36,18 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
       where.date = { gte: d, lt: nextDay };
     } else if (startDate || endDate) {
       where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        where.date.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(0, 0, 0, 0);
+        const nextDay = new Date(end);
+        nextDay.setDate(nextDay.getDate() + 1);
+        where.date.lt = nextDay;
+      }
     }
     
     if (status) where.status = status;

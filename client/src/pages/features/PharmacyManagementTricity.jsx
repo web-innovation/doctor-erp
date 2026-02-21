@@ -1,0 +1,21 @@
+import FeaturePageTemplate from './FeaturePageTemplate';
+
+export default function PharmacyManagementTricity() {
+  return (
+    <FeaturePageTemplate
+      path="/features/pharmacy-management-software-tricity"
+      title="Pharmacy Management Software"
+      subtitle="Smart, cloud-based pharmacy software for Chandigarh, Mohali & Panchkula — manage billing, inventory, GST, and prescriptions with complete accuracy and speed."
+      description="Built for fast-moving clinic pharmacies in Tricity, Docsy ERP simplifies medicine billing, stock control, GST-ready invoices, and prescription-linked dispensing. Reduce stockouts, billing errors, and manual reconciliation."
+      points={[
+        'Real-time inventory with expiry alerts and low-stock notifications.',
+        'Prescription-to-dispense workflow avoids medicine mismatch issues.',
+        'GST-compliant billing with accurate tax breakup and reports.',
+        'Purchase and supplier tracking for better margin control.',
+        'Daily sales and product performance dashboards for smarter decisions.',
+        'Suitable for single-clinic and multi-branch pharmacy operations.',
+      ]}
+    />
+  );
+}
+
