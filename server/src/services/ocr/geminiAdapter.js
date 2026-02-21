@@ -11,14 +11,23 @@ if (!KEY) {
   // do not throw during import; parse() will error if key missing
 }
 
-// Initialize Google GenAI client using the configured key
-const _aiClient = new GoogleGenAI({ apiKey: KEY });
+let _aiClient = null;
+function getGeminiClient() {
+  if (!KEY) {
+    throw new Error('GEMINI_API_KEY not set. Set GEMINI_API_KEY in environment.');
+  }
+  if (!_aiClient) {
+    _aiClient = new GoogleGenAI({ apiKey: KEY });
+  }
+  return _aiClient;
+}
 
 async function callGeminiWithText(text) {
   // Use @google/genai client to call the model. This mirrors the example provided by the user.
   try {
+    const aiClient = getGeminiClient();
     console.log('[geminiAdapter] calling GenAI model', MODEL, 'payloadLen=', (text || '').length);
-    const res = await _aiClient.models.generateContent({ model: MODEL, contents: text });
+    const res = await aiClient.models.generateContent({ model: MODEL, contents: text });
     // Log a compact summary of the raw response for debugging
     try { console.log('[geminiAdapter] GenAI raw response keys:', Object.keys(res || {})); } catch (e) { /* ignore */ }
     // Normalize output: the library may expose text on different properties depending on version
