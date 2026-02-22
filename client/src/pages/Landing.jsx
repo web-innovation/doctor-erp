@@ -20,6 +20,8 @@ import {
   FaTable,
   FaBook,
   FaCheckCircle,
+  FaFacebookF,
+  FaYoutube,
 } from 'react-icons/fa';
 import SEO from '../components/seo/SEO';
 
@@ -611,6 +613,28 @@ export default function Landing() {
                   <p>support@docsyerp.com</p>
                   <p>docsy360@gmail.com</p>
                   <p>8284073790, 9306845764</p>
+                </div>
+                <div className="mt-4 flex items-center gap-4">
+                  <a
+                    href="https://www.facebook.com/profile.php?id=61587785650391"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-white transition"
+                    aria-label="Facebook Page"
+                    title="Facebook Page"
+                  >
+                    <FaFacebookF className="h-5 w-5" />
+                  </a>
+                  <a
+                    href="https://www.youtube.com/channel/UCC_jW5UEsW0xaasPXVtkfgw"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-white transition"
+                    aria-label="YouTube Channel"
+                    title="YouTube Channel"
+                  >
+                    <FaYoutube className="h-5 w-5" />
+                  </a>
                 </div>
             </div>
             <div>

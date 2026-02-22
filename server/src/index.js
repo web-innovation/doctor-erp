@@ -27,7 +27,7 @@ const __dirname = path.dirname(__filename);
 
 // HIPAA Compliance imports
 import { hipaaAuditMiddleware } from './middleware/hipaaAudit.js';
-import { hipaaSecurityHeaders, sanitizeRequest } from './middleware/hipaaSecurityHeaders.js';
+import { hipaaSecurityHeaders, sanitizeRequest, forceHTTPS } from './middleware/hipaaSecurityHeaders.js';
 import { sessionTimeoutMiddleware } from './middleware/sessionManager.js';
 import { validateEncryptionSetup } from './utils/encryption.js';
 
@@ -59,6 +59,22 @@ export default app;
 
 // Trust proxy headers (needed for correct protocol/host in redirects behind load balancers)
 app.set('trust proxy', 1);
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Enforce HTTPS redirects in production.
+app.use(forceHTTPS);
+
+// Explicit HSTS for HTTPS requests in production.
+// This guarantees the header even when running behind reverse proxies/CDNs.
+app.use((req, res, next) => {
+  if (!isProduction) return next();
+  const forwardedProto = (req.get('x-forwarded-proto') || '').toString().toLowerCase();
+  const isHttps = req.secure || forwardedProto === 'https';
+  if (isHttps) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  return next();
+});
 
 // Canonical host redirect (www -> non-www) in production
 app.use((req, res, next) => {
@@ -77,8 +93,6 @@ app.use(compression());
 
 // Security Headers (includes Helmet enhancements)
 // In production, relax CSP since we're serving the React app from the same server
-const isProduction = process.env.NODE_ENV === 'production';
-
 app.use(helmet({
   contentSecurityPolicy: isProduction ? false : {
     directives: {

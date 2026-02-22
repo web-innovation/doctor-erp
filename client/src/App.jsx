@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth, useHasPerm } from './context/AuthContext';
 import { SessionTimeoutWarning } from './components/common';
@@ -6,50 +7,49 @@ import { SessionTimeoutWarning } from './components/common';
 import DashboardLayout from './layouts/DashboardLayout';
 import AuthLayout from './layouts/AuthLayout';
 
-// Auth Pages
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import ForgotPassword from './pages/auth/ForgotPassword';
-
-// Dashboard Pages
-import Dashboard from './pages/Dashboard';
-import Patients from './pages/patients/Patients';
-import PatientDetails from './pages/patients/PatientDetails';
-import Appointments from './pages/appointments/Appointments';
-import AppointmentCalendar from './pages/appointments/AppointmentCalendar';
-import Prescriptions from './pages/prescriptions/Prescriptions';
-import PrescriptionDetail from './pages/prescriptions/PrescriptionDetail';
-import NewPrescription from './pages/prescriptions/NewPrescription';
-import Pharmacy from './pages/pharmacy/Pharmacy';
-import UploadPurchase from './pages/pharmacy/UploadPurchase';
-import Ledger from './pages/pharmacy/Ledger';
-import ManualEntry from './pages/pharmacy/ManualEntry';
-import Suppliers from './pages/pharmacy/Suppliers';
-import Purchases from './pages/pharmacy/Purchases';
-import Billing from './pages/billing/Billing';
-import NewBill from './pages/billing/NewBill';
-import Staff from './pages/staff/Staff';
-import Attendance from './pages/staff/Attendance';
-import Leave from './pages/staff/Leave';
-import Reports from './pages/reports/Reports';
-import LabsAgents from './pages/labs-agents/LabsAgents';
-import LabTests from './pages/labs-agents/LabTests';
-import Settings from './pages/settings/Settings';
-
-// Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import Clinics from './pages/admin/Clinics';
-import ClinicDetail from './pages/admin/ClinicDetail';
-import Users from './pages/admin/Users';
-
-// Landing Page
+// Landing Page (keep eagerly loaded for best first paint / SEO crawlability)
 import Landing from './pages/Landing';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import TermsOfService from './pages/TermsOfService';
-import PatientManagementClinics from './pages/features/PatientManagementClinics';
-import PharmacyManagementTricity from './pages/features/PharmacyManagementTricity';
-import OnlineReportDashboardClinicsHospitals from './pages/features/OnlineReportDashboardClinicsHospitals';
-import SmartPrescriptionDoctors from './pages/features/SmartPrescriptionDoctors';
+
+// Route-level code splitting to reduce homepage JS payload
+const Login = lazy(() => import('./pages/auth/Login'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Patients = lazy(() => import('./pages/patients/Patients'));
+const PatientDetails = lazy(() => import('./pages/patients/PatientDetails'));
+const Appointments = lazy(() => import('./pages/appointments/Appointments'));
+const AppointmentCalendar = lazy(() => import('./pages/appointments/AppointmentCalendar'));
+const Prescriptions = lazy(() => import('./pages/prescriptions/Prescriptions'));
+const PrescriptionDetail = lazy(() => import('./pages/prescriptions/PrescriptionDetail'));
+const NewPrescription = lazy(() => import('./pages/prescriptions/NewPrescription'));
+const Pharmacy = lazy(() => import('./pages/pharmacy/Pharmacy'));
+const UploadPurchase = lazy(() => import('./pages/pharmacy/UploadPurchase'));
+const Ledger = lazy(() => import('./pages/pharmacy/Ledger'));
+const ManualEntry = lazy(() => import('./pages/pharmacy/ManualEntry'));
+const Suppliers = lazy(() => import('./pages/pharmacy/Suppliers'));
+const Purchases = lazy(() => import('./pages/pharmacy/Purchases'));
+const Billing = lazy(() => import('./pages/billing/Billing'));
+const NewBill = lazy(() => import('./pages/billing/NewBill'));
+const Staff = lazy(() => import('./pages/staff/Staff'));
+const Attendance = lazy(() => import('./pages/staff/Attendance'));
+const Leave = lazy(() => import('./pages/staff/Leave'));
+const Reports = lazy(() => import('./pages/reports/Reports'));
+const LabsAgents = lazy(() => import('./pages/labs-agents/LabsAgents'));
+const LabTests = lazy(() => import('./pages/labs-agents/LabTests'));
+const Settings = lazy(() => import('./pages/settings/Settings'));
+
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const Clinics = lazy(() => import('./pages/admin/Clinics'));
+const ClinicDetail = lazy(() => import('./pages/admin/ClinicDetail'));
+const Users = lazy(() => import('./pages/admin/Users'));
+
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const PatientManagementClinics = lazy(() => import('./pages/features/PatientManagementClinics'));
+const PharmacyManagementTricity = lazy(() => import('./pages/features/PharmacyManagementTricity'));
+const OnlineReportDashboardClinicsHospitals = lazy(() => import('./pages/features/OnlineReportDashboardClinicsHospitals'));
+const SmartPrescriptionDoctors = lazy(() => import('./pages/features/SmartPrescriptionDoctors'));
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
@@ -83,7 +83,14 @@ function App() {
     <>
       {/* HIPAA: Session timeout warning for authenticated users */}
       {user && <SessionTimeoutWarning />}
-      
+
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
+          </div>
+        }
+      >
       <Routes>
       {/* Public Routes */}
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
@@ -196,6 +203,7 @@ function App() {
         </div>
       } />
     </Routes>
+    </Suspense>
     </>
   );
 }
