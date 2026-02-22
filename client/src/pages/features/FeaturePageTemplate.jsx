@@ -32,7 +32,6 @@ export default function FeaturePageTemplate({
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/login" className="text-sm text-gray-600 hover:text-blue-600">Login</Link>
-            <Link to="/register" className="text-sm bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Get Started</Link>
           </div>
         </div>
       </header>
@@ -61,13 +60,12 @@ export default function FeaturePageTemplate({
 
         <section className="mt-12 bg-gray-900 text-white rounded-2xl p-8 text-center">
           <h2 className="text-2xl font-semibold mb-2">Ready to See It in Action?</h2>
-          <p className="text-gray-300 mb-5">Start with Docsy ERP and scale your clinic operations confidently.</p>
-          <Link to="/register" className="inline-block bg-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-700">
-            Start Free Trial
+          <p className="text-gray-300 mb-5">Contact us to schedule a demo and explore how Docsy ERP fits your clinic.</p>
+          <Link to="/login" className="inline-block bg-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-700">
+            Login
           </Link>
         </section>
       </main>
     </div>
   );
 }
-

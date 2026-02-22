@@ -27,6 +27,18 @@ function normalizeAccessControls(value) {
   };
 }
 
+function resolveClinicIdForRead(req) {
+  const userClinicId = req?.user?.clinicId;
+  if (userClinicId) return { clinicId: userClinicId, allowFallback: false };
+
+  const roles = `${req?.user?.role || ''} ${req?.user?.effectiveRole || ''}`.toUpperCase();
+  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  let fromQuery = req?.query?.clinicId || req?.headers?.['x-clinic-id'] || null;
+  if (Array.isArray(fromQuery)) fromQuery = fromQuery[0] || null;
+  if (fromQuery) return { clinicId: String(fromQuery), allowFallback: false };
+  return { clinicId: null, allowFallback: isSuperAdmin };
+}
+
 // Helper function to get clinic data
 async function getClinicData(clinicId, res, next) {
   try {
@@ -202,7 +214,11 @@ router.get('/tax-config', async (req, res, next) => {
 // Allow any authenticated clinic user to read role overrides so UI can adapt per-clinic settings
 router.get('/role-permissions', async (req, res, next) => {
   try {
-    const clinic = await prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } });
+    const { clinicId, allowFallback } = resolveClinicIdForRead(req);
+    if (!clinicId && allowFallback) return res.json({ success: true, data: null });
+    if (!clinicId) return res.status(400).json({ success: false, message: 'clinicId is required' });
+
+    const clinic = await prisma.clinic.findUnique({ where: { id: clinicId }, select: { rolePermissions: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
     const data = clinic.rolePermissions ? JSON.parse(clinic.rolePermissions) : null;
     res.json({ success: true, data });
@@ -214,7 +230,12 @@ router.get('/role-permissions', async (req, res, next) => {
 // GET /access-controls - super admin access controls for the clinic (read-only)
 router.get('/access-controls', async (req, res, next) => {
   try {
-    const clinicId = req.user.clinicId;
+    const { clinicId, allowFallback } = resolveClinicIdForRead(req);
+    if (!clinicId && allowFallback) {
+      return res.json({ success: true, data: normalizeAccessControls({}) });
+    }
+    if (!clinicId) return res.status(400).json({ success: false, message: 'clinicId is required' });
+
     const row = await prisma.clinicSettings.findUnique({
       where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
       select: { value: true }

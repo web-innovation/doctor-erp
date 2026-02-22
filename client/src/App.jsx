@@ -45,6 +45,7 @@ import Users from './pages/admin/Users';
 // Landing Page
 import Landing from './pages/Landing';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import PatientManagementClinics from './pages/features/PatientManagementClinics';
 import PharmacyManagementTricity from './pages/features/PharmacyManagementTricity';
 import OnlineReportDashboardClinicsHospitals from './pages/features/OnlineReportDashboardClinicsHospitals';
@@ -87,6 +88,7 @@ function App() {
       {/* Public Routes */}
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfService />} />
       <Route path="/features/patient-management-system-for-clinics" element={<PatientManagementClinics />} />
       <Route path="/features/pharmacy-management-software-tricity" element={<PharmacyManagementTricity />} />
       <Route path="/features/online-report-dashboard-software-for-clinics-hospitals" element={<OnlineReportDashboardClinicsHospitals />} />

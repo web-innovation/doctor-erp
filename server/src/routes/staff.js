@@ -7,6 +7,20 @@ import { logAuthEvent } from '../middleware/hipaaAudit.js';
 const router = express.Router();
 router.use(authenticate);
 
+function resolveClinicId(req) {
+  const userClinicId = req?.user?.clinicId;
+  if (userClinicId) return { clinicId: userClinicId, allowFallback: false };
+
+  const roles = `${req?.user?.role || ''} ${req?.user?.effectiveRole || ''}`.toUpperCase();
+  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  if (!isSuperAdmin) return { clinicId: null, allowFallback: false, error: 'Clinic is not assigned to this user.' };
+
+  let fromQuery = req?.query?.clinicId || req?.headers?.['x-clinic-id'] || null;
+  if (Array.isArray(fromQuery)) fromQuery = fromQuery[0] || null;
+  if (!fromQuery) return { clinicId: null, allowFallback: true, error: 'clinicId is required for super admin requests.' };
+  return { clinicId: String(fromQuery), allowFallback: false };
+}
+
 async function enforceClinicStaffLimit(clinicId) {
   const controls = await prisma.clinicSettings.findUnique({
     where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
@@ -39,7 +53,18 @@ router.get('/', checkPermission('staff', 'read'), async (req, res, next) => {
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
-    const clinicId = req.user.clinicId;
+    const { clinicId, allowFallback, error } = resolveClinicId(req);
+    if (!clinicId) {
+      if (allowFallback) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 },
+          message: error || 'No clinic selected.'
+        });
+      }
+      return res.status(400).json({ success: false, message: error || 'clinicId is required' });
+    }
 
     const where = { clinicId };
     if (department) where.department = department;

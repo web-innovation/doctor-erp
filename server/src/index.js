@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -55,6 +56,24 @@ export default app;
 // ===========================================
 // MIDDLEWARE
 // ===========================================
+
+// Trust proxy headers (needed for correct protocol/host in redirects behind load balancers)
+app.set('trust proxy', 1);
+
+// Canonical host redirect (www -> non-www) in production
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production') return next();
+  const host = (req.headers.host || '').toString();
+  if (host.startsWith('www.')) {
+    const targetHost = host.replace(/^www\./i, '');
+    const protocol = req.protocol || 'https';
+    return res.redirect(301, `${protocol}://${targetHost}${req.originalUrl}`);
+  }
+  return next();
+});
+
+// Enable gzip/brotli compression
+app.use(compression());
 
 // Security Headers (includes Helmet enhancements)
 // In production, relax CSP since we're serving the React app from the same server

@@ -59,7 +59,7 @@ const features = [
 const benefits = [
   { icon: FaClock, text: 'Save hours daily on administrative work' },
   { icon: FaShieldAlt, text: 'HIPAA compliant data security and routine security audits' },
-  { icon: FaHospital, text: 'Startup-friendly — built for growing clinics' },
+  { icon: FaHospital, text: 'Startup-friendly - built for growing clinics' },
 ];
 
 const uniqueHighlights = [
@@ -116,7 +116,7 @@ const pricingPlans = [
   },
   {
     name: 'Pro',
-    price: '₹1,999',
+    price: 'Rs 1,999',
     period: '/month',
     description: 'Best for growing clinics',
     features: [
@@ -132,7 +132,7 @@ const pricingPlans = [
   },
   {
     name: 'Enterprise',
-    price: '₹4,999',
+    price: 'Rs 4,999',
     period: '/month',
     description: 'For multi-location clinics',
     features: [
@@ -189,12 +189,6 @@ export default function Landing() {
               <a href="#why-choose" className="text-gray-600 hover:text-blue-600 transition">Why Choose Us</a>
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
-              <Link
-                to="/register"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-              >
-                Get Started
-              </Link>
             </div>
           </div>
         </div>
@@ -218,13 +212,6 @@ export default function Landing() {
                 and seamless billing. Everything you need to run a successful clinic.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link
-                  to="/register"
-                  className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition shadow-lg shadow-blue-600/30"
-                >
-                  Get Started
-                  <FaArrowRight className="ml-2" />
-                </Link>
                 <button
                   onClick={() => setShowDemoModal(true)}
                   className="inline-flex items-center justify-center border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition"
@@ -544,9 +531,9 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">G&A AI</h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-6">
-            G&A AI provides intelligent assistance for clinical notes, prescriptions, and business insights — multilingual support and contextual suggestions to speed up your workflow.
+            G&A AI provides intelligent assistance for clinical notes, prescriptions, and business insights - multilingual support and contextual suggestions to speed up your workflow.
           </p>
-          <p className="text-sm text-gray-400">Copyright © G&A AI</p>
+          <p className="text-sm text-gray-400">Copyright (c) G&A AI</p>
         </div>
       </section>
 
@@ -560,13 +547,6 @@ export default function Landing() {
             Join 500+ clinics already using Docsy to deliver better patient care.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              to="/register"
-              className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
-            >
-              Get Started
-              <FaArrowRight className="ml-2" />
-            </Link>
             <button
               onClick={() => setShowDemoModal(true)}
               className="inline-flex items-center justify-center border-2 border-gray-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:border-white transition"
@@ -636,24 +616,24 @@ export default function Landing() {
             <div>
               <h4 className="text-white font-semibold mb-4">Company</h4>
               <ul className="space-y-2">
-                <li><a href="#" className="text-gray-400 hover:text-white transition">About</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Blog</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Careers</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Contact</a></li>
+                <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
+                <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
+                <li><Link to="/login" className="text-gray-400 hover:text-white transition">Login</Link></li>
               </ul>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Legal</h4>
               <ul className="space-y-2">
                 <li><Link to="/privacy" className="text-gray-400 hover:text-white transition">Privacy Policy</Link></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Terms of Service</a></li>
-                <li><a href="#" className="text-gray-400 hover:text-white transition">Cookie Policy</a></li>
+                <li><Link to="/terms" className="text-gray-400 hover:text-white transition">Terms of Service</Link></li>
+                <li><a href="#features" className="text-gray-400 hover:text-white transition">Features</a></li>
+                <li><a href="#reports" className="text-gray-400 hover:text-white transition">Reports</a></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-gray-800 pt-8 text-center">
             <p className="text-gray-400">
-              © {new Date().getFullYear()} Docsy. All rights reserved.
+              (c) {new Date().getFullYear()} Docsy. All rights reserved.
             </p>
           </div>
         </div>
