@@ -1,0 +1,906 @@
+// PostgreSQL schema for RDS (opt-in). Use with --schema=./prisma/schema.postgres.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// USER & AUTHENTICATION
+// ==========================================
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  phone       String    @unique
+  password    String
+  name        String
+  role        String    @default("STAFF") // SUPER_ADMIN, DOCTOR, RECEPTIONIST, PHARMACIST, ACCOUNTANT, STAFF
+  isActive    Boolean   @default(true)
+  avatar      String?
+  preferences String? // JSON string for dashboard preferences
+  lastLogin   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  clinic           Clinic?          @relation(fields: [clinicId], references: [id])
+  clinicId         String?
+  staffProfile     Staff?
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  purchaseUploads  PurchaseUpload[]
+  purchasesCreated Purchase[]
+  // Accounts created by this user
+  createdAccounts  Account[]
+
+  // Relations for doctor-scoped entities
+  primaryPatients          Patient[]         @relation("PatientPrimaryDoctor")
+  appointmentsAsDoctor     Appointment[]     @relation("AppointmentDoctor")
+  prescriptionsAsDoctor    Prescription[]    @relation("PrescriptionDoctor")
+  staffAssignmentsAsDoctor StaffAssignment[] @relation("StaffAssignmentDoctor")
+  billsAsDoctor            Bill[]            @relation("BillDoctor")
+  BillItem                 BillItem[]
+
+  @@index([clinicId])
+  @@index([phone])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  device    String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+}
+
+// ==========================================
+// CLINIC CONFIGURATION
+// ==========================================
+
+model Clinic {
+  id              String  @id @default(uuid())
+  name            String
+  logo            String?
+  address         String
+  city            String
+  state           String
+  pincode         String
+  phone           String
+  email           String?
+  website         String?
+  gstNumber       String?
+  licenseNumber   String?
+  taxConfig       String? // JSON string
+  workingHours    String? // JSON string
+  rolePermissions String? // JSON string mapping roles to allowed permission keys
+  slotDuration    Int     @default(15)
+  isActive        Boolean @default(true)
+
+  // Document AI flag: when true, this clinic will use Google Document AI for OCR parsing
+  documentAiEnabled Boolean  @default(false)
+  documentAiConfig  String? // JSON string containing processorId, project, location, etc.
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  users             User[]
+  staff             Staff[]
+  staffAssignments  StaffAssignment[]
+  patients          Patient[]
+  appointments      Appointment[]
+  prescriptions     Prescription[]
+  bills             Bill[]
+  pharmacy          PharmacyProduct[]
+  labs              Lab[]
+  labTests          LabTest[]
+  agents            Agent[]
+  payments          Payment[]
+  purchases         Purchase[]
+  suppliers         Supplier[]
+  purchaseUploads   PurchaseUpload[]
+  stockTransactions StockTransaction[]
+  ledgerEntries     LedgerEntry[]
+  // Chart of accounts for this clinic
+  accounts          Account[]
+  documentAiUsages  DocumentAiUsage[]
+}
+
+// ==========================================
+// STAFF MANAGEMENT
+// ==========================================
+
+model Staff {
+  id               String   @id @default(uuid())
+  employeeId       String   @unique
+  designation      String
+  department       String?
+  joinDate         DateTime
+  salary           Float
+  bankAccount      String?
+  panNumber        String?
+  aadharNumber     String?
+  address          String?
+  emergencyContact String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id])
+  userId           String            @unique
+  clinic           Clinic            @relation(fields: [clinicId], references: [id])
+  clinicId         String
+  attendance       Attendance[]
+  leaves           Leave[]
+  assignments      StaffAssignment[]
+  labStaffMappings LabStaff[]
+
+  @@index([clinicId])
+}
+
+model Attendance {
+  id          String    @id @default(uuid())
+  date        DateTime
+  checkIn     DateTime?
+  checkOut    DateTime?
+  status      String    @default("PRESENT") // PRESENT, ABSENT, HALF_DAY, LATE, ON_LEAVE
+  notes       String?
+  hoursWorked Float?
+
+  createdAt DateTime @default(now())
+
+  staff   Staff  @relation(fields: [staffId], references: [id])
+  staffId String
+
+  @@unique([staffId, date])
+  @@index([date])
+}
+
+model Leave {
+  id         String    @id @default(uuid())
+  startDate  DateTime
+  endDate    DateTime
+  type       String // CASUAL, SICK, EARNED, UNPAID, MATERNITY, PATERNITY
+  reason     String
+  status     String    @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED
+  approvedBy String?
+  approvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff   Staff  @relation(fields: [staffId], references: [id])
+  staffId String
+
+  @@index([staffId])
+  @@index([status])
+}
+
+// ==========================================
+// PATIENT MANAGEMENT
+// ==========================================
+
+model Patient {
+  id               String    @id @default(uuid())
+  patientId        String    @unique // Custom ID like P-0001
+  name             String
+  phone            String
+  email            String?
+  gender           String // MALE, FEMALE, OTHER
+  dateOfBirth      DateTime?
+  age              Int?
+  bloodGroup       String?
+  address          String?
+  city             String?
+  emergencyContact String?
+  allergies        String? // JSON array string
+  medicalHistory   String? // JSON string
+  insurance        String?
+  primaryDoctor    User?     @relation("PatientPrimaryDoctor", fields: [primaryDoctorId], references: [id])
+  primaryDoctorId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic        Clinic         @relation(fields: [clinicId], references: [id])
+  clinicId      String
+  appointments  Appointment[]
+  prescriptions Prescription[]
+  bills         Bill[]
+  vitals        PatientVital[]
+
+  @@index([clinicId])
+  @@index([phone])
+  @@index([patientId])
+}
+
+model PatientVital {
+  id            String   @id @default(uuid())
+  recordedAt    DateTime @default(now())
+  weight        Float?
+  height        Float?
+  bloodPressure String?
+  pulse         Int?
+  temperature   Float?
+  spO2          Int?
+  bloodSugar    Float?
+  notes         String?
+
+  patient   Patient @relation(fields: [patientId], references: [id])
+  patientId String
+
+  @@index([patientId])
+  @@index([recordedAt])
+}
+
+// ==========================================
+// APPOINTMENTS & OPD
+// ==========================================
+
+model Appointment {
+  id              String    @id @default(uuid())
+  appointmentNo   String    @unique
+  date            DateTime
+  timeSlot        String
+  type            String    @default("CONSULTATION") // CONSULTATION, FOLLOW_UP, EMERGENCY, LAB_TEST, PROCEDURE
+  status          String    @default("SCHEDULED") // SCHEDULED, CONFIRMED, IN_QUEUE, IN_PROGRESS, COMPLETED, CANCELLED, NO_SHOW
+  symptoms        String?
+  notes           String?
+  consultationFee Float?
+  bookedVia       String?
+  confirmedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  patientId    String
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  clinicId     String
+  doctor       User?         @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  doctorId     String?
+  prescription Prescription?
+
+  @@index([clinicId, date])
+  @@index([patientId])
+  @@index([status])
+}
+
+// ==========================================
+// PRESCRIPTIONS
+// ==========================================
+
+model Prescription {
+  id              String    @id @default(uuid())
+  prescriptionNo  String    @unique
+  date            DateTime  @default(now())
+  diagnosis       String? // JSON array string
+  symptoms        String? // JSON array string
+  clinicalNotes   String?
+  advice          String?
+  followUpDate    DateTime?
+  vitalsSnapshot  String? // JSON string
+  pdfUrl          String?
+  sentViaWhatsApp Boolean   @default(false)
+  sentViaEmail    Boolean   @default(false)
+  sentAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient       Patient                @relation(fields: [patientId], references: [id])
+  patientId     String
+  clinic        Clinic                 @relation(fields: [clinicId], references: [id])
+  clinicId      String
+  appointment   Appointment?           @relation(fields: [appointmentId], references: [id])
+  appointmentId String?                @unique
+  medicines     PrescriptionMedicine[]
+  labTests      PrescriptionLabTest[]
+  doctor        User?                  @relation("PrescriptionDoctor", fields: [doctorId], references: [id])
+  doctorId      String?
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@index([date])
+}
+
+model PrescriptionMedicine {
+  id           String  @id @default(uuid())
+  medicineName String
+  genericName  String?
+  dosage       String
+  frequency    String
+  duration     String
+  timing       String?
+  quantity     Int
+  instructions String?
+  isExternal   Boolean @default(false)
+
+  prescription    Prescription     @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  prescriptionId  String
+  pharmacyProduct PharmacyProduct? @relation(fields: [productId], references: [id])
+  productId       String?
+
+  @@index([prescriptionId])
+}
+
+model PrescriptionLabTest {
+  id           String  @id @default(uuid())
+  testName     String
+  instructions String?
+  isExternal   Boolean @default(false)
+
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  prescriptionId String
+  lab            Lab?         @relation(fields: [labId], references: [id])
+  labId          String?
+
+  @@index([prescriptionId])
+}
+
+// ==========================================
+// PHARMACY MANAGEMENT
+// ==========================================
+
+model PharmacyProduct {
+  id            String    @id @default(uuid())
+  code          String
+  name          String
+  genericName   String?
+  manufacturer  String?
+  category      String
+  mrp           Float
+  purchasePrice Float
+  sellingPrice  Float
+  gstPercent    Float     @default(12)
+  quantity      Int       @default(0)
+  minStock      Int       @default(10)
+  unit          String    @default("pcs")
+  batchNumber   String?
+  expiryDate    DateTime?
+  rackNumber    String?
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic            Clinic                 @relation(fields: [clinicId], references: [id])
+  clinicId          String
+  stockHistory      StockHistory[]
+  prescriptions     PrescriptionMedicine[]
+  billItems         BillItem[]
+  batches           StockBatch[]
+  purchaseItems     PurchaseItem[]
+  stockTransactions StockTransaction[]
+
+  @@unique([clinicId, code])
+  @@index([clinicId])
+  @@index([name])
+  @@index([quantity])
+}
+
+model StockHistory {
+  id           String  @id @default(uuid())
+  type         String // PURCHASE, SALE, ADJUSTMENT, RETURN, EXPIRED, DAMAGED
+  quantity     Int
+  previousQty  Int
+  newQty       Int
+  reference    String?
+  notes        String?
+  updatedVia   String?
+  billImageUrl String?
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  product   PharmacyProduct @relation(fields: [productId], references: [id])
+  productId String
+  batch     StockBatch?     @relation(fields: [batchId], references: [id])
+  batchId   String?
+
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model StockBatch {
+  id           String          @id @default(uuid())
+  product      PharmacyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId    String
+  batchNumber  String?
+  quantity     Int             @default(0)
+  expiryDate   DateTime?
+  receivedAt   DateTime        @default(now())
+  costPrice    Float?
+  createdAt    DateTime        @default(now())
+  stockHistory StockHistory[]
+
+  @@index([productId])
+  @@index([expiryDate])
+}
+
+// ==========================================
+// PURCHASES / SUPPLIER MANAGEMENT
+// ==========================================
+
+model Supplier {
+  id        String  @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  gstNumber String?
+  notes     String?
+
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  clinicId String
+
+  purchases Purchase[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+}
+
+model Purchase {
+  id          String   @id @default(uuid())
+  invoiceNo   String
+  invoiceDate DateTime
+  status      String   @default("DRAFT") // DRAFT, PARSED, RECEIVED, PAID, CANCELLED
+  notes       String?
+  subtotal    Float    @default(0)
+  taxAmount   Float    @default(0)
+  totalAmount Float    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic      Clinic    @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  supplierId  String?
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdById String?
+
+  items   PurchaseItem[]
+  uploads PurchaseUpload[]
+
+  @@index([clinicId])
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id          String           @id @default(uuid())
+  productId   String?
+  product     PharmacyProduct? @relation(fields: [productId], references: [id])
+  name        String
+  quantity    Int
+  unitPrice   Float
+  taxAmount   Float            @default(0)
+  amount      Float
+  batchNumber String?
+  expiryDate  DateTime?
+
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  purchaseId String
+
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model PurchaseUpload {
+  id           String  @id @default(uuid())
+  filename     String
+  path         String
+  status       String  @default("UPLOADED") // UPLOADED, PARSING, PARSED, FAILED
+  rawText      String?
+  parsedJson   String? // store parsed result as JSON
+  provider     String? // tesseract | google_doc_ai
+  providerMeta String?
+
+  clinic       Clinic  @relation(fields: [clinicId], references: [id])
+  clinicId     String
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
+
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id])
+  purchaseId String?
+
+  documentAiUsages DocumentAiUsage[]
+
+  createdAt DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([status])
+}
+
+model StockTransaction {
+  id        String          @id @default(uuid())
+  clinic    Clinic          @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  product   PharmacyProduct @relation(fields: [productId], references: [id])
+  productId String
+  changeQty Int
+  type      String // PURCHASE, SALE, ADJUSTMENT, RETURN
+  refType   String? // PURCHASE, SALE, etc.
+  refId     String?
+  note      String?
+  createdAt DateTime        @default(now())
+
+  @@index([clinicId])
+  @@index([productId])
+}
+
+model LedgerEntry {
+  id        String   @id @default(uuid())
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  account   String // account name or accountId
+  accountId String?
+  accountRef Account? @relation(fields: [accountId], references: [id])
+  type      String // DEBIT or CREDIT
+  amount    Float
+  refType   String? // PURCHASE, PAYMENT, etc.
+  refId     String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([accountId])
+  @@index([refType, refId])
+}
+
+// Chart of accounts (lightweight) to support ledger UI and account management
+model Account {
+  id          String   @id @default(uuid())
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  name        String
+  type        String? // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  meta        String? // optional JSON string for extra info (e.g., distributor id)
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?
+  createdAt DateTime @default(now())
+
+  // Ledger entries linked to this account
+  ledgerEntries LedgerEntry[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model DocumentAiUsage {
+  id        String         @id @default(uuid())
+  clinic    Clinic         @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  upload    PurchaseUpload @relation(fields: [uploadId], references: [id])
+  uploadId  String
+  provider  String
+  cost      Float?
+  details   String? // metadata from provider
+  createdAt DateTime       @default(now())
+
+  @@index([clinicId])
+}
+
+// Assign staff members to specific doctors (optional). If absent, staff is considered shared.
+model StaffAssignment {
+  id        String   @id @default(uuid())
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId   String
+  doctor    User     @relation("StaffAssignmentDoctor", fields: [doctorId], references: [id], onDelete: Cascade)
+  doctorId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId  String
+  createdAt DateTime @default(now())
+
+  @@unique([staffId, doctorId])
+  @@index([clinicId])
+}
+
+// ==========================================
+// BILLING
+// ==========================================
+
+model Bill {
+  id              String   @id @default(uuid())
+  billNo          String   @unique
+  date            DateTime @default(now())
+  type            String // CONSULTATION, PHARMACY, LAB_TEST, PROCEDURE, MIXED
+  subtotal        Float
+  discountPercent Float?
+  discountAmount  Float?
+  taxAmount       Float
+  totalAmount     Float
+  paidAmount      Float    @default(0)
+  dueAmount       Float
+  taxBreakdown    String? // JSON string
+  paymentStatus   String   @default("PENDING") // PENDING, PARTIAL, PAID, REFUNDED
+  paymentMethod   String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient         Patient?   @relation(fields: [patientId], references: [id])
+  patientId       String?
+  clinic          Clinic     @relation(fields: [clinicId], references: [id])
+  clinicId        String
+  items           BillItem[]
+  payments        Payment[]
+  labCommission   Lab?       @relation(fields: [labId], references: [id])
+  labId           String?
+  agentCommission Agent?     @relation(fields: [agentId], references: [id])
+  agentId         String?
+  doctorId        String?
+  doctor          User?      @relation("BillDoctor", fields: [doctorId], references: [id])
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@index([date])
+  @@index([paymentStatus])
+}
+
+model BillItem {
+  id          String @id @default(uuid())
+  description String
+  quantity    Int
+  unitPrice   Float
+  gstPercent  Float  @default(0)
+  amount      Float
+
+  bill      Bill             @relation(fields: [billId], references: [id], onDelete: Cascade)
+  billId    String
+  product   PharmacyProduct? @relation(fields: [productId], references: [id])
+  productId String?
+
+  // Optional lab metadata for items that come from a lab test
+  lab       Lab?     @relation(fields: [labId], references: [id])
+  labId     String?
+  labTest   LabTest? @relation(fields: [labTestId], references: [id])
+  labTestId String?
+
+  // Optional doctor for consultation items
+  doctor   User?   @relation(fields: [doctorId], references: [id])
+  doctorId String?
+
+  @@index([billId])
+  @@index([labId])
+  @@index([labTestId])
+  @@index([doctorId])
+}
+
+// ==========================================
+// PAYMENTS & COLLECTIONS
+// ==========================================
+
+model Payment {
+  id         String    @id @default(uuid())
+  amount     Float
+  method     String
+  reference  String?
+  imageUrl   String?
+  parsedData String? // JSON string
+  verifiedAt DateTime?
+  verifiedBy String?
+  notes      String?
+  receivedAt DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+
+  bill     Bill?   @relation(fields: [billId], references: [id])
+  billId   String?
+  clinic   Clinic  @relation(fields: [clinicId], references: [id])
+  clinicId String
+
+  @@index([clinicId])
+  @@index([receivedAt])
+}
+
+// ==========================================
+// LABS & AGENTS (Commission Management)
+// ==========================================
+
+model Lab {
+  id              String  @id @default(uuid())
+  name            String
+  address         String?
+  phone           String?
+  email           String?
+  contactPerson   String?
+  commissionType  String  @default("PERCENTAGE") // PERCENTAGE, FIXED
+  commissionValue Float
+  isActive        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic      Clinic                @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  bills       Bill[]
+  commissions CommissionRecord[]
+  labTests    PrescriptionLabTest[]
+
+  // Catalog of tests offered by this lab
+  catalog LabTest[]
+
+  // Bill items linked to this lab
+  billItems BillItem[]
+  LabStaff  LabStaff[]
+
+  @@index([clinicId])
+}
+
+model Agent {
+  id              String  @id @default(uuid())
+  name            String
+  phone           String
+  email           String?
+  address         String?
+  commissionType  String  @default("PERCENTAGE")
+  commissionValue Float
+  discountAllowed Float   @default(0)
+  isActive        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic      Clinic             @relation(fields: [clinicId], references: [id])
+  clinicId    String
+  bills       Bill[]
+  commissions CommissionRecord[]
+
+  @@index([clinicId])
+}
+
+model CommissionRecord {
+  id         String    @id @default(uuid())
+  amount     Float
+  billAmount Float
+  rate       Float
+  status     String    @default("PENDING") // PENDING, PAID, CANCELLED
+  paidAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  lab     Lab?    @relation(fields: [labId], references: [id])
+  labId   String?
+  agent   Agent?  @relation(fields: [agentId], references: [id])
+  agentId String?
+
+  @@index([labId])
+  @@index([agentId])
+  @@index([status])
+}
+
+// Catalog of lab tests and prices per lab
+model LabTest {
+  id          String  @id @default(uuid())
+  code        String?
+  name        String
+  category    String?
+  description String?
+  price       Float   @default(0)
+  currency    String  @default("INR")
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lab      Lab    @relation(fields: [labId], references: [id])
+  labId    String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+  clinicId String
+
+  // Bill items that reference this lab test
+  billItems BillItem[]
+
+  @@unique([labId, code])
+  @@index([labId])
+  @@index([clinicId])
+}
+
+// Lab staff mapping - links a staff profile to a lab (permissions managed at app level)
+model LabStaff {
+  id        String   @id @default(uuid())
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId   String   @unique
+  lab       Lab      @relation(fields: [labId], references: [id])
+  labId     String
+  role      String   @default("TECHNICIAN") // TECHNICIAN, MANAGER
+  createdAt DateTime @default(now())
+
+  clinicId String
+
+  @@unique([staffId, labId])
+  @@index([labId])
+  @@index([clinicId])
+}
+
+// ==========================================
+// AUDIT & LOGGING
+// ==========================================
+
+model AuditLog {
+  id        String  @id @default(uuid())
+  action    String
+  entity    String
+  entityId  String?
+  oldData   String? // JSON string
+  newData   String? // JSON string
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id])
+  userId String?
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ==========================================
+// WHATSAPP BOT SESSIONS
+// ==========================================
+
+model WhatsAppSession {
+  id          String   @id @default(uuid())
+  phone       String   @unique
+  context     String? // JSON string
+  lastMessage DateTime @default(now())
+  userId      String?
+  role        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phone])
+}
+
+// ==========================================
+// EMAIL NOTIFICATIONS (OAuth2)
+// ==========================================
+
+model EmailLog {
+  id             String  @id @default(uuid())
+  recipientEmail String
+  subject        String
+  type           String // appointment_reminder, prescription, bill, password_reset, welcome, test
+  status         String  @default("sent") // sent, failed
+  messageId      String?
+  error          String?
+
+  sentAt DateTime @default(now())
+
+  userId    String?
+  patientId String?
+
+  @@index([type])
+  @@index([status])
+  @@index([sentAt])
+  @@index([recipientEmail])
+}
+
+model ClinicSettings {
+  id    String @id @default(uuid())
+  key   String
+  value String // JSON string for complex values
+
+  clinicId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, key])
+  @@index([key])
+}
