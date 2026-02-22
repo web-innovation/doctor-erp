@@ -6,12 +6,13 @@ This project keeps SQLite as the default. RDS is opt-in and uses a separate Pris
 Overview
 --------
 - Default (no change): SQLite with `server/prisma/schema.prisma`
-- RDS (PostgreSQL): use `server/prisma/schema.postgres.prisma` + `DATABASE_URL` pointing to RDS
+- RDS (PostgreSQL): use `server/prisma-postgres/schema.prisma` + `DATABASE_URL` pointing to RDS
 
 Important
 ---------
 - SQLite is **not impacted** unless you change `DATABASE_URL` and run the RDS scripts below.
 - Prisma client must be generated using the Postgres schema when you switch to RDS.
+- Postgres migrations are stored separately under `server/prisma-postgres/migrations`.
 
 1) Configure env
 ----------------
@@ -37,6 +38,12 @@ npm run db:validate:rds
 
 4) Apply migrations to RDS
 --------------------------
+If this is the first time you are using RDS, create an initial migration:
+
+```
+npx prisma migrate dev --schema=./prisma-postgres/schema.prisma --name init_rds --create-only
+```
+
 Use deploy to apply existing migrations:
 
 ```

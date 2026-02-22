@@ -1,4 +1,4 @@
-// PostgreSQL schema for RDS (opt-in). Use with --schema=./prisma/schema.postgres.prisma
+// PostgreSQL schema for RDS (opt-in). Keep separate from SQLite migrations.
 
 generator client {
   provider = "prisma-client-js"
