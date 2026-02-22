@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Avoid indexing backend/API and auth pages
+Disallow: /api/
+Disallow: /admin/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+
+Sitemap: https://docsyerp.com/sitemap.xml
