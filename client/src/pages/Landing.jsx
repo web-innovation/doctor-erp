@@ -183,7 +183,7 @@ export default function Landing() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
               <FaHospital className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">Docsy</span>
+              <span className="text-xl font-bold text-gray-900">Docsy ERP</span>
             </div>
 
             <div className="hidden md:flex items-center space-x-8">
@@ -528,14 +528,14 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* G&A AI Section */}
+      {/* GA AI Section */}
       <section id="g-a-ai" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">G&A AI</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">GA AI</h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-6">
-            G&A AI provides intelligent assistance for clinical notes, prescriptions, and business insights - multilingual support and contextual suggestions to speed up your workflow.
+            GA AI provides intelligent assistance for clinical notes, prescriptions, and business insights - multilingual support and contextual suggestions to speed up your workflow.
           </p>
-          <p className="text-sm text-gray-400">Copyright (c) G&A AI</p>
+          <p className="text-sm text-gray-400">Copyright (c) GA AI</p>
         </div>
       </section>
 
@@ -546,7 +546,7 @@ export default function Landing() {
             Ready to Transform Your Practice?
           </h2>
           <p className="text-xl text-gray-300 mb-8">
-            Join 500+ clinics already using Docsy to deliver better patient care.
+            Join 500+ clinics already using Docsy ERP to deliver better patient care.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
@@ -604,7 +604,7 @@ export default function Landing() {
             <div>
               <div className="flex items-center space-x-2 mb-4">
                   <FaHospital className="h-8 w-8 text-blue-500" />
-                  <span className="text-xl font-bold text-white">Docsy</span>
+                  <span className="text-xl font-bold text-white">Docsy ERP</span>
                 </div>
                 <p className="text-gray-400 mb-4">
                   Smart healthcare management for modern clinics across India.
@@ -636,6 +636,26 @@ export default function Landing() {
                     <FaYoutube className="h-5 w-5" />
                   </a>
                 </div>
+                <div
+                  className="mt-4 inline-flex items-center gap-3 rounded-lg border border-gray-700 bg-white/95 px-3 py-2 cursor-default"
+                  title="Udyam Registration Number: UDYAM-PB-20-0122464"
+                  aria-label="Udyam Registration Number: UDYAM-PB-20-0122464"
+                >
+                  <img
+                    src="https://www.presentations.gov.in/wp-content/uploads/2020/06/Preview-11.png"
+                    alt="Official MSME Logo"
+                    className="h-9 w-9 rounded-full object-contain bg-white"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <img
+                    src="https://www.uxdt.nic.in/wp-content/uploads/2020/06/Digital-india-black.jpg"
+                    alt="Official Digital India Logo"
+                    className="h-9 w-auto object-contain"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Product</h4>
@@ -666,7 +686,7 @@ export default function Landing() {
           </div>
           <div className="border-t border-gray-800 pt-8 text-center">
             <p className="text-gray-400">
-              (c) {new Date().getFullYear()} Docsy. All rights reserved.
+              (c) {new Date().getFullYear()} Docsy ERP. All rights reserved.
             </p>
           </div>
         </div>

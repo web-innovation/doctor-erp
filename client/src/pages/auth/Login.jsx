@@ -48,7 +48,7 @@ export default function Login() {
         <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center space-x-2">
             <FaHospital className="h-10 w-10 text-blue-600" />
-            <span className="text-2xl font-bold text-gray-900">Docsy</span>
+            <span className="text-2xl font-bold text-gray-900">Docsy ERP</span>
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 mt-6">Welcome back</h1>
           <p className="text-gray-500 mt-2">Sign in to your account to continue</p>
@@ -180,7 +180,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="text-center text-gray-400 text-sm mt-8">
-          <p>© {new Date().getFullYear()} Docsy. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Docsy ERP. All rights reserved.</p>
           <p className="mt-1">
             <Link to="/privacy" className="text-gray-500 hover:underline">Privacy Policy</Link>
           </p>
@@ -189,3 +189,4 @@ export default function Login() {
     </div>
   );
 }
+

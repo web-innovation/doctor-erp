@@ -47,7 +47,7 @@ export default function ForgotPassword() {
         <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center space-x-2">
             <FaHospital className="h-10 w-10 text-blue-600" />
-            <span className="text-2xl font-bold text-gray-900">Docsy</span>
+            <span className="text-2xl font-bold text-gray-900">Docsy ERP</span>
           </Link>
         </div>
 
@@ -164,9 +164,10 @@ export default function ForgotPassword() {
 
         {/* Footer */}
         <p className="text-center text-gray-400 text-sm mt-8">
-          © {new Date().getFullYear()} Docsy. All rights reserved.
+          © {new Date().getFullYear()} Docsy ERP. All rights reserved.
         </p>
       </div>
     </div>
   );
 }
+
