@@ -168,6 +168,103 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
   }
 });
 
+// GET /medicines/search - Search clinic medicines for prescription authoring
+router.get('/medicines/search', checkPermission('prescriptions', 'create'), async (req, res, next) => {
+  try {
+    const { q = '', limit = 20 } = req.query;
+    const clinicId = req.user.clinicId;
+    const qLower = String(q || '').trim().toLowerCase();
+    const limitNum = Math.max(1, Math.min(50, parseInt(limit, 10) || 20));
+
+    // Case-insensitive filtering in JS for compatibility across providers.
+    const candidates = await prisma.pharmacyProduct.findMany({
+      where: { clinicId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        genericName: true,
+        category: true,
+        quantity: true,
+        sellingPrice: true,
+        mrp: true
+      },
+      orderBy: { name: 'asc' },
+      take: 300
+    });
+
+    const filtered = !qLower
+      ? candidates
+      : candidates.filter((p) => {
+          const name = (p.name || '').toLowerCase();
+          const code = (p.code || '').toLowerCase();
+          const generic = (p.genericName || '').toLowerCase();
+          const category = (p.category || '').toLowerCase();
+          return name.includes(qLower) || code.includes(qLower) || generic.includes(qLower) || category.includes(qLower);
+        });
+
+    const data = filtered.slice(0, limitNum).map((p) => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      genericName: p.genericName,
+      category: p.category,
+      stock: Number(p.quantity || 0),
+      price: Number(p.sellingPrice ?? p.mrp ?? 0),
+      quantity: p.quantity,
+      sellingPrice: p.sellingPrice,
+      mrp: p.mrp
+    }));
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /lab-tests/search - Search common lab tests
+router.get('/lab-tests/search', checkPermission('prescriptions', 'create'), async (req, res, next) => {
+  try {
+    const { q = '' } = req.query;
+    const searchLower = q.toLowerCase();
+    
+    // Search server-side lab catalog for clinic and combine with common tests
+    const clinicId = req.user.clinicId;
+    // Prisma `mode: 'insensitive'` may not be supported in this environment —
+    // fetch candidates and filter in JS for case-insensitive search.
+    const candidates = await prisma.labTest.findMany({
+      where: { clinicId },
+      include: { lab: { select: { id: true, name: true } } },
+      take: 200
+    });
+    const labTests = candidates.filter(t => {
+      const name = (t.name || '').toLowerCase();
+      const category = (t.category || '').toLowerCase();
+      const code = (t.code || '').toLowerCase();
+      return name.includes(q.toLowerCase()) || category.includes(q.toLowerCase()) || code.includes(q.toLowerCase());
+    }).slice(0, 20);
+
+    const results = commonLabTests.filter(test => 
+      test.name.toLowerCase().includes(searchLower) || 
+      test.category.toLowerCase().includes(searchLower)
+    ).slice(0, 10);
+
+    // Map labTests to unified shape and avoid duplicates by name
+    const mappedLabTests = labTests.map(t => ({ id: t.id, name: t.name, category: t.category || '', labId: t.labId, labName: t.lab?.name, price: t.price, isCatalog: true }));
+    const combined = [...mappedLabTests];
+    // Add common tests that are not already present in catalog by name
+    results.forEach(ct => {
+      if (!combined.some(c => c.name.toLowerCase() === ct.name.toLowerCase())) {
+        combined.push({ id: ct.id || null, name: ct.name, category: ct.category || '', labId: null, labName: null, price: null, isCatalog: false });
+      }
+    });
+
+    res.json({ success: true, data: combined.slice(0, 30) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /:id - Get prescription details
 router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, next) => {
   try {
@@ -758,47 +855,5 @@ const commonLabTests = [
   { id: 'ra_factor', name: 'RA Factor (Rheumatoid Factor)', category: 'Autoimmune' },
 ];
 
-// GET /lab-tests/search - Search common lab tests
-router.get('/lab-tests/search', authenticate, async (req, res, next) => {
-  try {
-    const { q = '' } = req.query;
-    const searchLower = q.toLowerCase();
-    
-    // Search server-side lab catalog for clinic and combine with common tests
-    const clinicId = req.user.clinicId;
-    // Prisma `mode: 'insensitive'` may not be supported in this environment —
-    // fetch candidates and filter in JS for case-insensitive search.
-    const candidates = await prisma.labTest.findMany({
-      where: { clinicId },
-      include: { lab: { select: { id: true, name: true } } },
-      take: 200
-    });
-    const labTests = candidates.filter(t => {
-      const name = (t.name || '').toLowerCase();
-      const category = (t.category || '').toLowerCase();
-      const code = (t.code || '').toLowerCase();
-      return name.includes(q.toLowerCase()) || category.includes(q.toLowerCase()) || code.includes(q.toLowerCase());
-    }).slice(0, 20);
-
-    const results = commonLabTests.filter(test => 
-      test.name.toLowerCase().includes(searchLower) || 
-      test.category.toLowerCase().includes(searchLower)
-    ).slice(0, 10);
-
-    // Map labTests to unified shape and avoid duplicates by name
-    const mappedLabTests = labTests.map(t => ({ id: t.id, name: t.name, category: t.category || '', labId: t.labId, labName: t.lab?.name, price: t.price, isCatalog: true }));
-    const combined = [...mappedLabTests];
-    // Add common tests that are not already present in catalog by name
-    results.forEach(ct => {
-      if (!combined.some(c => c.name.toLowerCase() === ct.name.toLowerCase())) {
-        combined.push({ id: ct.id || null, name: ct.name, category: ct.category || '', labId: null, labName: null, price: null, isCatalog: false });
-      }
-    });
-
-    res.json({ success: true, data: combined.slice(0, 30) });
-  } catch (error) {
-    next(error);
-  }
-});
 
 export default router;

@@ -102,6 +102,17 @@ const prescriptionService = {
   },
 
   /**
+   * Search medicines from clinic pharmacy catalog for prescription
+   * @param {string} query - Search term
+   * @param {number} [limit=20] - Max results
+   * @returns {Promise}
+   */
+  searchMedicines: async (query, limit = 20) => {
+    const response = await api.get('/prescriptions/medicines/search', { params: { q: query, limit } });
+    return response.data;
+  },
+
+  /**
    * Get prescriptions for a specific patient
    * @param {string} patientId - Patient ID
    * @param {Object} [params] - Additional query parameters

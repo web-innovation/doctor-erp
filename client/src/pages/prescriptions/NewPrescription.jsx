@@ -19,7 +19,6 @@ import {
 import { patientService } from '../../services/patientService';
 import { appointmentService } from '../../services/appointmentService';
 import billingService from '../../services/billingService';
-import { pharmacyService } from '../../services/pharmacyService';
 import { prescriptionService } from '../../services/prescriptionService';
 import { useHasPerm, useAuth } from '../../context/AuthContext';
 import Select from '../../components/common/Select';
@@ -153,7 +152,7 @@ export default function NewPrescription() {
   // Search medicines
   const { data: medicinesData } = useQuery({
     queryKey: ['medicines-search', medicineSearch],
-    queryFn: () => pharmacyService.getProducts({ search: medicineSearch, limit: 10 }),
+    queryFn: () => prescriptionService.searchMedicines(medicineSearch, 10),
     enabled: medicineSearch.length >= 2,
   });
 
