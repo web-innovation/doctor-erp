@@ -50,7 +50,15 @@ Use deploy to apply existing migrations:
 npm run db:migrate:rds
 ```
 
-5) Start the server
+5) Seed demo data on RDS (optional)
+-----------------------------------
+This uses the existing seed script after generating the RDS Prisma client:
+
+```
+npm run db:seed:rds
+```
+
+6) Start the server
 -------------------
 Start as usual. The server will use `DATABASE_URL` (now RDS):
 

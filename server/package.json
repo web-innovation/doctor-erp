@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:rds": "prisma migrate deploy --schema=./prisma-postgres/schema.prisma",
     "db:validate:rds": "prisma validate --schema=./prisma-postgres/schema.prisma",
+    "db:seed:rds": "npm run prisma:generate:rds && node prisma/seed.js",
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
