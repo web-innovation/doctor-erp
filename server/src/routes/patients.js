@@ -40,21 +40,6 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
     const skip = (pageNum - 1) * limitNum;
     const clinicId = req.user.clinicId;
 
-    // Normalize role: some users are stored with role 'STAFF' but have a
-    // staff.designation of 'Doctor'. Treat those users as DOCTOR for
-    // patient-scoping checks so backend behavior matches frontend normalization.
-    let userRoleNormalized = (req.user.role || '').toString().toUpperCase();
-    if (userRoleNormalized === 'STAFF') {
-      try {
-        const staffRecord = await prisma.staff.findFirst({ where: { userId: req.user.id, clinicId } });
-        if (staffRecord && staffRecord.designation && staffRecord.designation.toString().toLowerCase().includes('doctor')) {
-          userRoleNormalized = 'DOCTOR';
-        }
-      } catch (e) {
-        // ignore lookup errors and keep original role
-      }
-    }
-
     const where = { clinicId };
     if (search) {
       where.OR = [
@@ -63,23 +48,6 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
         { phone: { contains: search } },
         { email: { contains: search } }
       ];
-    }
-
-    // Restrict patients to doctor's own patients by default.
-    // Support optional `viewUserId` query param: when provided, a doctor may view that user's patients
-    // only if it's their own id or a staff assigned to them (this supports the header "view as staff" dropdown).
-    const viewUserId = req.query.viewUserId;
-    const { isEffectiveDoctor, canDoctorViewStaff } = await import('../middleware/auth.js');
-    const doctorCheck = userRoleNormalized === 'DOCTOR' || isEffectiveDoctor(req);
-    if (doctorCheck) {
-      const viewCheck = await canDoctorViewStaff(req, viewUserId);
-      if (viewCheck.notStaff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
-      if (!viewCheck.allowed) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
-      if (viewUserId) {
-        where.primaryDoctorId = viewUserId === req.user.id ? req.user.id : viewUserId;
-      } else {
-        where.primaryDoctorId = req.user.id;
-      }
     }
 
     const [patientsRaw, total] = await Promise.all([
@@ -132,23 +100,6 @@ router.get('/:id', checkPermission('patients', 'read'), async (req, res, next) =
     });
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
-    // Enforce doctor-only access: by default only their own patients; allow viewing a staff user's patients when `viewUserId` is provided and authorized
-    if (userRoleNormalized === 'DOCTOR') {
-      const viewUserId = req.query.viewUserId;
-      if (viewUserId) {
-        if (viewUserId === req.user.id) {
-          // allowed
-        } else {
-          const staff = await prisma.staff.findFirst({ where: { userId: viewUserId, clinicId: req.user.clinicId } });
-          if (!staff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
-          const assignment = await prisma.staffAssignment.findUnique({ where: { staffId_doctorId: { staffId: staff.id, doctorId: req.user.id } } }).catch(() => null);
-          if (!assignment) return res.status(403).json({ success: false, message: 'Permission denied' });
-        }
-      } else {
-        if (patient.primaryDoctorId && patient.primaryDoctorId !== req.user.id) return res.status(403).json({ success: false, message: 'Permission denied' });
-      }
-    }
-
     // Parse JSON fields and normalize names for frontend
     const parsed = {
       ...patient,
@@ -196,8 +147,7 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       emergencyContact,
       allergies: allergies ? JSON.stringify(allergies) : null,
       medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
-      clinicId,
-      primaryDoctorId: req.body.primaryDoctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined)
+      clinicId
     };
 
     try {

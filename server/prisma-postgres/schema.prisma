@@ -38,7 +38,6 @@ model User {
   createdAccounts  Account[]
 
   // Relations for doctor-scoped entities
-  primaryPatients          Patient[]         @relation("PatientPrimaryDoctor")
   appointmentsAsDoctor     Appointment[]     @relation("AppointmentDoctor")
   prescriptionsAsDoctor    Prescription[]    @relation("PrescriptionDoctor")
   staffAssignmentsAsDoctor StaffAssignment[] @relation("StaffAssignmentDoctor")
@@ -204,8 +203,6 @@ model Patient {
   allergies        String? // JSON array string
   medicalHistory   String? // JSON string
   insurance        String?
-  primaryDoctor    User?     @relation("PatientPrimaryDoctor", fields: [primaryDoctorId], references: [id])
-  primaryDoctorId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

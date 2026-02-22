@@ -293,35 +293,12 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
 // GET /patients - List patients for billing (clinic-wide). Guarded by billing:create
 router.get('/patients', authenticate, checkPermission('billing:create'), async (req, res) => {
   try {
-    const { search, page = 1, limit = 50, doctorId, allDoctors } = req.query;
+    const { search, page = 1, limit = 50 } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
     const where = { clinicId: req.user.clinicId };
-    // Support explicit allDoctors=true to return clinic-wide patients even if doctorId omitted.
-    const wantAllDoctors = (allDoctors || '').toString().toLowerCase() === 'true';
-    // Only allow `allDoctors=true` for clinic admins or roles with broader billing access
-    if (wantAllDoctors) {
-      const userRole = (req.user.role || '').toString().toUpperCase();
-      const isAdminLike = req.user.isClinicAdmin || userRole === 'SUPER_ADMIN' || userRole === 'ACCOUNTANT';
-      if (!isAdminLike) {
-        return res.status(403).json({ success: false, message: 'Insufficient permissions to list patients for all doctors' });
-      }
-    }
-    // If doctorId provided and allDoctors is not true, validate and restrict to that doctor's patients
-    if (!wantAllDoctors && doctorId) {
-      const candidate = await prisma.user.findUnique({ where: { id: doctorId }, include: { staffProfile: true } });
-      if (!candidate || candidate.clinicId !== req.user.clinicId) {
-        return res.status(400).json({ success: false, message: 'Invalid doctor selected' });
-      }
-      const isDoctorRole = (candidate.role || '').toString().toUpperCase() === 'DOCTOR';
-      const isStaffDoctor = candidate.staffProfile && candidate.staffProfile.designation && candidate.staffProfile.designation.toLowerCase().includes('doctor');
-      if (!isDoctorRole && !isStaffDoctor) {
-        return res.status(400).json({ success: false, message: 'Selected user is not a doctor' });
-      }
-      where.primaryDoctorId = doctorId;
-    }
     if (search) {
       where.OR = [
         { name: { contains: search } },
@@ -340,8 +317,7 @@ router.get('/patients', authenticate, checkPermission('billing:create'), async (
           id: true,
           patientId: true,
           name: true,
-          phone: true,
-          primaryDoctor: { select: { id: true, name: true } }
+          phone: true
         }
       }),
       prisma.patient.count({ where })
@@ -487,7 +463,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           }
         },
         include: {
-          patient: { select: { id: true, name: true, phone: true, primaryDoctor: { select: { id: true, name: true } } } },
+          patient: { select: { id: true, name: true, phone: true } },
           items: true,
           doctor: { select: { id: true, name: true } }
         }

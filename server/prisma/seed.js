@@ -877,8 +877,7 @@ async function main() {
     update: {}
   });
 
-  // Set primaryDoctor for some patients and link doctorId for prescriptions, bills and appointments
-  await prisma.patient.updateMany({ where: { patientId: { in: ['P-0001','P-0003'] }, clinicId: clinic.id }, data: { primaryDoctorId: doctorUser.id } });
+  // Link doctorId for prescriptions, bills and appointments.
 
   await prisma.prescription.updateMany({ where: { prescriptionNo: { in: ['RX-0001','RX-0002'] }, clinicId: clinic.id }, data: { doctorId: doctorUser.id } });
 
@@ -931,7 +930,7 @@ async function main() {
     where: { patientId: 'P-0100' },
     update: {},
     create: {
-      patientId: 'P-0100', name: 'Rajan Kumar', phone: '9898901000', gender: 'MALE', age: 52, clinicId: clinic.id, primaryDoctorId: doctorBUser.id
+      patientId: 'P-0100', name: 'Rajan Kumar', phone: '9898901000', gender: 'MALE', age: 52, clinicId: clinic.id
     }
   });
 

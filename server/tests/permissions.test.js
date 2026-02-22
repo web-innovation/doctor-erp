@@ -24,8 +24,8 @@ describe('Doctor-scoped data access', () => {
     doctor1 = await prisma.user.create({ data: { email: 'doc1@test', phone: '9001', password: 'x', name: 'Doc One', role: 'DOCTOR', clinicId: clinic.id } });
     doctor2 = await prisma.user.create({ data: { email: 'doc2@test', phone: '9002', password: 'x', name: 'Doc Two', role: 'DOCTOR', clinicId: clinic.id } });
 
-    // create patient assigned to doctor1
-    patient1 = await prisma.patient.create({ data: { patientId: 'P-T1', name: 'Patient One', phone: '999', clinicId: clinic.id, primaryDoctorId: doctor1.id } });
+    // create clinic-level patient (not linked to a specific doctor)
+    patient1 = await prisma.patient.create({ data: { patientId: 'P-T1', name: 'Patient One', phone: '999', clinicId: clinic.id } });
 
     // create prescriptions: one for doctor1, one for doctor2
     rx1 = await prisma.prescription.create({ data: { prescriptionNo: 'RX-T1', clinicId: clinic.id, patientId: patient1.id, doctorId: doctor1.id } });

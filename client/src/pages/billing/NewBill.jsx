@@ -139,7 +139,7 @@ export default function NewBill() {
     }
   }, [doctors, isEffectiveDoctor, user]);
 
-  // Fetch patients for billing search (uses billing endpoint so we get primaryDoctor)
+  // Fetch clinic patients for billing search.
   const { data: patientsData } = useQuery({
     queryKey: ['billing-patients-search', patientSearch, selectedDoctor?.id],
     queryFn: () => billingService.getPatients({ search: patientSearch, limit: 10, doctorId: selectedDoctor?.id }),

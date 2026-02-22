@@ -50,7 +50,7 @@ router.get('/stats', authenticate, checkPermission('dashboard:read'), async (req
         _sum: { amount: true }
       }),
       prisma.patient.count({
-        where: Object.assign({}, clinicFilter, { createdAt: { gte: today, lt: tomorrow } }, staffId ? { primaryDoctorId: staffId } : {})
+        where: Object.assign({}, clinicFilter, { createdAt: { gte: today, lt: tomorrow } })
       }),
       prisma.bill.count({
         where: Object.assign({}, clinicFilter, { createdAt: { gte: today, lt: tomorrow } }, staffId ? { doctorId: staffId } : {})
@@ -203,7 +203,7 @@ router.get('/recent', authenticate, checkPermission('dashboard:read'), async (re
         include: { patient: { select: { id: true, name: true } } }
       }),
       prisma.patient.findMany({
-        where: Object.assign({}, clinicFilter, staffId ? { primaryDoctorId: staffId } : {}), orderBy: { createdAt: 'desc' }, take: limit,
+        where: clinicFilter, orderBy: { createdAt: 'desc' }, take: limit,
         select: { id: true, patientId: true, name: true, phone: true, createdAt: true }
       }),
       prisma.bill.findMany({
