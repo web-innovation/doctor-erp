@@ -576,9 +576,14 @@ export default function Landing() {
             <div className="mt-5 space-y-3">
               <div className="rounded-lg border border-gray-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Email</p>
-                <a href="mailto:docsy360@gmail.com" className="text-blue-700 font-medium">
-                  docsy360@gmail.com
-                </a>
+                <div className="space-y-1">
+                  <a href="mailto:support@docsyerp.com" className="block text-blue-700 font-medium">
+                    support@docsyerp.com
+                  </a>
+                  <a href="mailto:docsy360@gmail.com" className="block text-blue-700 font-medium">
+                    docsy360@gmail.com
+                  </a>
+                </div>
               </div>
               <div className="rounded-lg border border-gray-200 p-3">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Phone</p>
@@ -602,7 +607,11 @@ export default function Landing() {
                 <p className="text-gray-400 mb-4">
                   Smart healthcare management for modern clinics across India.
                 </p>
-                <p className="text-gray-400 mb-2">Get this application: 9306845764</p>
+                <div className="text-gray-400 space-y-1 text-sm">
+                  <p>support@docsyerp.com</p>
+                  <p>docsy360@gmail.com</p>
+                  <p>8284073790, 9306845764</p>
+                </div>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Product</h4>
