@@ -33,6 +33,7 @@ const menuItems = [
   { name: 'Staff', path: '/staff', icon: UsersIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
   { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
   { name: 'Leave', path: '/staff/leave', icon: CalendarIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
+  // Reports menu is now only shown if user has report access (handled in filteredMenuItems)
   { name: 'Reports', path: '/reports', icon: ChartBarIcon, roles: ['admin', 'doctor', 'accountant', 'DOCTOR', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Labs', path: '/labs', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Agents & Commissions', path: '/agents', icon: UsersIcon, roles: ['admin', 'accountant', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
@@ -169,15 +170,19 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
     const roleMatch = item.roles.some(r => r.toString().toUpperCase() === effectiveRoleForMatch);
     const roleKey = normalizedRole;
-    const requiredPermKeys = requiredPerms;
-    // Determine which role key to use when looking up clinic overrides. If the
-    // clinic has an explicit override for the normalizedRole, use it. Otherwise
-    // fall back to the effectiveRoleForMatch (e.g., treat STAFF as DOCTOR when
-    // only DOCTOR is defined in clinic overrides).
+    const requiredPermKeys = Array.isArray(menuPermissionMap[item.path]) ? menuPermissionMap[item.path] : [];
     const roleKeyForPerms = rolePermissions
       ? (rolePermissions[roleKey] ? roleKey : (rolePermissions[effectiveRoleForMatch] ? effectiveRoleForMatch : roleKey))
       : roleKey;
     const permsForRole = rolePermissions && rolePermissions[roleKeyForPerms];
+
+    // Special handling for Reports menu: only show if user has any report permission
+    if (item.path === '/reports') {
+      if (!permsForRole || !Array.isArray(permsForRole)) return false;
+      // Check for any report permission
+      const hasReportPerm = permsForRole.some(p => p.startsWith('reports:'));
+      return hasReportPerm;
+    }
 
     // If clinic-level overrides are configured, mapped menu visibility must come
     // only from Access Management permissions.
