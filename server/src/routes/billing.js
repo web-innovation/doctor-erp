@@ -362,6 +362,123 @@ router.get('/doctors', authenticate, checkPermission('billing:create'), async (r
   }
 });
 
+// GET /prefill/:patientId - Prefill bill items from latest prescription
+router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'), async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    const latestPrescription = await prisma.prescription.findFirst({
+      where: {
+        clinicId: req.user.clinicId,
+        patientId
+      },
+      orderBy: [
+        { date: 'desc' },
+        { createdAt: 'desc' }
+      ],
+      include: {
+        doctor: { select: { id: true, name: true } },
+        medicines: {
+          include: {
+            pharmacyProduct: { select: { id: true, name: true, sellingPrice: true, mrp: true } }
+          }
+        },
+        labTests: {
+          include: {
+            lab: { select: { id: true, name: true } }
+          }
+        }
+      }
+    });
+
+    if (!latestPrescription) {
+      return res.json({
+        success: true,
+        data: {
+          prescriptionId: null,
+          prescriptionNo: null,
+          doctor: null,
+          items: [],
+          medicineAmount: 0,
+          labTestAmount: 0,
+          totalAmount: 0,
+          hasPrefill: false
+        }
+      });
+    }
+
+    const labIds = Array.from(new Set((latestPrescription.labTests || []).map((t) => t.labId).filter(Boolean)));
+    const labCatalog = labIds.length > 0
+      ? await prisma.labTest.findMany({
+          where: {
+            clinicId: req.user.clinicId,
+            labId: { in: labIds }
+          },
+          select: {
+            id: true,
+            labId: true,
+            name: true,
+            price: true
+          }
+        })
+      : [];
+
+    const catalogByLabAndName = new Map(
+      labCatalog.map((t) => [`${t.labId}::${(t.name || '').trim().toLowerCase()}`, t])
+    );
+    const catalogByName = new Map(
+      labCatalog.map((t) => [(t.name || '').trim().toLowerCase(), t])
+    );
+
+    const medicineItems = (latestPrescription.medicines || []).map((m) => {
+      const quantity = Number(m.quantity) || 1;
+      const unitPrice = Number(m.pharmacyProduct?.sellingPrice ?? m.pharmacyProduct?.mrp ?? 0);
+      return {
+        description: m.medicineName || m.pharmacyProduct?.name || 'Medicine',
+        quantity,
+        unitPrice,
+        type: 'medicine',
+        productId: m.productId || null
+      };
+    });
+
+    const labItems = (latestPrescription.labTests || []).map((t) => {
+      const testName = (t.testName || '').trim();
+      const key = `${t.labId || ''}::${testName.toLowerCase()}`;
+      const matched = catalogByLabAndName.get(key) || catalogByName.get(testName.toLowerCase()) || null;
+      return {
+        description: testName || 'Lab Test',
+        quantity: 1,
+        unitPrice: Number(matched?.price || 0),
+        type: 'lab',
+        labId: t.labId || null,
+        labTestId: matched?.id || null
+      };
+    });
+
+    const items = [...medicineItems, ...labItems];
+    const medicineAmount = medicineItems.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+    const labTestAmount = labItems.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        prescriptionId: latestPrescription.id,
+        prescriptionNo: latestPrescription.prescriptionNo,
+        doctor: latestPrescription.doctor || null,
+        items,
+        medicineAmount,
+        labTestAmount,
+        totalAmount: medicineAmount + labTestAmount,
+        hasPrefill: items.length > 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching billing prefill:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch billing prefill', error: error.message });
+  }
+});
+
 // POST / - Create bill with items
 router.post('/', authenticate, checkPermission('billing:create'), async (req, res) => {
   try {

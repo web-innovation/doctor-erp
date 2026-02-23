@@ -94,7 +94,7 @@ export default function NewBill() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: 'items',
   });
@@ -303,10 +303,27 @@ export default function NewBill() {
     },
   });
 
-  const handlePatientSelect = (patient) => {
+  const handlePatientSelect = async (patient) => {
     setSelectedPatient(patient);
     setPatientSearch(patient.name);
     setShowPatientDropdown(false);
+
+    try {
+      const prefillRes = await billingService.getPrefill(patient.id);
+      const prefill = prefillRes?.data;
+      if (prefill?.hasPrefill && Array.isArray(prefill.items) && prefill.items.length > 0) {
+        replace(prefill.items);
+        setValue('items', prefill.items);
+        // If prescription has a doctor, set billing doctor to match
+        if (prefill.doctor?.id) {
+          setSelectedDoctor({ id: prefill.doctor.id, name: prefill.doctor.name });
+        }
+        toast.success('Medicine and lab test amounts prefilled from latest prescription');
+      }
+    } catch (e) {
+      // Keep manual billing flow working even if prefill fails
+      console.error('Failed to prefill bill from prescription:', e);
+    }
   };
 
   const handleDoctorSelect = (doc) => {
