@@ -54,6 +54,7 @@ export default function Billing() {
   const [selectedBill, setSelectedBill] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [updatingGstBillId, setUpdatingGstBillId] = useState(null);
+  const [gstSelections, setGstSelections] = useState({});
   const pageSize = 10;
 
   const {
@@ -232,6 +233,12 @@ export default function Billing() {
     updateGstMutation.mutate({ id: bill.id, payload });
   };
 
+  const handleGstSelectionChange = (bill, value) => {
+    const normalizedRate = Number(value || 0);
+    setGstSelections((prev) => ({ ...prev, [bill.id]: normalizedRate }));
+    handleApplyGst(bill, normalizedRate);
+  };
+
   const hasActiveFilters = filters.status || filters.startDate || filters.endDate;
 
   return (
@@ -380,7 +387,7 @@ export default function Billing() {
                         Amount
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        GST
+                        Apply Fix GST
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Status
@@ -433,14 +440,14 @@ export default function Billing() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           {canEditBilling ? (
                             <select
-                              value={getBillGstRate(bill)}
-                              onChange={(e) => handleApplyGst(bill, e.target.value)}
+                              value={Number(gstSelections[bill.id] ?? 0)}
+                              onChange={(e) => handleGstSelectionChange(bill, e.target.value)}
                               disabled={updatingGstBillId === bill.id}
                               className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white disabled:opacity-60"
                             >
                               {GST_OPTIONS.map((rate) => (
                                 <option key={rate} value={rate}>
-                                  {rate}%
+                                  {rate === 0 ? 'Apply Fix GST (0%)' : `${rate}%`}
                                 </option>
                               ))}
                             </select>
