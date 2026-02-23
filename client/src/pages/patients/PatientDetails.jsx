@@ -122,7 +122,7 @@ export default function PatientDetails() {
   });
 
   // Permission checks (call hooks unconditionally)
-  const canCreatePrescription = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+  const canCreatePrescription = useHasPerm('prescriptions:create', ['DOCTOR', 'ADMIN', 'SUPER_ADMIN']);
   const canCreateAppointment = useHasPerm('appointments:create', ['DOCTOR', 'SUPER_ADMIN', 'RECEPTIONIST']);
 
   // Add vitals mutation

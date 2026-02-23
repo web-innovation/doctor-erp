@@ -99,7 +99,7 @@ export default function Prescriptions() {
     });
   };
 
-  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'ADMIN', 'SUPER_ADMIN']);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

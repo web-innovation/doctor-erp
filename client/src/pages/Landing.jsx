@@ -153,6 +153,40 @@ const pricingPlans = [
 // testimonials removed per request
 const testimonials = [];
 
+const rankingSignals = [
+  {
+    title: 'End-to-end clinic workflow in one software',
+    description: 'Appointments, EMR, e-prescription, pharmacy, billing, and analytics are connected to remove duplicate work.'
+  },
+  {
+    title: 'Built for Indian clinics',
+    description: 'Designed for OPD speed, GST billing patterns, WhatsApp communication, and practical front-desk execution.'
+  },
+  {
+    title: 'Role-based access and audit readiness',
+    description: 'Control access by doctor, receptionist, pharmacist, and admin while keeping a consistent operational trail.'
+  }
+];
+
+const seoFaqs = [
+  {
+    q: 'What is the best clinic management software for doctors in India?',
+    a: 'Docsy ERP is built for Indian clinics with appointments, patient records, digital prescriptions, pharmacy, billing, and reports in one cloud platform.'
+  },
+  {
+    q: 'Does Docsy ERP support appointment booking and follow-up reminders?',
+    a: 'Yes. Clinics can manage appointment scheduling and follow-up workflows with connected patient history and operational reporting.'
+  },
+  {
+    q: 'Can Docsy ERP manage pharmacy, billing, and reports in one place?',
+    a: 'Yes. Prescription, pharmacy inventory, billing, and report dashboards are integrated so teams do not re-enter the same data.'
+  },
+  {
+    q: 'Is Docsy ERP suitable for small clinics and multi-doctor centers?',
+    a: 'Yes. It supports single-doctor clinics as well as multi-doctor and multi-role workflows with role-based permissions.'
+  }
+];
+
 export default function Landing() {
   const [showDemoModal, setShowDemoModal] = useState(false);
 
@@ -162,6 +196,7 @@ export default function Landing() {
         title="Docsy ERP | Clinic Management Software for Doctors, Pharmacy, Billing & Reports"
         description="Docsy ERP is a cloud clinic management software for doctors and healthcare teams. Manage patient records, smart prescriptions, pharmacy, billing, and live performance reports in one secure platform."
         path="/"
+        image="/favicon.ico"
         schema={[
           {
             '@context': 'https://schema.org',
@@ -175,6 +210,33 @@ export default function Landing() {
             name: 'Docsy ERP',
             url: 'https://docsyerp.in',
           },
+          {
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: 'Docsy ERP',
+            applicationCategory: 'BusinessApplication',
+            operatingSystem: 'Web',
+            url: 'https://docsyerp.in',
+            featureList: [
+              'Patient management',
+              'Appointment scheduling',
+              'Digital prescription',
+              'Pharmacy billing and inventory',
+              'Online report dashboard'
+            ]
+          },
+          {
+            '@context': 'https://schema.org',
+            '@type': 'FAQPage',
+            mainEntity: seoFaqs.map((f) => ({
+              '@type': 'Question',
+              name: f.q,
+              acceptedAnswer: {
+                '@type': 'Answer',
+                text: f.a
+              }
+            }))
+          }
         ]}
       />
       {/* Navigation */}
@@ -524,6 +586,44 @@ export default function Landing() {
               <h3 className="font-semibold text-gray-900 mb-2">Operational Guidance</h3>
               <p className="text-gray-600">AI-backed signals highlight pending follow-ups and bottlenecks before they grow.</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO Positioning Section */}
+      <section className="py-20 bg-gray-50 border-y border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Why Clinics Switch to Docsy ERP</h2>
+            <p className="text-xl text-gray-600 max-w-4xl mx-auto">
+              A practical clinic management software built to improve consultation speed, billing accuracy, and decision quality.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {rankingSignals.map((item) => (
+              <div key={item.title} className="bg-white rounded-2xl border border-gray-100 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">{item.title}</h3>
+                <p className="text-gray-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-20 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Frequently Asked Questions</h2>
+            <p className="text-gray-600">Answers to common questions about Docsy ERP clinic software.</p>
+          </div>
+          <div className="space-y-3">
+            {seoFaqs.map((item) => (
+              <details key={item.q} className="rounded-xl border border-gray-200 bg-white p-4">
+                <summary className="font-medium text-gray-900 cursor-pointer">{item.q}</summary>
+                <p className="mt-2 text-gray-700">{item.a}</p>
+              </details>
+            ))}
           </div>
         </div>
       </section>

@@ -297,7 +297,8 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
     }
 
     // Enforce doctor-only access: allow only own prescriptions or explicit `viewUserId` when authorized
-    if ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR') {
+    const { isEffectiveDoctor } = await import('../middleware/auth.js');
+    if (isEffectiveDoctor(req)) {
       const viewUserId = req.query.viewUserId;
       if (viewUserId) {
         if (viewUserId === req.user.id) {
@@ -330,6 +331,7 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
 // POST / - Create prescription
 router.post('/', checkPermission('prescriptions', 'create'), async (req, res, next) => {
   try {
+    const { isEffectiveDoctor } = await import('../middleware/auth.js');
     const {
       patientId,
       appointmentId,
@@ -345,6 +347,66 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
 
     if (!patientId) {
       return res.status(400).json({ success: false, message: 'Patient ID is required' });
+    }
+
+    const roleTokens = String(req.user?.effectiveRole || req.user?.role || '')
+      .toUpperCase()
+      .split(/[^A-Z0-9]+/i)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const hasToken = (token) => roleTokens.includes(token);
+    const canActAsAdmin = hasToken('SUPER_ADMIN') || hasToken('ADMIN');
+    const isDoctor = isEffectiveDoctor(req);
+
+    if (!canActAsAdmin && !isDoctor) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only doctor or admin can create prescriptions'
+      });
+    }
+
+    let resolvedDoctorId;
+    if (canActAsAdmin) {
+      const requestedDoctorId = req.body.doctorId;
+      if (!requestedDoctorId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Doctor is required for admin-created prescriptions'
+        });
+      }
+
+      const selectedDoctor = await prisma.user.findFirst({
+        where: { id: requestedDoctorId, clinicId: req.user.clinicId, isActive: true },
+        include: { staffProfile: true }
+      });
+
+      if (!selectedDoctor) {
+        return res.status(404).json({ success: false, message: 'Selected doctor not found' });
+      }
+
+      const selectedRoleParts = [
+        (selectedDoctor.role || '').toString().toUpperCase(),
+        (selectedDoctor.staffProfile?.designation || '').toString().toUpperCase()
+      ];
+      const selectedRoleTokens = selectedRoleParts
+        .join(' ')
+        .split(/[^A-Z0-9]+/i)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (!selectedRoleTokens.includes('DOCTOR')) {
+        return res.status(400).json({ success: false, message: 'Selected user is not a doctor' });
+      }
+
+      resolvedDoctorId = selectedDoctor.id;
+    } else {
+      const requestedDoctorId = req.body.doctorId;
+      if (requestedDoctorId && requestedDoctorId !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Doctors can create prescriptions only for themselves'
+        });
+      }
+      resolvedDoctorId = req.user.id;
     }
 
     // Verify patient exists
@@ -363,7 +425,7 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
         prescriptionNo,
         clinicId: req.user.clinicId,
         patientId,
-        doctorId: req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : undefined),
+        doctorId: resolvedDoctorId,
         appointmentId: appointmentId || undefined,
         diagnosis: diagnosis ? JSON.stringify(diagnosis) : null,
         symptoms: symptoms ? JSON.stringify(symptoms) : null,
@@ -577,11 +639,12 @@ router.delete('/:id/lab-tests/:testId', checkPermission('prescriptions', 'create
 // GET /patient/:patientId - Get prescriptions for a patient
 router.get('/patient/:patientId', checkPermission('prescriptions', 'read'), async (req, res, next) => {
   try {
+    const { isEffectiveDoctor } = await import('../middleware/auth.js');
     const { patientId } = req.params;
     const { limit = 10 } = req.query;
 
     const prescriptions = await prisma.prescription.findMany({
-        where: Object.assign({ patientId, clinicId: req.user.clinicId }, (req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? { doctorId: req.user.id } : {}),
+        where: Object.assign({ patientId, clinicId: req.user.clinicId }, isEffectiveDoctor(req) ? { doctorId: req.user.id } : {}),
       take: parseInt(limit),
       orderBy: { date: 'desc' },
       include: {

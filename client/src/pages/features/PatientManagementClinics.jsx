@@ -5,8 +5,14 @@ export default function PatientManagementClinics() {
     <FeaturePageTemplate
       path="/features/patient-management-system-for-clinics"
       title="Patient Management System for Clinics"
-      subtitle="Smart & Secure Clinic Patient Management with Appointment, E-Prescription & Billing Integration"
-      description="Docsy ERP helps clinics manage complete patient records, appointment history, e-prescriptions, and billing in one secure cloud workflow. Teams spend less time on manual coordination and more time on patient care."
+      subtitle="Clinic patient management software with appointments, EMR, e-prescription and billing in one cloud workflow."
+      description="Docsy ERP helps clinics manage complete patient records, appointment history, e-prescriptions, and billing in one secure cloud workflow. Front desk teams and doctors can access one patient timeline and reduce manual follow-up calls."
+      primaryKeyword="Patient management system for clinics"
+      secondaryKeywords={[
+        'Clinic EMR software',
+        'Appointment and billing software',
+        'OPD management software'
+      ]}
       points={[
         'Centralized patient profile with visit history, prescriptions, and billing timeline.',
         'Faster OPD flow with appointment scheduling, reminders, and queue visibility.',
@@ -15,7 +21,35 @@ export default function PatientManagementClinics() {
         'Actionable reports to track follow-ups, returning patients, and clinic growth.',
         'Works across desktop and mobile for front desk and doctors.',
       ]}
+      modules={[
+        'Patient registration and digital records',
+        'Appointment booking and reminders',
+        'E-prescription and doctor notes',
+        'Billing and payment tracking',
+        'Follow-up and revisit management',
+        'Role-based staff access'
+      ]}
+      industries={[
+        'General clinics',
+        'Multi-speciality OPD centers',
+        'Dental clinics',
+        'Skin and aesthetics clinics',
+        'Small hospitals'
+      ]}
+      faqs={[
+        {
+          q: 'Can this patient management system handle appointments and billing together?',
+          a: 'Yes. Docsy ERP connects patient records, appointments, prescriptions, billing, and reports in one workflow.'
+        },
+        {
+          q: 'Is patient data access controlled by role?',
+          a: 'Yes. Doctors, reception, pharmacy, and admin access can be controlled using role-based permissions.'
+        },
+        {
+          q: 'Can we migrate from paper files or Excel?',
+          a: 'Yes. Clinics can onboard existing patient data in phases and continue daily operations during migration.'
+        }
+      ]}
     />
   );
 }
-

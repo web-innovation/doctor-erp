@@ -155,7 +155,7 @@ const Header = ({ onMenuClick }) => {
 
   const canCreatePatient = useHasPerm('patients:create', ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST']);
   const canCreateAppointment = useHasPerm('appointments:create', ['SUPER_ADMIN', 'DOCTOR', 'RECEPTIONIST']);
-  const canCreatePrescription = useHasPerm('prescriptions:create', ['SUPER_ADMIN', 'DOCTOR']);
+  const canCreatePrescription = useHasPerm('prescriptions:create', ['SUPER_ADMIN', 'ADMIN', 'DOCTOR']);
   const canCreateBilling = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
 
   const allowedQuickActions = quickActions.filter((a) => {

@@ -59,7 +59,9 @@ const mealTimingOptions = [
 ];
 
 export default function NewPrescription() {
-  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'SUPER_ADMIN']);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canCreate = useHasPerm('prescriptions:create', ['DOCTOR', 'ADMIN', 'SUPER_ADMIN']);
   if (!canCreate) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -72,8 +74,15 @@ export default function NewPrescription() {
       </div>
     );
   }
-  const navigate = useNavigate();
-  const { user } = useAuth();
+
+  const roleTokens = `${user?.role || ''} ${user?.effectiveRole || ''} ${user?.clinicRole || ''}`
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/i)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const isAdminCreator = roleTokens.includes('SUPER_ADMIN') || roleTokens.includes('ADMIN');
+  const isDoctorCreator = roleTokens.includes('DOCTOR');
+
   const queryClient = useQueryClient();
   const [medicineSearch, setMedicineSearch] = useState('');
   const [labTestSearch, setLabTestSearch] = useState('');
@@ -92,6 +101,7 @@ export default function NewPrescription() {
     formState: { errors },
   } = useForm({
     defaultValues: {
+      doctor: null,
       patient: null,
       vitals: {
         bloodPressureSystolic: '',
@@ -139,12 +149,36 @@ export default function NewPrescription() {
     patient: p,
   }));
 
+  const { data: doctorsData } = useQuery({
+    queryKey: ['prescription-doctors-list'],
+    queryFn: () => appointmentService.getDoctors(),
+    enabled: isAdminCreator,
+  });
+
+  const doctorOptions = (doctorsData?.data || []).map((d) => ({
+    value: d.id,
+    label: d.name,
+  }));
+  const selectedDoctorOption = watch('doctor');
+  const selectedDoctorId = isAdminCreator
+    ? selectedDoctorOption?.value
+    : (isDoctorCreator ? user?.id : undefined);
+  const selectedDoctorLabel = isAdminCreator
+    ? selectedDoctorOption?.label
+    : (user?.name || 'You');
+
   // Fetch scheduled appointments for selected patient (doctor will only see own scheduled appointments)
   const patientIdSelected = () => watch('patient')?.value;
   const { data: patientAppointmentsData } = useQuery({
-    queryKey: ['patient-appointments', patientIdSelected()],
-    queryFn: () => appointmentService.getAppointments({ patientId: patientIdSelected(), status: 'SCHEDULED', doctorId: user?.id, limit: 50 }),
-    enabled: !!patientIdSelected(),
+    queryKey: ['patient-appointments', patientIdSelected(), selectedDoctorId],
+    queryFn: () =>
+      appointmentService.getAppointments({
+        patientId: patientIdSelected(),
+        status: 'SCHEDULED',
+        doctorId: selectedDoctorId,
+        limit: 50
+      }),
+    enabled: !!patientIdSelected() && (!!selectedDoctorId || !isAdminCreator),
   });
 
   const appointmentOptions = (patientAppointmentsData?.data || []).map(a => ({ value: a.id, label: `${a.appointmentNo || ''} ${a.date ? `- ${new Date(a.date).toLocaleDateString()}` : ''}`, appt: a }));
@@ -206,7 +240,7 @@ export default function NewPrescription() {
             type: 'MIXED',
             items: billItems,
             notes: `Draft bill for prescription ${prescriptionData.prescriptionNo || ''}`,
-            doctorId: user?.id,
+            doctorId: payloadSnapshot.doctorId || user?.id,
           };
           try {
             await billingService.createBill(billReq);
@@ -257,8 +291,14 @@ export default function NewPrescription() {
   });
 
   const onSubmit = (data) => {
+    if (isAdminCreator && !data.doctor?.value) {
+      toast.error('Please select doctor');
+      return;
+    }
+
     const payload = {
       appointmentId: data.appointment?.value,
+      doctorId: isAdminCreator ? data.doctor?.value : undefined,
       patientId: data.patient?.value,
       vitalsSnapshot: {
         bloodPressureSystolic: data.vitals.bloodPressureSystolic
@@ -367,7 +407,9 @@ export default function NewPrescription() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">New Prescription</h1>
             <p className="text-gray-500 mt-1">Create a new prescription for a patient</p>
-            <p className="text-sm text-gray-600 mt-2">Doctor: <strong className="text-gray-900">{user?.name || 'You'}</strong></p>
+            <p className="text-sm text-gray-600 mt-2">
+              Doctor: <strong className="text-gray-900">{selectedDoctorLabel || 'Select doctor'}</strong>
+            </p>
           </div>
         </div>
 
@@ -380,6 +422,21 @@ export default function NewPrescription() {
               </div>
               <h2 className="text-lg font-semibold text-gray-900">Patient Information</h2>
             </div>
+
+            {isAdminCreator && (
+              <div className="mb-4">
+                <Select
+                  label="Select Doctor"
+                  name="doctor"
+                  control={control}
+                  options={doctorOptions}
+                  placeholder="Search and select doctor..."
+                  rules={{ required: 'Doctor is required' }}
+                  error={errors.doctor?.message}
+                  isSearchable
+                />
+              </div>
+            )}
 
             <Select
               label="Select Patient"
