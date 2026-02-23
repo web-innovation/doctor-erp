@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -20,6 +20,7 @@ import billingService from '../../services/billingService';
 import { useAuth, useHasPerm } from '../../context/AuthContext';
 import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
+import { renderBillPrintHtml } from '../../utils/printTemplates';
 
 const STATUS_COLORS = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -62,7 +63,7 @@ export default function Billing() {
     formState: { errors },
   } = useForm();
 
-  // Permission flags — call hooks unconditionally to keep hook order stable
+  // Permission flags â€” call hooks unconditionally to keep hook order stable
   const canCreateBilling = useHasPerm('billing:create', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
   const canEditBilling = useHasPerm('billing:edit', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT', 'PHARMACIST', 'RECEPTIONIST']);
 
@@ -77,6 +78,14 @@ export default function Billing() {
         ...filters,
       }),
     placeholderData: (previousData) => previousData,
+  });
+  const { data: clinicSettings } = useQuery({
+    queryKey: ['clinic-settings'],
+    queryFn: () => settingsService.getClinicSettings(),
+  });
+  const { data: printTemplateConfig } = useQuery({
+    queryKey: ['print-templates'],
+    queryFn: () => settingsService.getPrintTemplates(),
   });
 
   const bills = billsData?.data || [];
@@ -140,100 +149,16 @@ export default function Billing() {
   };
 
   const handlePrint = (bill) => {
-    // Generate print window with bill details
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       toast.error('Please allow popups to print');
       return;
     }
 
-    const itemsHtml = (bill.items || []).map(item => `
-      <tr>
-        <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.description}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">₹${item.unitPrice?.toFixed(2)}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">₹${(item.quantity * item.unitPrice)?.toFixed(2)}</td>
-      </tr>
-    `).join('');
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Bill - ${bill.billNo || bill.id}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
-          .header h1 { margin: 0; color: #333; }
-          .header p { margin: 5px 0; color: #666; }
-          .bill-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .patient-info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background: #333; color: white; padding: 10px; text-align: left; }
-          .totals { text-align: right; margin-top: 20px; }
-          .totals p { margin: 5px 0; }
-          .totals .total { font-size: 18px; font-weight: bold; }
-          .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
-          @media print { body { padding: 0; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>Docsy ERP</h1>
-          <p>Tax Invoice</p>
-        </div>
-        
-        <div class="bill-info">
-          <div>
-            <strong>Bill No:</strong> ${bill.billNo || bill.id.slice(-8).toUpperCase()}<br>
-            <strong>Date:</strong> ${formatDate(bill.createdAt)}
-          </div>
-          <div style="text-align: right;">
-            <strong>Status:</strong> ${bill.paymentStatus || 'PENDING'}
-          </div>
-        </div>
-        
-        <div class="patient-info">
-          <strong>Patient:</strong> ${bill.patient?.name || 'Unknown'}<br>
-          ${bill.patient?.phone ? `<strong>Phone:</strong> ${bill.patient.phone}` : ''}
-          ${bill.doctor?.name ? `<br><strong>Doctor:</strong> Dr. ${bill.doctor.name}` : ''}
-        </div>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th style="text-align: center;">Qty</th>
-              <th style="text-align: right;">Price</th>
-              <th style="text-align: right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
-        </table>
-        
-        <div class="totals">
-          <p><strong>Subtotal:</strong> ₹${bill.subtotal?.toFixed(2) || '0.00'}</p>
-          ${bill.discountAmount > 0 ? `<p><strong>Discount:</strong> -₹${bill.discountAmount?.toFixed(2)}</p>` : ''}
-          ${bill.taxAmount > 0 ? `<p><strong>Tax:</strong> ₹${bill.taxAmount?.toFixed(2)}</p>` : ''}
-          <p class="total"><strong>Total:</strong> ₹${bill.totalAmount?.toFixed(2) || '0.00'}</p>
-          <p><strong>Paid:</strong> ₹${bill.paidAmount?.toFixed(2) || '0.00'}</p>
-          <p><strong>Balance Due:</strong> ₹${bill.dueAmount?.toFixed(2) || '0.00'}</p>
-        </div>
-        
-        <div class="footer">
-          <p>Thank you for your visit!</p>
-          <p>This is a computer generated invoice.</p>
-        </div>
-        
-        <script>window.onload = function() { window.print(); }</script>
-      </body>
-      </html>
-    `;
-
+    const html = renderBillPrintHtml(bill, clinicSettings || {}, printTemplateConfig || {});
     printWindow.document.write(html);
     printWindow.document.close();
+    printWindow.onload = () => printWindow.print();
   };
 
   const onRecordPayment = (data) => {
@@ -638,7 +563,7 @@ export default function Billing() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payment Amount (₹) <span className="text-red-500">*</span>
+                Payment Amount (â‚¹) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"

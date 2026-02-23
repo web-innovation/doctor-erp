@@ -15,6 +15,7 @@ import {
   FaCheck,
   FaEnvelope,
   FaWhatsapp,
+  FaPrint,
 } from 'react-icons/fa';
 import settingsService from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
@@ -22,13 +23,20 @@ import EmailSettings from '../../components/settings/EmailSettings';
 import WhatsAppSettings from '../../components/settings/WhatsAppSettings';
 import RolePermissions from '../../components/settings/RolePermissions';
 import MobileAccess from '../../components/settings/MobileAccess';
+import {
+  BILL_TEMPLATE_OPTIONS,
+  PRESCRIPTION_TEMPLATE_OPTIONS,
+  PRINT_TEMPLATE_PLACEHOLDERS,
+  normalizePrintTemplateConfig,
+} from '../../utils/printTemplates';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
   { id: 'clinic', label: 'Clinic', icon: FaClinicMedical },
   { id: 'consultation', label: 'Consultation Fees', icon: FaRupeeSign },
-  // Tax and Working Hours temporarily hidden (managed elsewhere)
-  // { id: 'tax', label: 'Tax Setup', icon: FaPercent },
+  { id: 'tax', label: 'Tax Setup', icon: FaPercent },
+  { id: 'print', label: 'Print Templates', icon: FaPrint },
+  // Working Hours temporarily hidden (managed elsewhere)
   // { id: 'hours', label: 'Working Hours', icon: FaClock },
   { id: 'email', label: 'Email', icon: FaEnvelope },
   { id: 'whatsapp', label: 'WhatsApp', icon: FaWhatsapp },
@@ -108,6 +116,9 @@ export default function Settings() {
   // Dashboard widgets state
   const [dashboardWidgets, setDashboardWidgets] = useState(DEFAULT_WIDGETS);
   const [consultationFees, setConsultationFees] = useState({});
+  const [printTemplates, setPrintTemplates] = useState(
+    normalizePrintTemplateConfig({})
+  );
 
   // Fetch clinic settings
   const { data: clinicData, isLoading: clinicLoading } = useQuery({
@@ -129,8 +140,6 @@ export default function Settings() {
   }, [clinicData, setClinicValue]);
 
   // Fetch tax settings
-  // Tax settings temporarily disabled in UI
-  /*
   const { data: taxData, isLoading: taxLoading } = useQuery({
     queryKey: ['tax-settings'],
     queryFn: () => settingsService.getTaxSettings(),
@@ -146,7 +155,6 @@ export default function Settings() {
       setTaxValue('inclusiveTax', taxData.inclusiveTax || false);
     }
   }, [taxData, setTaxValue]);
-  */
 
   // Fetch working hours
   // Working hours temporarily disabled in UI
@@ -187,6 +195,16 @@ export default function Settings() {
     const fees = consultationData?.data?.fees || {};
     setConsultationFees(fees);
   }, [consultationData]);
+
+  const { data: printTemplateData, isLoading: printTemplateLoading } = useQuery({
+    queryKey: ['print-templates'],
+    queryFn: () => settingsService.getPrintTemplates(),
+  });
+
+  useEffect(() => {
+    if (!printTemplateData) return;
+    setPrintTemplates(normalizePrintTemplateConfig(printTemplateData));
+  }, [printTemplateData]);
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
@@ -273,6 +291,17 @@ export default function Settings() {
     },
   });
 
+  const updatePrintTemplatesMutation = useMutation({
+    mutationFn: (data) => settingsService.updatePrintTemplates(data),
+    onSuccess: () => {
+      toast.success('Print templates updated successfully');
+      queryClient.invalidateQueries(['print-templates']);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to update print templates');
+    },
+  });
+
   const onProfileSubmit = (data) => {
     updateProfileMutation.mutate(data);
   };
@@ -334,6 +363,11 @@ export default function Settings() {
       if (Number.isFinite(n) && n >= 0) sanitized[doctorId] = n;
     });
     updateConsultationFeesMutation.mutate(sanitized);
+  };
+
+  const savePrintTemplates = () => {
+    const payload = normalizePrintTemplateConfig(printTemplates);
+    updatePrintTemplatesMutation.mutate(payload);
   };
 
   // Render Profile Tab
@@ -676,8 +710,6 @@ export default function Settings() {
     </div>
   );
 
-  // Tax configuration disabled in UI for now
-  /*
   const renderTaxTab = () => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax Configuration</h3>
@@ -761,7 +793,6 @@ export default function Settings() {
       )}
     </div>
   );
-  */
 
   // Working hours management disabled in UI for now
   /*
@@ -984,6 +1015,94 @@ export default function Settings() {
     );
   };
 
+  const renderPrintTemplatesTab = () => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">Print Templates</h3>
+      <p className="text-sm text-gray-500 mb-6">
+        Choose a design for Bill and Prescription print. You can also use custom HTML with placeholders.
+      </p>
+
+      {printTemplateLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border border-gray-100 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Bill Template</label>
+              <select
+                value={printTemplates.billTemplateId}
+                onChange={(e) => setPrintTemplates((prev) => ({ ...prev, billTemplateId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {BILL_TEMPLATE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="border border-gray-100 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Prescription Template</label>
+              <select
+                value={printTemplates.prescriptionTemplateId}
+                onChange={(e) => setPrintTemplates((prev) => ({ ...prev, prescriptionTemplateId: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {PRESCRIPTION_TEMPLATE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {printTemplates.billTemplateId === 'custom' && (
+            <div className="border border-gray-100 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Custom Bill HTML</label>
+              <textarea
+                rows={10}
+                value={printTemplates.customBillHtml}
+                onChange={(e) => setPrintTemplates((prev) => ({ ...prev, customBillHtml: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="<h1>{{clinicName}}</h1><div>Bill {{billNo}}</div><table>{{itemsTableRows}}</table>"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Bill placeholders: {PRINT_TEMPLATE_PLACEHOLDERS.bill.join(', ')}
+              </p>
+            </div>
+          )}
+
+          {printTemplates.prescriptionTemplateId === 'custom' && (
+            <div className="border border-gray-100 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Custom Prescription HTML</label>
+              <textarea
+                rows={10}
+                value={printTemplates.customPrescriptionHtml}
+                onChange={(e) => setPrintTemplates((prev) => ({ ...prev, customPrescriptionHtml: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="<h1>{{clinicName}}</h1><div>Prescription {{prescriptionNo}}</div><table>{{medicinesTableRows}}</table>"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Prescription placeholders: {PRINT_TEMPLATE_PLACEHOLDERS.prescription.join(', ')}
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              onClick={savePrintTemplates}
+              disabled={updatePrintTemplatesMutation.isPending}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+            >
+              <FaSave />
+              {updatePrintTemplatesMutation.isPending ? 'Saving...' : 'Save Print Templates'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeTab) {
       case 'profile':
@@ -994,6 +1113,8 @@ export default function Settings() {
         return renderConsultationTab();
       case 'tax':
         return renderTaxTab();
+      case 'print':
+        return renderPrintTemplatesTab();
       case 'hours':
         return renderHoursTab();
       case 'email':

@@ -204,6 +204,17 @@ const settingsService = {
     return response.data;
   },
 
+  // Bill/Prescription print template settings
+  getPrintTemplates: async () => {
+    const response = await api.get('/clinic/print-templates');
+    return response.data?.data || response.data;
+  },
+
+  updatePrintTemplates: async (data) => {
+    const response = await api.put('/clinic/print-templates', data);
+    return response.data;
+  },
+
   // Super admin access controls (read-only for clinic users)
   getAccessControls: async () => {
     const response = await api.get('/clinic/access-controls');

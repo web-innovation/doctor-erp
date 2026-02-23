@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -17,7 +17,9 @@ import {
   FaHeartbeat,
 } from 'react-icons/fa';
 import { prescriptionService } from '../../services/prescriptionService';
+import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
+import { renderPrescriptionPrintHtml } from '../../utils/printTemplates';
 
 export default function PrescriptionDetail() {
   const { id } = useParams();
@@ -30,6 +32,14 @@ export default function PrescriptionDetail() {
     queryFn: () => prescriptionService.getPrescription(id),
     enabled: !!id,
   });
+  const { data: clinicSettings } = useQuery({
+    queryKey: ['clinic-settings'],
+    queryFn: () => settingsService.getClinicSettings(),
+  });
+  const { data: printTemplateConfig } = useQuery({
+    queryKey: ['print-templates'],
+    queryFn: () => settingsService.getPrintTemplates(),
+  });
 
   const prescription = prescriptionData?.data;
 
@@ -40,7 +50,7 @@ export default function PrescriptionDetail() {
     let vitalsItems = '';
     if (vitals.bp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.bp}</div><div class="label">BP (mmHg)</div></div>`;
     if (vitals.pulse) vitalsItems += `<div class="vital-item"><div class="value">${vitals.pulse}</div><div class="label">Pulse (bpm)</div></div>`;
-    if (vitals.temp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.temp}</div><div class="label">Temp (°F)</div></div>`;
+    if (vitals.temp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.temp}</div><div class="label">Temp (Â°F)</div></div>`;
     if (vitals.spo2) vitalsItems += `<div class="vital-item"><div class="value">${vitals.spo2}%</div><div class="label">SpO2</div></div>`;
     if (vitals.weight) vitalsItems += `<div class="vital-item"><div class="value">${vitals.weight}</div><div class="label">Weight (kg)</div></div>`;
 
@@ -83,7 +93,7 @@ export default function PrescriptionDetail() {
 
     return `
       <div class="section">
-        <div class="section-title">℞ Medicines</div>
+        <div class="section-title">â„ž Medicines</div>
         <table>
           <thead>
             <tr>
@@ -121,238 +131,23 @@ export default function PrescriptionDetail() {
 
   const handlePrint = () => {
     if (!prescription) return;
-    
+
     const printWindow = window.open('', '_blank');
-    const prescNo = prescription.prescriptionNo || 'RX' + String(prescription.id).padStart(5, '0');
-    const dateStr = new Date(prescription.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const patientName = prescription.patient?.name || 'N/A';
-    const patientId = prescription.patient?.patientId || 'N/A';
-    const phone = prescription.patient?.phone || 'N/A';
-    
-    const vitalsHtml = buildVitalsHtml(prescription.vitalsSnapshot);
-    const diagnosisHtml = buildDiagnosisHtml(prescription.diagnosis);
-    const medicinesHtml = buildMedicinesHtml(prescription.medicines);
-    const labTestsHtml = buildLabTestsHtml(prescription.labTests);
-    const notesHtml = prescription.clinicalNotes ? `
-      <div class="section">
-        <div class="section-title">Clinical Notes</div>
-        <div class="notes-box"><p>${prescription.clinicalNotes}</p></div>
-      </div>
-    ` : '';
-    const adviceHtml = prescription.advice ? `
-      <div class="section">
-        <div class="section-title">Advice</div>
-        <div class="advice-box"><p>${prescription.advice}</p></div>
-      </div>
-    ` : '';
-    const followupHtml = prescription.followUpDate ? `
-      <div class="followup">
-        <div class="followup-label">Follow-up Date</div>
-        <div class="followup-date">${new Date(prescription.followUpDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-      </div>
-    ` : '<div></div>';
+    if (!printWindow) {
+      toast.error('Please allow popups to print');
+      return;
+    }
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Prescription - ${prescNo}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-              padding: 30px; 
-              max-width: 800px; 
-              margin: 0 auto;
-              color: #333;
-              line-height: 1.5;
-            }
-            .prescription-container {
-              border: 2px solid #2563eb;
-              border-radius: 8px;
-              overflow: hidden;
-            }
-            .header { 
-              background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-              color: white;
-              padding: 20px 30px;
-              text-align: center;
-            }
-            .clinic-name { font-size: 28px; font-weight: bold; margin-bottom: 5px; }
-            .clinic-info { font-size: 12px; opacity: 0.9; }
-            .content { padding: 25px 30px; position: relative; }
-            .prescription-no { text-align: right; font-size: 14px; color: #666; margin-bottom: 15px; }
-            .patient-card {
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              padding: 15px 20px;
-              margin-bottom: 20px;
-            }
-            .patient-card h3 {
-              color: #2563eb;
-              font-size: 14px;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              margin-bottom: 10px;
-            }
-            .patient-details {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 15px;
-            }
-            .detail-item label { font-size: 11px; color: #64748b; display: block; }
-            .detail-item span { font-size: 14px; font-weight: 600; color: #1e293b; }
-            .vitals-section {
-              background: #fef3c7;
-              border: 1px solid #fbbf24;
-              border-radius: 8px;
-              padding: 15px 20px;
-              margin-bottom: 20px;
-            }
-            .vitals-section h3 {
-              color: #b45309;
-              font-size: 14px;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              margin-bottom: 10px;
-            }
-            .vitals-grid {
-              display: grid;
-              grid-template-columns: repeat(5, 1fr);
-              gap: 10px;
-            }
-            .vital-item {
-              background: white;
-              padding: 10px;
-              border-radius: 6px;
-              text-align: center;
-            }
-            .vital-item .value { font-size: 18px; font-weight: bold; color: #b45309; }
-            .vital-item .label { font-size: 10px; color: #666; text-transform: uppercase; }
-            .section { margin-bottom: 20px; }
-            .section-title {
-              font-size: 14px;
-              font-weight: bold;
-              color: #2563eb;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              padding-bottom: 8px;
-              border-bottom: 2px solid #e2e8f0;
-              margin-bottom: 15px;
-            }
-            .diagnosis-tags { display: flex; flex-wrap: wrap; gap: 8px; }
-            .diagnosis-tag {
-              background: #dbeafe;
-              color: #1e40af;
-              padding: 6px 12px;
-              border-radius: 20px;
-              font-size: 13px;
-              font-weight: 500;
-            }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-            th { 
-              background: #f1f5f9;
-              color: #475569;
-              font-weight: 600;
-              text-transform: uppercase;
-              font-size: 11px;
-              letter-spacing: 0.5px;
-              padding: 12px 10px;
-              text-align: left;
-              border-bottom: 2px solid #e2e8f0;
-            }
-            td { padding: 12px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-            tr:last-child td { border-bottom: none; }
-            .medicine-name { font-weight: 600; color: #1e293b; }
-            .generic-name { font-size: 11px; color: #64748b; font-style: italic; }
-            .lab-tests { display: grid; gap: 10px; }
-            .lab-test-item {
-              background: #fef3c7;
-              border-left: 4px solid #f59e0b;
-              padding: 10px 15px;
-              border-radius: 0 6px 6px 0;
-            }
-            .lab-test-name { font-weight: 600; color: #92400e; }
-            .lab-instructions { font-size: 12px; color: #78350f; }
-            .advice-box {
-              background: #ecfdf5;
-              border: 1px solid #10b981;
-              border-radius: 8px;
-              padding: 15px;
-            }
-            .advice-box p { color: #065f46; white-space: pre-wrap; }
-            .notes-box {
-              background: #f8fafc;
-              border: 1px solid #cbd5e1;
-              border-radius: 8px;
-              padding: 15px;
-            }
-            .notes-box p { color: #475569; white-space: pre-wrap; }
-            .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px dashed #cbd5e1;
-              display: flex;
-              justify-content: space-between;
-            }
-            .followup { background: #dbeafe; padding: 10px 15px; border-radius: 6px; }
-            .followup-label { font-size: 11px; color: #3b82f6; text-transform: uppercase; }
-            .followup-date { font-weight: bold; color: #1e40af; }
-            .signature { text-align: right; }
-            .signature-line { border-top: 1px solid #333; width: 200px; margin-left: auto; margin-bottom: 5px; }
-            .doctor-name { font-weight: bold; }
-            @media print { 
-              body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-              .prescription-container { border: 1px solid #000; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="prescription-container">
-            <div class="header">
-              <div class="clinic-name">Docsy ERP</div>
-              <div class="clinic-info">Your Trusted Healthcare Partner | Phone: +91 9876543210</div>
-            </div>
-            <div class="content">
-              <div class="prescription-no">
-                <strong>${prescNo}</strong>&nbsp;|&nbsp;${dateStr}
-              </div>
-              
-              <div class="patient-card">
-                <h3>Patient Information</h3>
-                <div class="patient-details">
-                  <div class="detail-item"><label>Name</label><span>${patientName}</span></div>
-                  <div class="detail-item"><label>Patient ID</label><span>${patientId}</span></div>
-                  <div class="detail-item"><label>Phone</label><span>${phone}</span></div>
-                  <div class="detail-item"><label>Date</label><span>${new Date(prescription.createdAt).toLocaleDateString('en-IN')}</span></div>
-                </div>
-              </div>
+    const html = renderPrescriptionPrintHtml(
+      prescription,
+      clinicSettings || {},
+      printTemplateConfig || {}
+    );
 
-              ${vitalsHtml}
-              ${diagnosisHtml}
-              ${notesHtml}
-              ${medicinesHtml}
-              ${labTestsHtml}
-              ${adviceHtml}
-
-              <div class="footer">
-                ${followupHtml}
-                <div class="signature">
-                  <div class="signature-line"></div>
-                  <div class="doctor-name">Doctor's Signature</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
+    printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.print();
-    };
+    printWindow.onload = () => printWindow.print();
   };
-
   const handleSend = async (method) => {
     try {
       const response = await prescriptionService.sendPrescription(id, method);
@@ -494,7 +289,7 @@ export default function PrescriptionDetail() {
                 {vitals.temp && (
                   <div className="bg-gray-50 p-3 rounded-lg">
                     <p className="text-xs text-gray-500">Temperature</p>
-                    <p className="text-lg font-semibold text-gray-900">{vitals.temp}°F</p>
+                    <p className="text-lg font-semibold text-gray-900">{vitals.temp}Â°F</p>
                   </div>
                 )}
                 {vitals.spo2 && (

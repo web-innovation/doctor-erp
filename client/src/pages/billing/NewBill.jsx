@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+﻿import { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -142,6 +142,15 @@ export default function NewBill() {
   const watchDiscountType = watch('discountType');
   const watchGstRate = Number(watch('gstRate') || 0);
 
+  // Module-level defaults (watched so memo recalculates when changed)
+  const defaultConsultationGst = Number(watch('defaultConsultationGstPercent') || 0);
+  const defaultPharmacyGst = Number(watch('defaultPharmacyGstPercent') || 0);
+  const defaultLabGst = Number(watch('defaultLabTestGstPercent') || 0);
+
+  const defaultConsultationDiscount = Number(watch('defaultConsultationDiscountPercent') || 0);
+  const defaultPharmacyDiscount = Number(watch('defaultPharmacyDiscountPercent') || 0);
+  const defaultLabDiscount = Number(watch('defaultLabTestDiscountPercent') || 0);
+
   // Ensure gstRate is set as a numeric default so calculations run on first render
   useEffect(() => {
     setValue('gstRate', 0);
@@ -212,49 +221,134 @@ export default function NewBill() {
     queryKey: ['consultation-fees'],
     queryFn: () => settingsService.getConsultationFees(),
   });
+  const { data: taxSettingsData } = useQuery({
+    queryKey: ['tax-settings'],
+    queryFn: () => settingsService.getTaxSettings(),
+  });
   const consultationFees = consultationData?.data?.fees || {};
   const getConsultationFee = (doctorId) => Number(consultationFees?.[doctorId] || 0);
 
-  // Calculate totals
-  const calculations = useMemo(() => {
-    const subtotal = watchItems.reduce((sum, item) => {
-      return sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0);
-    }, 0);
+  useEffect(() => {
+    if (isEditMode || !taxSettingsData) return;
+    setValue('defaultConsultationGstPercent', Number(taxSettingsData.consultationGST ?? 0));
+    setValue('defaultPharmacyGstPercent', Number(taxSettingsData.pharmacyGST ?? 0));
+    setValue('defaultLabTestGstPercent', Number(taxSettingsData.labGST ?? 0));
+  }, [isEditMode, taxSettingsData, setValue]);
 
-    let discountAmount = 0;
-    if (watchDiscountType === 'percentage') {
-      discountAmount = (subtotal * (parseFloat(watchDiscount) || 0)) / 100;
-    } else {
-      discountAmount = parseFloat(watchDiscount) || 0;
+  const resolveItemModule = (item) => {
+    const rawType = String(item?.type || '').toLowerCase();
+    if (rawType === 'consultation') return 'consultation';
+    if (rawType === 'pharmacy' || rawType === 'medicine') return 'pharmacy';
+    if (rawType === 'lab_test' || rawType === 'lab') return 'lab_test';
+    if (item?.productId) return 'pharmacy';
+    if (item?.labId || item?.labTestId) return 'lab_test';
+    if (item?.doctorId) return 'consultation';
+    return 'other';
+  };
+
+  const getModuleDefaults = (item) => {
+    const moduleType = resolveItemModule(item);
+    if (moduleType === 'consultation') {
+      return { gstPercent: defaultConsultationGst, discountPercent: defaultConsultationDiscount };
     }
+    if (moduleType === 'pharmacy') {
+      return { gstPercent: defaultPharmacyGst, discountPercent: defaultPharmacyDiscount };
+    }
+    if (moduleType === 'lab_test') {
+      return { gstPercent: defaultLabGst, discountPercent: defaultLabDiscount };
+    }
+    return { gstPercent: watchGstRate, discountPercent: 0 };
+  };
 
-    const afterDiscount = subtotal - discountAmount;
-    const gstAmount = (afterDiscount * (parseFloat(watchGstRate) || 0)) / 100;
-    const total = afterDiscount + gstAmount;
+  // Calculate totals - per-item GST/discount + module defaults + optional global bill discount
+  const calculations = useMemo(() => {
+    const items = watchItems || [];
+    const moduleSummary = {
+      consultation: { label: 'Consultation', subtotal: 0, discount: 0, taxable: 0, gst: 0, total: 0 },
+      pharmacy: { label: 'Pharmacy', subtotal: 0, discount: 0, taxable: 0, gst: 0, total: 0 },
+      lab_test: { label: 'Lab Test', subtotal: 0, discount: 0, taxable: 0, gst: 0, total: 0 },
+      other: { label: 'Other', subtotal: 0, discount: 0, taxable: 0, gst: 0, total: 0 },
+    };
+
+    const computedItems = items.map((item) => {
+      const moduleType = resolveItemModule(item);
+      const qty = Math.max(0, parseFloat(item.quantity) || 0);
+      const unitPrice = Math.max(0, parseFloat(item.unitPrice) || 0);
+      const lineSubtotal = qty * unitPrice;
+
+      let discountAmount = parseFloat(item.discountAmount);
+      if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+        let discountPercent = parseFloat(item.discountPercent);
+        if (!Number.isFinite(discountPercent) || discountPercent < 0) {
+          if (moduleType === 'consultation') discountPercent = defaultConsultationDiscount;
+          else if (moduleType === 'pharmacy') discountPercent = defaultPharmacyDiscount;
+          else if (moduleType === 'lab_test') discountPercent = defaultLabDiscount;
+          else discountPercent = 0;
+        }
+        discountAmount = (lineSubtotal * discountPercent) / 100;
+      }
+      if (discountAmount > lineSubtotal) discountAmount = lineSubtotal;
+
+      let gstPercent = parseFloat(item.gstPercent);
+      if (!Number.isFinite(gstPercent) || gstPercent < 0) {
+        if (moduleType === 'consultation') gstPercent = defaultConsultationGst;
+        else if (moduleType === 'pharmacy') gstPercent = defaultPharmacyGst;
+        else if (moduleType === 'lab_test') gstPercent = defaultLabGst;
+        else gstPercent = watchGstRate;
+      }
+
+      const taxableBeforeGlobal = Math.max(0, lineSubtotal - discountAmount);
+      const gstBeforeGlobal = (taxableBeforeGlobal * gstPercent) / 100;
+
+      moduleSummary[moduleType].subtotal += lineSubtotal;
+      moduleSummary[moduleType].discount += discountAmount;
+      moduleSummary[moduleType].taxable += taxableBeforeGlobal;
+      moduleSummary[moduleType].gst += gstBeforeGlobal;
+
+      return { moduleType, taxableBeforeGlobal };
+    });
+
+    const subtotal = Object.values(moduleSummary).reduce((sum, m) => sum + m.subtotal, 0);
+    const itemDiscountTotal = Object.values(moduleSummary).reduce((sum, m) => sum + m.discount, 0);
+    const taxableBeforeGlobal = Object.values(moduleSummary).reduce((sum, m) => sum + m.taxable, 0);
+
+    let globalDiscountAmount = 0;
+    if (watchDiscountType === 'percentage') {
+      globalDiscountAmount = (taxableBeforeGlobal * (parseFloat(watchDiscount) || 0)) / 100;
+    } else {
+      globalDiscountAmount = parseFloat(watchDiscount) || 0;
+    }
+    if (globalDiscountAmount > taxableBeforeGlobal) globalDiscountAmount = taxableBeforeGlobal;
+
+    const taxScale = taxableBeforeGlobal > 0 ? (taxableBeforeGlobal - globalDiscountAmount) / taxableBeforeGlobal : 0;
+    const adjustedSummary = Object.keys(moduleSummary).reduce((acc, key) => {
+      const module = moduleSummary[key];
+      const adjustedTaxable = module.taxable * taxScale;
+      const adjustedGst = module.gst * taxScale;
+      acc[key] = {
+        ...module,
+        taxable: adjustedTaxable,
+        gst: adjustedGst,
+        total: adjustedTaxable + adjustedGst,
+      };
+      return acc;
+    }, {});
+
+    const gstAmount = Object.values(adjustedSummary).reduce((sum, m) => sum + m.gst, 0);
+    const taxableTotal = Object.values(adjustedSummary).reduce((sum, m) => sum + m.taxable, 0);
+    const total = taxableTotal + gstAmount;
 
     return {
       subtotal,
-      discountAmount,
-      afterDiscount,
+      itemDiscountAmount: itemDiscountTotal,
+      globalDiscountAmount,
+      discountAmount: itemDiscountTotal + globalDiscountAmount,
       gstAmount,
       total,
+      moduleSummary: adjustedSummary,
+      computedItems,
     };
-  // include a stringified items snapshot so memo recalculates when nested item fields change
-  }, [JSON.stringify(watchItems || []), watchDiscount, watchDiscountType, watchGstRate]);
-
-  // Prefill category amounts in summary based on current bill items.
-  const categoryAmounts = useMemo(() => {
-    return (watchItems || []).reduce(
-      (acc, item) => {
-        const amount = (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0);
-        const itemType = (item.type || '').toString().toLowerCase();
-        if (itemType === 'medicine') acc.medicine += amount;
-        if (itemType === 'lab') acc.labTest += amount;
-        return acc;
-      },
-      { medicine: 0, labTest: 0 }
-    );
-  }, [JSON.stringify(watchItems || [])]);
+  }, [JSON.stringify(watchItems || []), watchDiscount, watchDiscountType, watchGstRate, defaultConsultationGst, defaultPharmacyGst, defaultLabGst, defaultConsultationDiscount, defaultPharmacyDiscount, defaultLabDiscount]);
 
   // Create bill mutation
   const queryClient = useQueryClient();
@@ -296,10 +390,15 @@ export default function NewBill() {
 
       const items = (b.items || []).map(it => ({
         productId: it.productId || null,
+        labId: it.labId || null,
+        labTestId: it.labTestId || null,
         description: it.description || '',
         quantity: it.quantity || 1,
         unitPrice: it.unitPrice || it.amount || 0,
-        type: it.type || 'other',
+        type: resolveItemModule(it),
+        gstPercent: it.gstPercent ?? '',
+        discountPercent: it.discountPercent ?? '',
+        discountAmount: it.discountAmount ?? '',
         doctorId: it.doctorId || undefined,
       }));
 
@@ -327,6 +426,12 @@ export default function NewBill() {
         }
 
         setValue('notes', b.notes || '');
+        setValue('defaultConsultationGstPercent', b.defaultConsultationGstPercent ?? 5);
+        setValue('defaultPharmacyGstPercent', b.defaultPharmacyGstPercent ?? 10);
+        setValue('defaultLabTestGstPercent', b.defaultLabTestGstPercent ?? 20);
+        setValue('defaultConsultationDiscountPercent', b.defaultConsultationDiscountPercent ?? 0);
+        setValue('defaultPharmacyDiscountPercent', b.defaultPharmacyDiscountPercent ?? 0);
+        setValue('defaultLabTestDiscountPercent', b.defaultLabTestDiscountPercent ?? 0);
       } catch (e) {
         // ignore setValue errors
       }
@@ -356,8 +461,20 @@ export default function NewBill() {
       const prefillRes = await billingService.getPrefill(patient.id);
       const prefill = prefillRes?.data;
       if (prefill?.hasPrefill && Array.isArray(prefill.items) && prefill.items.length > 0) {
-        replace(prefill.items);
-        setValue('items', prefill.items);
+        const mappedPrefill = prefill.items.map((item) => ({
+          ...item,
+          type: resolveItemModule(item),
+        }));
+        mappedPrefill.forEach((item, idx) => {
+          const defaults = getModuleDefaults(item);
+          if (item.gstPercent === '' || item.gstPercent == null) item.gstPercent = defaults.gstPercent;
+          if ((item.discountPercent === '' || item.discountPercent == null) && (item.discountAmount === '' || item.discountAmount == null)) {
+            item.discountPercent = defaults.discountPercent;
+          }
+          mappedPrefill[idx] = item;
+        });
+        replace(mappedPrefill);
+        setValue('items', mappedPrefill);
         // If prescription has a doctor, set billing doctor to match
         if (prefill.doctor?.id) {
           setSelectedDoctor({ id: prefill.doctor.id, name: prefill.doctor.name });
@@ -405,7 +522,9 @@ export default function NewBill() {
         description: product.name,
         quantity: 1,
         unitPrice: product.sellingPrice || product.mrp || 0,
-        type: 'medicine',
+        type: 'pharmacy',
+        gstPercent: defaultPharmacyGst,
+        discountPercent: defaultPharmacyDiscount,
       });
       toast.success(`${product.name} added to bill`);
     }
@@ -426,8 +545,11 @@ export default function NewBill() {
       description: test.name,
       quantity: 1,
       unitPrice: test.price || 0,
-      type: 'lab',
-      meta: { labId: selectedLab?.id || test.labId, labTestId: test.id },
+      type: 'lab_test',
+      labId: selectedLab?.id || test.labId || null,
+      labTestId: test.id || null,
+      gstPercent: defaultLabGst,
+      discountPercent: defaultLabDiscount,
     });
     toast.success(`${test.name} added to bill`);
     setLabTestSearch('');
@@ -442,14 +564,32 @@ export default function NewBill() {
       description: '',
       quantity: 1,
       unitPrice: billType === 'consultation' ? getConsultationFee(consultationDoctorId) : 0,
-      type: billType === 'consultation' ? 'consultation' : billType === 'lab' ? 'lab' : 'other',
+      type: billType === 'consultation' ? 'consultation' : billType === 'lab' ? 'lab_test' : billType === 'pharmacy' ? 'pharmacy' : 'other',
       // default doctor for consultation items to current user when they are a doctor and not an admin
       doctorId:
         billType === 'consultation'
           ? (selectedDoctor?.id || (isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined))
           : undefined,
+      gstPercent: billType === 'consultation' ? defaultConsultationGst : billType === 'lab' ? defaultLabGst : billType === 'pharmacy' ? defaultPharmacyGst : watchGstRate,
+      discountPercent: billType === 'consultation' ? defaultConsultationDiscount : billType === 'lab' ? defaultLabDiscount : billType === 'pharmacy' ? defaultPharmacyDiscount : 0,
     });
   };
+
+  useEffect(() => {
+    (watchItems || []).forEach((item, index) => {
+      const defaults = getModuleDefaults(item);
+      const gstEmpty = item?.gstPercent === '' || item?.gstPercent == null;
+      const discountPercentEmpty = item?.discountPercent === '' || item?.discountPercent == null;
+      const discountAmountEmpty = item?.discountAmount === '' || item?.discountAmount == null;
+
+      if (gstEmpty) {
+        setValue(`items.${index}.gstPercent`, defaults.gstPercent);
+      }
+      if (discountPercentEmpty && discountAmountEmpty) {
+        setValue(`items.${index}.discountPercent`, defaults.discountPercent);
+      }
+    });
+  }, [watchItems, defaultConsultationGst, defaultPharmacyGst, defaultLabGst, defaultConsultationDiscount, defaultPharmacyDiscount, defaultLabDiscount, watchGstRate, setValue]);
 
   useEffect(() => {
     if (billType !== 'consultation') return;
@@ -487,6 +627,8 @@ export default function NewBill() {
       'lab': 'LAB_TEST',
     };
 
+    const normalizedDiscountType = String(data.discountType || 'fixed').toLowerCase() === 'percentage' ? 'PERCENTAGE' : 'AMOUNT';
+
     const billData = {
       patientId: selectedPatient.id,
       doctorId: selectedDoctor?.id,
@@ -495,14 +637,25 @@ export default function NewBill() {
         description: item.description,
         quantity: parseInt(item.quantity),
         unitPrice: parseFloat(item.unitPrice),
-        gstPercent: parseFloat(data.gstRate) || 0,
+        type: resolveItemModule(item),
+        gstPercent: item.gstPercent !== '' && item.gstPercent != null ? parseFloat(item.gstPercent) : null,
+        discountPercent: item.discountPercent !== '' && item.discountPercent != null ? parseFloat(item.discountPercent) : null,
+        discountAmount: item.discountAmount !== '' && item.discountAmount != null ? parseFloat(item.discountAmount) : null,
         productId: item.productId || undefined,
+        labId: item.labId || undefined,
+        labTestId: item.labTestId || undefined,
         doctorId: item.doctorId || undefined,
       })),
-      discount: calculations.discountAmount,
-      discountType: 'AMOUNT',
+      discount: parseFloat(data.discount) || 0,
+      discountType: normalizedDiscountType,
       taxConfig: { gstRate: parseFloat(data.gstRate) || 0 },
       notes: data.notes,
+      defaultConsultationGstPercent: parseFloat(data.defaultConsultationGstPercent) || 0,
+      defaultPharmacyGstPercent: parseFloat(data.defaultPharmacyGstPercent) || 0,
+      defaultLabTestGstPercent: parseFloat(data.defaultLabTestGstPercent) || 0,
+      defaultConsultationDiscountPercent: parseFloat(data.defaultConsultationDiscountPercent) || 0,
+      defaultPharmacyDiscountPercent: parseFloat(data.defaultPharmacyDiscountPercent) || 0,
+      defaultLabTestDiscountPercent: parseFloat(data.defaultLabTestDiscountPercent) || 0,
     };
 
     // If collecting payment immediately
@@ -527,6 +680,38 @@ export default function NewBill() {
       currency: 'INR',
       minimumFractionDigits: 0,
     }).format(amount || 0);
+  };
+
+  const getItemPreview = (item) => {
+    const moduleType = resolveItemModule(item);
+    const quantity = Math.max(0, Number(item?.quantity || 0));
+    const unitPrice = Math.max(0, Number(item?.unitPrice || 0));
+    const subtotal = quantity * unitPrice;
+
+    let discountAmount = Number(item?.discountAmount);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      let discountPercent = Number(item?.discountPercent);
+      if (!Number.isFinite(discountPercent) || discountPercent < 0) {
+        if (moduleType === 'consultation') discountPercent = defaultConsultationDiscount;
+        else if (moduleType === 'pharmacy') discountPercent = defaultPharmacyDiscount;
+        else if (moduleType === 'lab_test') discountPercent = defaultLabDiscount;
+        else discountPercent = 0;
+      }
+      discountAmount = (subtotal * discountPercent) / 100;
+    }
+    if (discountAmount > subtotal) discountAmount = subtotal;
+
+    let gstPercent = Number(item?.gstPercent);
+    if (!Number.isFinite(gstPercent) || gstPercent < 0) {
+      if (moduleType === 'consultation') gstPercent = defaultConsultationGst;
+      else if (moduleType === 'pharmacy') gstPercent = defaultPharmacyGst;
+      else if (moduleType === 'lab_test') gstPercent = defaultLabGst;
+      else gstPercent = watchGstRate;
+    }
+
+    const taxable = Math.max(0, subtotal - discountAmount);
+    const gstAmount = (taxable * gstPercent) / 100;
+    return { subtotal, discountAmount, taxable, gstAmount, total: taxable + gstAmount };
   };
 
   return (
@@ -609,7 +794,7 @@ export default function NewBill() {
                         >
                           <p className="font-medium text-gray-900">{patient.name}</p>
                           <p className="text-sm text-gray-500">
-                            {patient.phone} {patient.email && `• ${patient.email}`}
+                            {patient.phone} {patient.email && `â€¢ ${patient.email}`}
                           </p>
                         </button>
                       ))}
@@ -622,7 +807,7 @@ export default function NewBill() {
                     <p className="font-medium text-blue-900">{selectedPatient.name}</p>
                     <p className="text-sm text-blue-700 mt-1">
                       {selectedPatient.phone}
-                      {selectedPatient.email && ` • ${selectedPatient.email}`}
+                      {selectedPatient.email && ` â€¢ ${selectedPatient.email}`}
                     </p>
                     {selectedPatient.patientId && (
                       <p className="text-xs text-blue-600 mt-1">
@@ -799,106 +984,143 @@ export default function NewBill() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {fields.map((field, index) => (
                       <div
                         key={field.id}
-                        className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                        className={`rounded-xl border shadow-sm overflow-hidden ${index % 2 === 0 ? 'bg-white border-gray-200' : 'bg-slate-50/70 border-slate-300'}`}
                       >
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-7 gap-3">
-                          <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">
-                              Description
-                            </label>
-                            <input
-                              {...register(`items.${index}.description`, {
-                                required: true,
-                              })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              placeholder="Item description"
-                            />
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/80 bg-white/70">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
+                              Item {index + 1}
+                            </span>
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-semibold bg-blue-50 border border-blue-100 text-blue-700 uppercase">
+                              {resolveItemModule(watchItems?.[index] || field).replace('_', ' ')}
+                            </span>
                           </div>
-                          {/* Consultation-specific: allow selecting doctor per item */}
-                          {field.type === 'consultation' && (
-                            <div className="md:col-span-1">
-                              <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
-                              <select
-                                {...register(`items.${index}.doctorId`)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              >
-                                {!canSeeAllDoctors && <option value={user?.id}>{user?.name}</option>}
-                                {canSeeAllDoctors && <option value="">Select doctor</option>}
-                                {augmentedDoctors.map((d) => (
-                                  <option key={d.id} value={d.id}>{d.name}</option>
-                                ))}
-                              </select>
+                          <button
+                            type="button"
+                            onClick={() => remove(index)}
+                            className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                            title="Remove item"
+                          >
+                            <FaTrash />
+                          </button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          <div className="rounded-lg border border-gray-200 bg-white p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                              Line 1: Item Details
                             </div>
-                          )}
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Qty</label>
-                            <input
-                              type="number"
-                              min="1"
-                              {...register(`items.${index}.quantity`, {
-                                required: true,
-                                min: 1,
-                              })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                              <div className={resolveItemModule(watchItems?.[index] || field) === 'consultation' ? 'md:col-span-6' : 'md:col-span-9'}>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">
+                                  Description
+                                </label>
+                                <input
+                                  {...register(`items.${index}.description`, {
+                                    required: true,
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                  placeholder="Item description"
+                                />
+                              </div>
+                              {resolveItemModule(watchItems?.[index] || field) === 'consultation' && (
+                                <div className="md:col-span-3">
+                                  <label className="block text-xs font-medium text-gray-500 mb-1">Doctor</label>
+                                  <select
+                                    {...register(`items.${index}.doctorId`, {
+                                      onChange: (e) => {
+                                        const doctorId = e?.target?.value;
+                                        if (!doctorId) return;
+                                        const fee = getConsultationFee(doctorId);
+                                        setValue(`items.${index}.unitPrice`, Number.isFinite(fee) ? fee : 0);
+                                      },
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                  >
+                                    {!canSeeAllDoctors && <option value={user?.id}>{user?.name}</option>}
+                                    {canSeeAllDoctors && <option value="">Select doctor</option>}
+                                    {augmentedDoctors.map((d) => (
+                                      <option key={d.id} value={d.id}>{d.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              <div className="md:col-span-1">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Qty</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  {...register(`items.${index}.quantity`, {
+                                    required: true,
+                                    min: 1,
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Price (INR)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  {...register(`items.${index}.unitPrice`, {
+                                    required: true,
+                                    min: 0,
+                                  })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Price (₹)</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              {...register(`items.${index}.unitPrice`, {
-                                required: true,
-                                min: 0,
-                              })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">GST (%)</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              max="100"
-                              {...register(`items.${index}.gstPercent`)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Discount (%)</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              max="100"
-                              {...register(`items.${index}.discountPercent`)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Discount Amt</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              {...register(`items.${index}.discountAmount`)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
+                          <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 mb-2">
+                              Line 2: GST & Discount
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                              <div className="md:col-span-4">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">GST (%)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  {...register(`items.${index}.gstPercent`)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                              <div className="md:col-span-4">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Discount (%)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  {...register(`items.${index}.discountPercent`)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                              <div className="md:col-span-4">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Discount Amount</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  {...register(`items.${index}.discountAmount`)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => remove(index)}
-                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition mt-5"
-                        >
-                          <FaTrash />
-                        </button>
+                        <div className="mt-3 text-xs text-gray-500 border-t border-gray-100 pt-2">
+                          {(() => {
+                            const preview = getItemPreview(watchItems?.[index] || field);
+                            return `Line Total ${formatCurrency(preview.total)} | Taxable ${formatCurrency(preview.taxable)} | GST ${formatCurrency(preview.gstAmount)}`;
+                          })()}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -906,54 +1128,74 @@ export default function NewBill() {
               </div>
 
               {/* Discount & GST */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <FaPercent className="text-blue-600" />
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Discount & GST
-                  </h2>
+              <div className="rounded-xl border border-gray-200 shadow-sm overflow-hidden bg-white">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/80 bg-white/70">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
+                      Billing Rules
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-blue-50 border border-blue-100 text-blue-700 uppercase">
+                      <FaPercent className="text-[10px]" />
+                      Bill-Level Discount
+                    </span>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Discount Type
-                    </label>
-                    <select
-                      {...register('discountType')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="fixed">Fixed Amount (₹)</option>
-                      <option value="percentage">Percentage (%)</option>
-                    </select>
+                <div className="p-4 space-y-3">
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                      Discount Controls
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-6">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Discount Type
+                        </label>
+                        <select
+                          {...register('discountType')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        >
+                          <option value="fixed">Fixed Amount (INR)</option>
+                          <option value="percentage">Percentage (%)</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-6">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Discount {watchDiscountType === 'percentage' ? '(%)' : '(INR)'}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          {...register('discount')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Discount {watchDiscountType === 'percentage' ? '(%)' : '(₹)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      {...register('discount')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      GST Rate
-                    </label>
-                    <select
-                      {...register('gstRate')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {GST_RATES.map((rate) => (
-                        <option key={rate.value} value={rate.value}>
-                          {rate.label}
-                        </option>
-                      ))}
-                    </select>
+
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 mb-2">
+                      Tax Fallback
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-6">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Fallback GST For Other Items
+                        </label>
+                        <select
+                          {...register('gstRate')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        >
+                          {GST_RATES.map((rate) => (
+                            <option key={rate.value} value={rate.value}>
+                              {rate.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -981,33 +1223,57 @@ export default function NewBill() {
                 </h2>
 
                 <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Medicine Amount</span>
-                    <span className="text-gray-900">{formatCurrency(categoryAmounts.medicine)}</span>
-                  </div>
-
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Lab Test Amount</span>
-                    <span className="text-gray-900">{formatCurrency(categoryAmounts.labTest)}</span>
-                  </div>
+                  {Object.values(calculations.moduleSummary || {}).filter((module) => module.subtotal > 0).map((module) => (
+                    <div key={module.label} className="rounded-lg border border-gray-100 p-3 bg-gray-50/60">
+                      <div className="flex justify-between text-sm font-medium text-gray-800">
+                        <span>{module.label}</span>
+                        <span>{formatCurrency(module.total)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>Subtotal</span>
+                        <span>{formatCurrency(module.subtotal)}</span>
+                      </div>
+                      {module.discount > 0 && (
+                        <div className="flex justify-between text-xs text-gray-500 mt-1">
+                          <span>Item Discount</span>
+                          <span>-{formatCurrency(module.discount)}</span>
+                        </div>
+                      )}
+                      {module.gst > 0 && (
+                        <div className="flex justify-between text-xs text-gray-500 mt-1">
+                          <span>GST</span>
+                          <span>+{formatCurrency(module.gst)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Subtotal</span>
                     <span className="text-gray-900">{formatCurrency(calculations.subtotal)}</span>
                   </div>
 
-                  {calculations.discountAmount > 0 && (
+                  {calculations.itemDiscountAmount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Discount</span>
+                      <span className="text-gray-500">Item Discounts</span>
                       <span className="text-red-600">
-                        -{formatCurrency(calculations.discountAmount)}
+                        -{formatCurrency(calculations.itemDiscountAmount)}
+                      </span>
+                    </div>
+                  )}
+
+                  {calculations.globalDiscountAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Bill Discount</span>
+                      <span className="text-red-600">
+                        -{formatCurrency(calculations.globalDiscountAmount)}
                       </span>
                     </div>
                   )}
 
                   {calculations.gstAmount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">GST ({watchGstRate}%)</span>
+                      <span className="text-gray-500">GST</span>
                       <span className="text-gray-900">
                         +{formatCurrency(calculations.gstAmount)}
                       </span>
@@ -1056,7 +1322,7 @@ export default function NewBill() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Amount (₹)
+                          Amount (â‚¹)
                         </label>
                         <input
                           type="number"

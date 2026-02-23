@@ -208,6 +208,11 @@ export default function NewPrescription() {
   });
   const consultationFees = consultationData?.data?.fees || {};
 
+  const { data: taxSettings } = useQuery({
+    queryKey: ['tax-settings'],
+    queryFn: () => settingsService.getTaxSettings(),
+  });
+
   // Create prescription mutation
   const createMutation = useMutation({
     mutationFn: prescriptionService.createPrescription,
@@ -237,12 +242,25 @@ export default function NewPrescription() {
 
         // Medicines
         (payloadSnapshot.medicines || []).forEach((m) => {
-          billItems.push({ description: m.medicineName || m.name || m.medicine || '', quantity: m.quantity || 1, unitPrice: m.price || m.unitPrice || 0, type: 'medicine', productId: m.productId || m.productId });
+          billItems.push({
+            description: m.medicineName || m.name || m.medicine || '',
+            quantity: m.quantity || 1,
+            unitPrice: m.price || m.unitPrice || 0,
+            type: 'pharmacy',
+            productId: m.productId || null
+          });
         });
 
         // Lab tests
         (payloadSnapshot.labTests || []).forEach((lt) => {
-          billItems.push({ description: lt.testName || lt.name || '', quantity: 1, unitPrice: lt.price || 0, type: 'lab', labId: lt.labId || null });
+          billItems.push({
+            description: lt.testName || lt.name || '',
+            quantity: 1,
+            unitPrice: lt.price || 0,
+            type: 'lab_test',
+            labId: lt.labId || null,
+            labTestId: lt.testId || null
+          });
         });
 
         if (billItems.length > 0) {
@@ -252,6 +270,12 @@ export default function NewPrescription() {
             items: billItems,
             notes: `Draft bill for prescription ${prescriptionData.prescriptionNo || ''}`,
             doctorId: payloadSnapshot.doctorId || user?.id,
+            defaultConsultationGstPercent: Number(taxSettings?.consultationGST || 0),
+            defaultPharmacyGstPercent: Number(taxSettings?.pharmacyGST || 0),
+            defaultLabTestGstPercent: Number(taxSettings?.labGST || 0),
+            defaultConsultationDiscountPercent: 0,
+            defaultPharmacyDiscountPercent: 0,
+            defaultLabTestDiscountPercent: 0,
           };
           try {
             await billingService.createBill(billReq);

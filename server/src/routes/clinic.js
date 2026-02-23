@@ -54,6 +54,29 @@ function parseConsultationFees(value) {
   }
 }
 
+const PRINT_TEMPLATE_KEY = 'print_templates';
+
+function stripScriptTags(html) {
+  if (typeof html !== 'string') return '';
+  return html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+}
+
+function normalizePrintTemplateConfig(value) {
+  const src = value && typeof value === 'object' ? value : {};
+  const allowedTemplateIds = new Set(['classic', 'modern', 'compact', 'custom']);
+  const normalizeId = (id, fallback) => {
+    const v = String(id || '').trim().toLowerCase();
+    return allowedTemplateIds.has(v) ? v : fallback;
+  };
+
+  return {
+    billTemplateId: normalizeId(src.billTemplateId, 'classic'),
+    prescriptionTemplateId: normalizeId(src.prescriptionTemplateId, 'modern'),
+    customBillHtml: stripScriptTags(String(src.customBillHtml || '')).trim(),
+    customPrescriptionHtml: stripScriptTags(String(src.customPrescriptionHtml || '')).trim(),
+  };
+}
+
 async function getClinicDoctors(clinicId) {
   const usersDoctors = await prisma.user.findMany({
     where: { clinicId, role: 'DOCTOR' },
@@ -355,6 +378,40 @@ router.put('/consultation-fees', checkPermission('settings', 'clinic'), async (r
     });
 
     res.json({ success: true, data: { fees }, message: 'Consultation fees updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /print-templates - Get print template settings for bill and prescription
+router.get('/print-templates', async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const row = await prisma.clinicSettings.findUnique({
+      where: { clinicId_key: { clinicId, key: PRINT_TEMPLATE_KEY } },
+      select: { value: true }
+    });
+    const parsed = row?.value ? JSON.parse(row.value) : {};
+    const config = normalizePrintTemplateConfig(parsed);
+    res.json({ success: true, data: config });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /print-templates - Save print template settings for bill and prescription
+router.put('/print-templates', checkPermission('settings', 'clinic'), async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const config = normalizePrintTemplateConfig(req.body || {});
+
+    await prisma.clinicSettings.upsert({
+      where: { clinicId_key: { clinicId, key: PRINT_TEMPLATE_KEY } },
+      update: { value: JSON.stringify(config) },
+      create: { clinicId, key: PRINT_TEMPLATE_KEY, value: JSON.stringify(config) }
+    });
+
+    res.json({ success: true, data: config, message: 'Print templates updated successfully' });
   } catch (error) {
     next(error);
   }

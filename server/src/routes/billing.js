@@ -144,6 +144,141 @@ const calculateTax = (amount, taxConfig) => {
   };
 };
 
+function toNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeItemModule(item, billType) {
+  const raw = String(item?.type || '').trim().toLowerCase();
+  if (['consultation'].includes(raw)) return 'consultation';
+  if (['medicine', 'pharmacy'].includes(raw)) return 'pharmacy';
+  if (['lab', 'lab_test', 'labtest'].includes(raw)) return 'lab_test';
+  if (item?.productId) return 'pharmacy';
+  if (item?.labId || item?.labTestId) return 'lab_test';
+  if (item?.doctorId) return 'consultation';
+  if ((billType || '').toUpperCase() === 'CONSULTATION') return 'consultation';
+  if ((billType || '').toUpperCase() === 'PHARMACY') return 'pharmacy';
+  if ((billType || '').toUpperCase() === 'LAB_TEST') return 'lab_test';
+  return 'other';
+}
+
+function buildTaxBreakdown(totalTax, taxConfig) {
+  const tax = toNumber(totalTax, 0);
+  const interState = !!taxConfig?.isInterState;
+  if (interState) {
+    return { cgst: 0, sgst: 0, igst: tax };
+  }
+  return { cgst: tax / 2, sgst: tax / 2, igst: 0 };
+}
+
+function computeBillFromItems({
+  items,
+  billType,
+  consultationFeeMap,
+  doctorId,
+  requester,
+  defaults,
+  discount,
+  discountType,
+  taxConfig,
+}) {
+  let subtotal = 0;
+  let itemLevelDiscountTotal = 0;
+  let itemTaxableTotal = 0;
+  let itemTaxTotal = 0;
+
+  const processedItems = items.map((item) => {
+    const quantity = Math.max(1, Math.floor(toNumber(item.quantity, 1)));
+    let unitPrice = Math.max(0, toNumber(item.unitPrice, 0));
+    const moduleType = normalizeItemModule(item, billType);
+
+    if (moduleType === 'consultation' && unitPrice <= 0) {
+      const consultationDoctorId =
+        item.doctorId ||
+        doctorId ||
+        ((requester?.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? requester.id : null);
+      if (consultationDoctorId) {
+        unitPrice = Math.max(0, toNumber(consultationFeeMap?.[consultationDoctorId], 0));
+      }
+    }
+
+    const itemSubtotal = unitPrice * quantity;
+    subtotal += itemSubtotal;
+
+    let gstPercent = item.gstPercent;
+    if (gstPercent == null || gstPercent === '') {
+      if (moduleType === 'consultation') gstPercent = defaults.defaultConsultationGstPercent;
+      if (moduleType === 'pharmacy') gstPercent = defaults.defaultPharmacyGstPercent;
+      if (moduleType === 'lab_test') gstPercent = defaults.defaultLabTestGstPercent;
+    }
+    gstPercent = Math.max(0, toNumber(gstPercent, 0));
+
+    let discountPercent = item.discountPercent;
+    let discountAmount = item.discountAmount;
+    if ((discountPercent == null || discountPercent === '') && (discountAmount == null || discountAmount === '')) {
+      if (moduleType === 'consultation') discountPercent = defaults.defaultConsultationDiscountPercent;
+      if (moduleType === 'pharmacy') discountPercent = defaults.defaultPharmacyDiscountPercent;
+      if (moduleType === 'lab_test') discountPercent = defaults.defaultLabTestDiscountPercent;
+    }
+    discountPercent = Math.max(0, toNumber(discountPercent, 0));
+    discountAmount = toNumber(discountAmount, NaN);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      discountAmount = (itemSubtotal * discountPercent) / 100;
+    }
+    if (discountAmount > itemSubtotal) discountAmount = itemSubtotal;
+
+    const itemTaxable = Math.max(0, itemSubtotal - discountAmount);
+    const itemTax = (itemTaxable * gstPercent) / 100;
+
+    itemLevelDiscountTotal += discountAmount;
+    itemTaxableTotal += itemTaxable;
+    itemTaxTotal += itemTax;
+
+    return {
+      description: item.description || '',
+      quantity,
+      unitPrice,
+      gstPercent,
+      discountPercent,
+      discountAmount,
+      amount: itemTaxable,
+      productId: item.productId || null,
+      labId: item.labId || null,
+      labTestId: item.labTestId || null,
+      doctorId: item.doctorId || null,
+    };
+  });
+
+  let globalDiscountAmount = 0;
+  let globalDiscountPercent = null;
+  const normalizedDiscountType = String(discountType || 'AMOUNT').toUpperCase();
+  if (normalizedDiscountType === 'PERCENTAGE') {
+    globalDiscountPercent = Math.max(0, toNumber(discount, 0));
+    globalDiscountAmount = (itemTaxableTotal * globalDiscountPercent) / 100;
+  } else {
+    globalDiscountAmount = Math.max(0, toNumber(discount, 0));
+  }
+  if (globalDiscountAmount > itemTaxableTotal) globalDiscountAmount = itemTaxableTotal;
+
+  const taxableAmount = Math.max(0, itemTaxableTotal - globalDiscountAmount);
+  const taxableScale = itemTaxableTotal > 0 ? taxableAmount / itemTaxableTotal : 0;
+  const taxAmount = itemTaxTotal * taxableScale;
+  const totalAmount = taxableAmount + taxAmount;
+  const taxBreakdown = buildTaxBreakdown(taxAmount, taxConfig);
+
+  return {
+    processedItems,
+    subtotal,
+    discountPercent: globalDiscountPercent,
+    discountAmount: globalDiscountAmount,
+    taxableAmount,
+    taxAmount,
+    totalAmount,
+    taxBreakdown,
+  };
+}
+
 // Helper: Generate bill number
 const generateBillNo = async () => {
   const today = new Date();
@@ -610,70 +745,24 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
     }
 
     const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
-    
-    // Calculate totals
-    let subtotal = 0;
-    const processedItems = items.map(item => {
-      const quantity = Number(item.quantity) || 1;
-      let unitPrice = Number(item.unitPrice) || 0;
-      const itemType = String(item.type || '').toLowerCase();
-      if (itemType === 'consultation' && unitPrice <= 0) {
-        const consultationDoctorId = item.doctorId || req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : null);
-        if (consultationDoctorId) {
-          unitPrice = Number(consultationFeeMap?.[consultationDoctorId] || 0);
-        }
-      }
-
-      // Determine GST and discount for this item
-      let gstPercent = item.gstPercent;
-      let discountPercent = item.discountPercent;
-      let discountAmount = item.discountAmount;
-
-      // Apply module-level defaults if not set per item
-      if (gstPercent == null) {
-        if (itemType === 'consultation' && defaultConsultationGstPercent != null) gstPercent = defaultConsultationGstPercent;
-        if (itemType === 'pharmacy' && defaultPharmacyGstPercent != null) gstPercent = defaultPharmacyGstPercent;
-        if (itemType === 'lab_test' && defaultLabTestGstPercent != null) gstPercent = defaultLabTestGstPercent;
-      }
-      if (discountPercent == null) {
-        if (itemType === 'consultation' && defaultConsultationDiscountPercent != null) discountPercent = defaultConsultationDiscountPercent;
-        if (itemType === 'pharmacy' && defaultPharmacyDiscountPercent != null) discountPercent = defaultPharmacyDiscountPercent;
-        if (itemType === 'lab_test' && defaultLabTestDiscountPercent != null) discountPercent = defaultLabTestDiscountPercent;
-      }
-      // Calculate discount amount if percent is set
-      if (discountPercent != null && discountAmount == null) {
-        discountAmount = (unitPrice * quantity * discountPercent) / 100;
-      }
-      if (discountAmount == null) discountAmount = 0;
-
-      // Calculate item total after discount
-      const itemSubtotal = unitPrice * quantity;
-      const itemTotal = itemSubtotal - discountAmount;
-      subtotal += itemTotal;
-      return {
-        ...item,
-        quantity,
-        unitPrice,
-        amount: itemTotal,
-        gstPercent: gstPercent || 0,
-        discountPercent: discountPercent || 0,
-        discountAmount: discountAmount || 0
-      };
+    const computed = computeBillFromItems({
+      items,
+      billType: type,
+      consultationFeeMap,
+      doctorId: req.body.doctorId,
+      requester: req.user,
+      defaults: {
+        defaultConsultationGstPercent,
+        defaultPharmacyGstPercent,
+        defaultLabTestGstPercent,
+        defaultConsultationDiscountPercent,
+        defaultPharmacyDiscountPercent,
+        defaultLabTestDiscountPercent
+      },
+      discount,
+      discountType,
+      taxConfig
     });
-    
-    // Calculate discount
-    let discountAmount = discount;
-    let discountPercent = null;
-    if (discountType === 'PERCENTAGE') {
-      discountPercent = discount;
-      discountAmount = (subtotal * discount) / 100;
-    }
-    
-    const taxableAmount = subtotal - discountAmount;
-    
-    // Calculate tax
-    const tax = calculateTax(taxableAmount, taxConfig);
-    const totalAmount = taxableAmount + tax.totalTax;
     
     // Generate bill number
     const billNo = await generateBillNo();
@@ -700,14 +789,14 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           labId: labId || null,
           patientId,
           type,
-          subtotal,
-          discountPercent,
-          discountAmount,
-          taxAmount: tax.totalTax,
-          taxBreakdown: JSON.stringify({ cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst }),
-          totalAmount,
+          subtotal: computed.subtotal,
+          discountPercent: computed.discountPercent,
+          discountAmount: computed.discountAmount,
+          taxAmount: computed.taxAmount,
+          taxBreakdown: JSON.stringify(computed.taxBreakdown),
+          totalAmount: computed.totalAmount,
           paidAmount: 0,
-          dueAmount: totalAmount,
+          dueAmount: computed.totalAmount,
           paymentStatus: 'PENDING',
           notes,
           // Store module-level GST/discount defaults if provided
@@ -718,7 +807,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           defaultPharmacyDiscountPercent: defaultPharmacyDiscountPercent || null,
           defaultLabTestDiscountPercent: defaultLabTestDiscountPercent || null,
           items: {
-            create: processedItems.map(item => ({
+            create: computed.processedItems.map(item => ({
               description: item.description,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
@@ -744,8 +833,8 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
         clinicId: req.user.clinicId,
         billId: createdBill.id,
         billNo: createdBill.billNo,
-        taxableAmount,
-        taxAmount: tax.totalTax,
+        taxableAmount: computed.taxableAmount,
+        taxAmount: computed.taxAmount,
         totalAmount: createdBill.totalAmount,
         userId: req.user.id,
       });
@@ -1033,7 +1122,22 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
   try {
     const { id } = req.params;
     // allow updating items, discount, taxConfig, notes, doctorId, type
-    const { notes, paymentStatus, items, discount = 0, discountType = 'AMOUNT', taxConfig, doctorId, type } = req.body;
+    const {
+      notes,
+      paymentStatus,
+      items,
+      discount = 0,
+      discountType = 'AMOUNT',
+      taxConfig,
+      doctorId,
+      type,
+      defaultConsultationGstPercent,
+      defaultPharmacyGstPercent,
+      defaultLabTestGstPercent,
+      defaultConsultationDiscountPercent,
+      defaultPharmacyDiscountPercent,
+      defaultLabTestDiscountPercent
+    } = req.body;
 
     const bill = await prisma.bill.findFirst({ where: { id, clinicId: req.user.clinicId } });
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found' });
@@ -1044,61 +1148,47 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
     if (doctorId !== undefined) updateData.doctorId = doctorId;
     if (type) updateData.type = type;
+    if (defaultConsultationGstPercent !== undefined) updateData.defaultConsultationGstPercent = defaultConsultationGstPercent;
+    if (defaultPharmacyGstPercent !== undefined) updateData.defaultPharmacyGstPercent = defaultPharmacyGstPercent;
+    if (defaultLabTestGstPercent !== undefined) updateData.defaultLabTestGstPercent = defaultLabTestGstPercent;
+    if (defaultConsultationDiscountPercent !== undefined) updateData.defaultConsultationDiscountPercent = defaultConsultationDiscountPercent;
+    if (defaultPharmacyDiscountPercent !== undefined) updateData.defaultPharmacyDiscountPercent = defaultPharmacyDiscountPercent;
+    if (defaultLabTestDiscountPercent !== undefined) updateData.defaultLabTestDiscountPercent = defaultLabTestDiscountPercent;
 
     if (items && Array.isArray(items)) {
       const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
-      // Process items and totals similar to create endpoint
-      let subtotal = 0;
-      const processedItems = items.map(item => {
-        const qty = Number(item.quantity) || 1;
-        let unitPrice = Number(item.unitPrice) || 0;
-        const itemType = String(item.type || '').toLowerCase();
-        if (itemType === 'consultation' && unitPrice <= 0) {
-          const consultationDoctorId = item.doctorId || doctorId || bill.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : null);
-          if (consultationDoctorId) {
-            unitPrice = Number(consultationFeeMap?.[consultationDoctorId] || 0);
-          }
-        }
-        const amount = qty * unitPrice;
-        subtotal += amount;
-        return {
-          description: item.description || '',
-          quantity: qty,
-          unitPrice: unitPrice,
-          gstPercent: item.gstPercent || 0,
-          amount,
-          productId: item.productId || null,
-          labId: item.labId || null,
-          labTestId: item.labTestId || null,
-          doctorId: item.doctorId || null,
-        };
+      const computed = computeBillFromItems({
+        items,
+        billType: type || bill.type,
+        consultationFeeMap,
+        doctorId: doctorId || bill.doctorId,
+        requester: req.user,
+        defaults: {
+          defaultConsultationGstPercent: defaultConsultationGstPercent ?? bill.defaultConsultationGstPercent,
+          defaultPharmacyGstPercent: defaultPharmacyGstPercent ?? bill.defaultPharmacyGstPercent,
+          defaultLabTestGstPercent: defaultLabTestGstPercent ?? bill.defaultLabTestGstPercent,
+          defaultConsultationDiscountPercent: defaultConsultationDiscountPercent ?? bill.defaultConsultationDiscountPercent,
+          defaultPharmacyDiscountPercent: defaultPharmacyDiscountPercent ?? bill.defaultPharmacyDiscountPercent,
+          defaultLabTestDiscountPercent: defaultLabTestDiscountPercent ?? bill.defaultLabTestDiscountPercent,
+        },
+        discount,
+        discountType,
+        taxConfig
       });
-
-      // Discount
-      let discountAmount = Number(discount) || 0;
-      let discountPercent = null;
-      if ((discountType || 'AMOUNT').toUpperCase() === 'PERCENTAGE') {
-        discountPercent = Number(discount) || 0;
-        discountAmount = (subtotal * discountPercent) / 100;
-      }
-
-      const taxableAmount = subtotal - discountAmount;
-      const tax = calculateTax(taxableAmount, taxConfig);
-      const totalAmount = taxableAmount + tax.totalTax;
 
       // Preserve paid amount and compute due
       const paidAmount = bill.paidAmount || 0;
-      const dueAmount = Math.max(0, totalAmount - paidAmount);
+      const dueAmount = Math.max(0, computed.totalAmount - paidAmount);
       const newStatus = dueAmount <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING');
 
       updateData = {
         ...updateData,
-        subtotal,
-        discountPercent,
-        discountAmount,
-        taxAmount: tax.totalTax,
-        taxBreakdown: JSON.stringify({ cgst: tax.cgst, sgst: tax.sgst, igst: tax.igst }),
-        totalAmount,
+        subtotal: computed.subtotal,
+        discountPercent: computed.discountPercent,
+        discountAmount: computed.discountAmount,
+        taxAmount: computed.taxAmount,
+        taxBreakdown: JSON.stringify(computed.taxBreakdown),
+        totalAmount: computed.totalAmount,
         dueAmount,
         paymentStatus: newStatus,
       };
@@ -1109,7 +1199,7 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
           ...updateData,
           items: {
             deleteMany: {},
-            create: processedItems.map(it => ({
+            create: computed.processedItems.map(it => ({
               description: it.description,
               quantity: it.quantity,
               unitPrice: it.unitPrice,
@@ -1119,6 +1209,8 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
               labId: it.labId,
               labTestId: it.labTestId,
               doctorId: it.doctorId,
+              discountPercent: it.discountPercent || 0,
+              discountAmount: it.discountAmount || 0,
             }))
           }
         },
