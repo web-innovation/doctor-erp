@@ -70,8 +70,10 @@ export function forceHTTPS(req, res, next) {
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);
+  const xfPort = (req.get('x-forwarded-port') || '').split(',')[0].trim();
   const isForwardedHttps = xfProto.includes('https');
-  if (process.env.NODE_ENV === 'production' && !req.secure && !isForwardedHttps) {
+  const isForwardedTlsPort = xfPort === '443';
+  if (process.env.NODE_ENV === 'production' && !req.secure && !isForwardedHttps && !isForwardedTlsPort) {
     // Use 308 so POST/PUT methods and request bodies are preserved across redirects.
     return res.redirect(308, `https://${req.get('host')}${req.url}`);
   }
