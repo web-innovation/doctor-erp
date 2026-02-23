@@ -178,6 +178,7 @@ export default function Billing() {
         <div class="patient-info">
           <strong>Patient:</strong> ${bill.patient?.name || 'Unknown'}<br>
           ${bill.patient?.phone ? `<strong>Phone:</strong> ${bill.patient.phone}` : ''}
+          ${bill.doctor?.name ? `<br><strong>Doctor:</strong> Dr. ${bill.doctor.name}` : ''}
         </div>
         
         <table>
@@ -685,6 +686,9 @@ export default function Billing() {
               </p>
               {selectedBill.patient?.phone && (
                 <p className="text-sm text-gray-600">{selectedBill.patient.phone}</p>
+              )}
+              {selectedBill.doctor?.name && (
+                <p className="text-sm text-gray-600 mt-1">Doctor: Dr. {selectedBill.doctor.name}</p>
               )}
             </div>
 

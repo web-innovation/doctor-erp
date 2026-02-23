@@ -252,6 +252,7 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
         take: parseInt(limit),
         include: {
           patient: { select: { id: true, name: true, phone: true } },
+          doctor: { select: { id: true, name: true } },
           items: true,
           payments: true
         },
@@ -517,6 +518,7 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           },
           include: {
             patient: { select: { id: true, name: true, phone: true } },
+            doctor: { select: { id: true, name: true } },
             items: true,
             payments: true
           }
@@ -629,6 +631,7 @@ router.get('/:id', authenticate, checkPermission('billing:read'), async (req, re
       where: { id, clinicId: req.user.clinicId },
       include: {
         patient: { select: { id: true, name: true, phone: true, email: true, address: true } },
+        doctor: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, name: true, code: true } } } },
         payments: true
       }
@@ -719,6 +722,7 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
         },
         include: {
           patient: { select: { id: true, name: true, phone: true } },
+          doctor: { select: { id: true, name: true } },
           items: true,
           payments: true
         }
@@ -826,6 +830,7 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
         },
         include: {
           patient: { select: { id: true, name: true, phone: true } },
+          doctor: { select: { id: true, name: true } },
           items: true,
           payments: true
         }
@@ -840,6 +845,7 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
       data: updateData,
       include: {
         patient: { select: { id: true, name: true, phone: true } },
+        doctor: { select: { id: true, name: true } },
         items: true,
         payments: true
       }

@@ -198,6 +198,20 @@ export default function NewBill() {
   // include a stringified items snapshot so memo recalculates when nested item fields change
   }, [JSON.stringify(watchItems || []), watchDiscount, watchDiscountType, watchGstRate]);
 
+  // Prefill category amounts in summary based on current bill items.
+  const categoryAmounts = useMemo(() => {
+    return (watchItems || []).reduce(
+      (acc, item) => {
+        const amount = (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0);
+        const itemType = (item.type || '').toString().toLowerCase();
+        if (itemType === 'medicine') acc.medicine += amount;
+        if (itemType === 'lab') acc.labTest += amount;
+        return acc;
+      },
+      { medicine: 0, labTest: 0 }
+    );
+  }, [JSON.stringify(watchItems || [])]);
+
   // Create bill mutation
   const queryClient = useQueryClient();
 
@@ -855,6 +869,16 @@ export default function NewBill() {
                 </h2>
 
                 <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Medicine Amount</span>
+                    <span className="text-gray-900">{formatCurrency(categoryAmounts.medicine)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Lab Test Amount</span>
+                    <span className="text-gray-900">{formatCurrency(categoryAmounts.labTest)}</span>
+                  </div>
+
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Subtotal</span>
                     <span className="text-gray-900">{formatCurrency(calculations.subtotal)}</span>
