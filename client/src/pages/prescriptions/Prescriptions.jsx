@@ -197,7 +197,7 @@ export default function Prescriptions() {
                     >
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-blue-600">
-                          {prescription.prescriptionId ||
+                          {prescription.prescriptionNo ||
                             `RX${String(prescription.id).padStart(5, '0')}`}
                         </span>
                       </td>

@@ -161,6 +161,102 @@ const generateBillNo = async () => {
   return `${prefix}-${String(sequence).padStart(5, '0')}`;
 };
 
+async function getConsultationFeeMap(clinicId) {
+  const row = await prisma.clinicSettings.findUnique({
+    where: { clinicId_key: { clinicId, key: 'consultation_fees' } },
+    select: { value: true }
+  });
+  try {
+    const parsed = row?.value ? JSON.parse(row.value) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    Object.entries(parsed).forEach(([doctorId, amount]) => {
+      const n = Number(amount);
+      if (doctorId && Number.isFinite(n) && n >= 0) out[String(doctorId)] = n;
+    });
+    return out;
+  } catch (e) {
+    return {};
+  }
+}
+
+async function deductPharmacyStockForBill(tx, { bill, clinicId, userId }) {
+  if (!bill?.id) return;
+
+  const alreadyDeducted = await tx.stockTransaction.findFirst({
+    where: { clinicId, refType: 'BILL_SALE', refId: bill.id },
+    select: { id: true }
+  });
+  if (alreadyDeducted) return;
+
+  const qtyByProduct = new Map();
+  (bill.items || []).forEach((item) => {
+    if (!item.productId) return;
+    const qty = Number(item.quantity || 0);
+    if (qty <= 0) return;
+    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + qty);
+  });
+  if (qtyByProduct.size === 0) return;
+
+  for (const [productId, qtyToDeduct] of qtyByProduct.entries()) {
+    const product = await tx.pharmacyProduct.findUnique({ where: { id: productId } });
+    if (!product || product.clinicId !== clinicId) continue;
+
+    const currentQty = Number(product.quantity || 0);
+    if (currentQty < qtyToDeduct) {
+      throw new Error(`Insufficient stock for ${product.name}. Required ${qtyToDeduct}, available ${currentQty}`);
+    }
+
+    let remaining = qtyToDeduct;
+    const batches = await tx.stockBatch.findMany({
+      where: { productId, quantity: { gt: 0 } },
+      orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }]
+    });
+
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+      const take = Math.min(Number(batch.quantity || 0), remaining);
+      if (take <= 0) continue;
+      await tx.stockBatch.update({
+        where: { id: batch.id },
+        data: { quantity: Number(batch.quantity || 0) - take }
+      });
+      remaining -= take;
+    }
+
+    const newQty = currentQty - qtyToDeduct;
+    await tx.pharmacyProduct.update({
+      where: { id: productId },
+      data: { quantity: newQty }
+    });
+
+    await tx.stockHistory.create({
+      data: {
+        productId,
+        type: 'SALE',
+        quantity: qtyToDeduct,
+        previousQty: currentQty,
+        newQty,
+        reference: bill.billNo || bill.id,
+        notes: `Auto stock deduction for bill ${bill.billNo || bill.id}`,
+        createdBy: userId || null
+      }
+    });
+
+    await tx.stockTransaction.create({
+      data: {
+        clinicId,
+        productId,
+        changeQty: -qtyToDeduct,
+        type: 'SALE',
+        refType: 'BILL_SALE',
+        refId: bill.id,
+        note: `Stock deducted for bill ${bill.billNo || bill.id}`
+      }
+    });
+  }
+}
+
 // GET / - List bills with filters
 router.get('/', authenticate, checkPermission('billing:read'), async (req, res) => {
   try {
@@ -505,14 +601,27 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: 'At least one item is required' });
     }
+
+    const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
     
     // Calculate totals
     let subtotal = 0;
     const processedItems = items.map(item => {
-      const itemTotal = item.quantity * item.unitPrice;
+      const quantity = Number(item.quantity) || 1;
+      let unitPrice = Number(item.unitPrice) || 0;
+      const itemType = String(item.type || '').toLowerCase();
+      if (itemType === 'consultation' && unitPrice <= 0) {
+        const consultationDoctorId = item.doctorId || req.body.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : null);
+        if (consultationDoctorId) {
+          unitPrice = Number(consultationFeeMap?.[consultationDoctorId] || 0);
+        }
+      }
+      const itemTotal = quantity * unitPrice;
       subtotal += itemTotal;
       return {
         ...item,
+        quantity,
+        unitPrice,
         amount: itemTotal
       };
     });
@@ -640,6 +749,14 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
             payments: true
           }
         });
+
+        if (newStatus === 'PAID') {
+          await deductPharmacyStockForBill(tx, {
+            bill: updatedBill,
+            clinicId: req.user.clinicId,
+            userId: req.user.id
+          });
+        }
         return { bill: updatedBill, withPayment: true };
       }
 
@@ -845,6 +962,14 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
         }
       });
 
+      if (newStatus === 'PAID') {
+        await deductPharmacyStockForBill(tx, {
+          bill: newBill,
+          clinicId: req.user.clinicId,
+          userId: req.user.id
+        });
+      }
+
       return { payment: createdPayment, updatedBill: newBill };
     });
     
@@ -877,11 +1002,19 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
     if (type) updateData.type = type;
 
     if (items && Array.isArray(items)) {
+      const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
       // Process items and totals similar to create endpoint
       let subtotal = 0;
       const processedItems = items.map(item => {
         const qty = Number(item.quantity) || 1;
-        const unitPrice = Number(item.unitPrice) || 0;
+        let unitPrice = Number(item.unitPrice) || 0;
+        const itemType = String(item.type || '').toLowerCase();
+        if (itemType === 'consultation' && unitPrice <= 0) {
+          const consultationDoctorId = item.doctorId || doctorId || bill.doctorId || ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR' ? req.user.id : null);
+          if (consultationDoctorId) {
+            unitPrice = Number(consultationFeeMap?.[consultationDoctorId] || 0);
+          }
+        }
         const amount = qty * unitPrice;
         subtotal += amount;
         return {

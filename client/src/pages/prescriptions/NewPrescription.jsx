@@ -19,6 +19,7 @@ import {
 import { patientService } from '../../services/patientService';
 import { appointmentService } from '../../services/appointmentService';
 import billingService from '../../services/billingService';
+import settingsService from '../../services/settingsService';
 import { prescriptionService } from '../../services/prescriptionService';
 import { useHasPerm, useAuth } from '../../context/AuthContext';
 import Select from '../../components/common/Select';
@@ -201,6 +202,12 @@ export default function NewPrescription() {
 
   const labTestResults = labTestsData?.data || [];
 
+  const { data: consultationData } = useQuery({
+    queryKey: ['consultation-fees'],
+    queryFn: () => settingsService.getConsultationFees(),
+  });
+  const consultationFees = consultationData?.data?.fees || {};
+
   // Create prescription mutation
   const createMutation = useMutation({
     mutationFn: prescriptionService.createPrescription,
@@ -221,6 +228,10 @@ export default function NewPrescription() {
             consultationFee = appt.consultationFee || 0;
             consultationLabel = `Consultation (${appt.appointmentNo || ''})`;
           }
+        }
+        if (!consultationFee) {
+          const consultationDoctorId = payloadSnapshot.doctorId || user?.id;
+          consultationFee = Number(consultationFees?.[consultationDoctorId] || 0);
         }
         billItems.push({ description: consultationLabel, quantity: 1, unitPrice: consultationFee, type: 'consultation' });
 
@@ -320,6 +331,7 @@ export default function NewPrescription() {
       medicines: data.medicines.map((m) => ({
         productId: m.medicineId,
         medicineName: m.name,
+        price: m.price ? parseFloat(m.price) : 0,
         dosage: m.dosage?.value || m.dosage,
         duration: m.duration?.value || m.duration,
         timing: m.mealTiming?.value || m.mealTiming,
@@ -329,7 +341,9 @@ export default function NewPrescription() {
         isExternal: !!m.isExternal,
       })),
       labTests: data.labTests.map((lt) => ({
+        testId: lt.testId || null,
         testName: lt.name,
+        price: lt.price ? parseFloat(lt.price) : 0,
         instructions: lt.instructions,
         isExternal: !!lt.isExternal,
         labId: lt.labId || null,
@@ -345,6 +359,7 @@ export default function NewPrescription() {
     appendMedicine({
       medicineId: medicine.id,
       name: medicine.name,
+      price: medicine.price || medicine.sellingPrice || medicine.mrp || 0,
       dosage: null,
       duration: null,
       mealTiming: null,
@@ -360,6 +375,7 @@ export default function NewPrescription() {
     appendMedicine({
       medicineId: null,
       name: name,
+      price: 0,
       dosage: null,
       duration: null,
       mealTiming: null,

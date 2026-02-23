@@ -39,6 +39,42 @@ function resolveClinicIdForRead(req) {
   return { clinicId: null, allowFallback: isSuperAdmin };
 }
 
+function parseConsultationFees(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    Object.entries(parsed).forEach(([doctorId, amount]) => {
+      const num = Number(amount);
+      if (doctorId && Number.isFinite(num) && num >= 0) out[String(doctorId)] = num;
+    });
+    return out;
+  } catch (e) {
+    return {};
+  }
+}
+
+async function getClinicDoctors(clinicId) {
+  const usersDoctors = await prisma.user.findMany({
+    where: { clinicId, role: 'DOCTOR' },
+    select: { id: true, name: true, email: true }
+  });
+
+  const rawStaff = await prisma.staff.findMany({
+    where: { clinicId },
+    include: { user: { select: { id: true, name: true, email: true } } }
+  });
+  const staffDoctors = rawStaff.filter((s) => s.designation && s.designation.toLowerCase().includes('doctor'));
+
+  const map = new Map();
+  usersDoctors.forEach((u) => map.set(u.id, { id: u.id, name: u.name, email: u.email }));
+  staffDoctors.forEach((s) => {
+    if (s.user) map.set(s.user.id, { id: s.user.id, name: s.user.name, email: s.user.email });
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Helper function to get clinic data
 async function getClinicData(clinicId, res, next) {
   try {
@@ -282,6 +318,43 @@ router.put('/tax-config', checkPermission('settings', 'clinic'), async (req, res
       },
       message: 'Tax configuration updated successfully' 
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /consultation-fees - Get per-doctor consultation fee configuration for clinic
+router.get('/consultation-fees', async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const [row, doctors] = await Promise.all([
+      prisma.clinicSettings.findUnique({
+        where: { clinicId_key: { clinicId, key: 'consultation_fees' } },
+        select: { value: true }
+      }),
+      getClinicDoctors(clinicId)
+    ]);
+
+    const fees = parseConsultationFees(row?.value || '{}');
+    res.json({ success: true, data: { doctors, fees } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /consultation-fees - Save per-doctor consultation fee configuration for clinic
+router.put('/consultation-fees', checkPermission('settings', 'clinic'), async (req, res, next) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const fees = parseConsultationFees(req.body?.fees || {});
+
+    await prisma.clinicSettings.upsert({
+      where: { clinicId_key: { clinicId, key: 'consultation_fees' } },
+      update: { value: JSON.stringify(fees) },
+      create: { clinicId, key: 'consultation_fees', value: JSON.stringify(fees) }
+    });
+
+    res.json({ success: true, data: { fees }, message: 'Consultation fees updated successfully' });
   } catch (error) {
     next(error);
   }

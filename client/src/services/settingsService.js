@@ -193,6 +193,17 @@ const settingsService = {
     return response.data;
   },
 
+  // Doctor-wise consultation fees
+  getConsultationFees: async () => {
+    const response = await api.get('/clinic/consultation-fees');
+    return response.data;
+  },
+
+  updateConsultationFees: async (fees) => {
+    const response = await api.put('/clinic/consultation-fees', { fees });
+    return response.data;
+  },
+
   // Super admin access controls (read-only for clinic users)
   getAccessControls: async () => {
     const response = await api.get('/clinic/access-controls');

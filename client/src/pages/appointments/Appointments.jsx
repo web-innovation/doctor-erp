@@ -321,8 +321,8 @@ export default function Appointments() {
         </div>
 
         {/* Appointments Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -409,8 +409,8 @@ export default function Appointments() {
                           {appointment.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="relative">
+                      <td className="px-6 py-4 relative overflow-visible">
+                        <div className="relative inline-block">
                           <button
                             onClick={() =>
                               setActionMenuId(actionMenuId === appointment.id ? null : appointment.id)
@@ -422,7 +422,7 @@ export default function Appointments() {
 
                           {/* Action Menu */}
                           {actionMenuId === appointment.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                            <div className="absolute right-0 bottom-full mb-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
                               {appointment.status !== 'COMPLETED' && (
                                 <button
                                   onClick={() => handleStatusChange(appointment.id, 'COMPLETED')}

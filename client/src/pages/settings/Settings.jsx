@@ -8,6 +8,7 @@ import {
   FaPercent,
   FaClock,
   FaCog,
+  FaRupeeSign,
   FaSave,
   FaEye,
   FaEyeSlash,
@@ -25,6 +26,7 @@ import MobileAccess from '../../components/settings/MobileAccess';
 const TABS = [
   { id: 'profile', label: 'Profile', icon: FaUser },
   { id: 'clinic', label: 'Clinic', icon: FaClinicMedical },
+  { id: 'consultation', label: 'Consultation Fees', icon: FaRupeeSign },
   // Tax and Working Hours temporarily hidden (managed elsewhere)
   // { id: 'tax', label: 'Tax Setup', icon: FaPercent },
   // { id: 'hours', label: 'Working Hours', icon: FaClock },
@@ -105,6 +107,7 @@ export default function Settings() {
 
   // Dashboard widgets state
   const [dashboardWidgets, setDashboardWidgets] = useState(DEFAULT_WIDGETS);
+  const [consultationFees, setConsultationFees] = useState({});
 
   // Fetch clinic settings
   const { data: clinicData, isLoading: clinicLoading } = useQuery({
@@ -173,6 +176,17 @@ export default function Settings() {
       setDashboardWidgets(preferencesData.dashboardWidgets);
     }
   }, [preferencesData]);
+
+  // Fetch consultation fees
+  const { data: consultationData, isLoading: consultationLoading } = useQuery({
+    queryKey: ['consultation-fees'],
+    queryFn: () => settingsService.getConsultationFees(),
+  });
+
+  useEffect(() => {
+    const fees = consultationData?.data?.fees || {};
+    setConsultationFees(fees);
+  }, [consultationData]);
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
@@ -248,6 +262,17 @@ export default function Settings() {
     },
   });
 
+  const updateConsultationFeesMutation = useMutation({
+    mutationFn: (fees) => settingsService.updateConsultationFees(fees),
+    onSuccess: () => {
+      toast.success('Consultation fees updated successfully');
+      queryClient.invalidateQueries(['consultation-fees']);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to update consultation fees');
+    },
+  });
+
   const onProfileSubmit = (data) => {
     updateProfileMutation.mutate(data);
   };
@@ -293,6 +318,22 @@ export default function Settings() {
 
   const savePreferences = () => {
     updatePreferencesMutation.mutate({ dashboardWidgets });
+  };
+
+  const handleConsultationFeeChange = (doctorId, value) => {
+    setConsultationFees((prev) => ({
+      ...prev,
+      [doctorId]: value === '' ? '' : Math.max(0, Number(value)),
+    }));
+  };
+
+  const saveConsultationFees = () => {
+    const sanitized = {};
+    Object.entries(consultationFees || {}).forEach(([doctorId, amount]) => {
+      const n = Number(amount);
+      if (Number.isFinite(n) && n >= 0) sanitized[doctorId] = n;
+    });
+    updateConsultationFeesMutation.mutate(sanitized);
   };
 
   // Render Profile Tab
@@ -890,12 +931,67 @@ export default function Settings() {
     </div>
   );
 
+  const renderConsultationTab = () => {
+    const doctors = consultationData?.data?.doctors || [];
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Doctor Consultation Fees</h3>
+        <p className="text-sm text-gray-500 mb-6">
+          Set consultation amount per doctor. These values are used in new bills and auto-bill from prescription.
+        </p>
+
+        {consultationLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : doctors.length === 0 ? (
+          <p className="text-sm text-gray-500">No doctors found in this clinic.</p>
+        ) : (
+          <div className="space-y-3">
+            {doctors.map((doctor) => (
+              <div key={doctor.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center border border-gray-100 rounded-lg p-3">
+                <div className="md:col-span-2">
+                  <p className="font-medium text-gray-900">{doctor.name}</p>
+                  {doctor.email && <p className="text-xs text-gray-500">{doctor.email}</p>}
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={consultationFees?.[doctor.id] ?? ''}
+                    onChange={(e) => handleConsultationFeeChange(doctor.id, e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={saveConsultationFees}
+                disabled={updateConsultationFeesMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+              >
+                <FaSave />
+                {updateConsultationFeesMutation.isPending ? 'Saving...' : 'Save Consultation Fees'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'profile':
         return renderProfileTab();
       case 'clinic':
         return renderClinicTab();
+      case 'consultation':
+        return renderConsultationTab();
       case 'tax':
         return renderTaxTab();
       case 'hours':

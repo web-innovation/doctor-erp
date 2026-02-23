@@ -18,6 +18,7 @@ import {
   FaPrint,
 } from 'react-icons/fa';
 import billingService from '../../services/billingService';
+import settingsService from '../../services/settingsService';
 import { useHasPerm, useAuth } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
 import pharmacyService from '../../services/pharmacyService';
@@ -170,6 +171,13 @@ export default function NewBill() {
     enabled: billType === 'lab' && !!selectedLab && labTestSearch.length >= 1,
   });
   const labTests = labTestsData?.data || [];
+
+  const { data: consultationData } = useQuery({
+    queryKey: ['consultation-fees'],
+    queryFn: () => settingsService.getConsultationFees(),
+  });
+  const consultationFees = consultationData?.data?.fees || {};
+  const getConsultationFee = (doctorId) => Number(consultationFees?.[doctorId] || 0);
 
   // Calculate totals
   const calculations = useMemo(() => {
@@ -391,16 +399,39 @@ export default function NewBill() {
   };
 
   const addManualItem = () => {
+    const consultationDoctorId =
+      selectedDoctor?.id || (isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined);
     append({
       productId: null,
       description: '',
       quantity: 1,
-      unitPrice: 0,
+      unitPrice: billType === 'consultation' ? getConsultationFee(consultationDoctorId) : 0,
       type: billType === 'consultation' ? 'consultation' : billType === 'lab' ? 'lab' : 'other',
       // default doctor for consultation items to current user when they are a doctor and not an admin
-      doctorId: billType === 'consultation' && isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined,
+      doctorId:
+        billType === 'consultation'
+          ? (selectedDoctor?.id || (isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined))
+          : undefined,
     });
   };
+
+  useEffect(() => {
+    if (billType !== 'consultation') return;
+    const consultationDoctorId =
+      selectedDoctor?.id || (isEffectiveDoctor && !canSeeAllDoctors ? user?.id : undefined);
+    if (!consultationDoctorId) return;
+    const fee = getConsultationFee(consultationDoctorId);
+    if (fee <= 0) return;
+
+    (watchItems || []).forEach((item, index) => {
+      const itemType = (item?.type || '').toLowerCase();
+      if (itemType !== 'consultation') return;
+      if (!item?.doctorId) setValue(`items.${index}.doctorId`, consultationDoctorId);
+      if (!item?.unitPrice || Number(item.unitPrice) <= 0) {
+        setValue(`items.${index}.unitPrice`, fee);
+      }
+    });
+  }, [billType, selectedDoctor?.id, consultationFees, isEffectiveDoctor, canSeeAllDoctors, user?.id, watchItems, setValue]);
 
   const onSubmit = (data) => {
     if (!selectedPatient) {
