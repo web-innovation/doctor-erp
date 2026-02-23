@@ -609,6 +609,7 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
       ],
       include: {
         doctor: { select: { id: true, name: true } },
+        appointment: { select: { id: true, appointmentNo: true, consultationFee: true } },
         medicines: {
           include: {
             pharmacyProduct: { select: { id: true, name: true, sellingPrice: true, mrp: true } }
@@ -687,9 +688,27 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
       };
     });
 
-    const items = [...medicineItems, ...labItems];
+    const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
+    const consultationFeeFromAppointment = Number(latestPrescription.appointment?.consultationFee || 0);
+    const consultationFeeFromDoctor = Number(consultationFeeMap?.[latestPrescription.doctorId] || 0);
+    const consultationAmount = consultationFeeFromAppointment > 0 ? consultationFeeFromAppointment : consultationFeeFromDoctor;
+    const consultationLabel = latestPrescription.appointment?.appointmentNo
+      ? `Consultation (${latestPrescription.appointment.appointmentNo})`
+      : 'Consultation';
+    const consultationItems = consultationAmount > 0
+      ? [{
+          description: consultationLabel,
+          quantity: 1,
+          unitPrice: consultationAmount,
+          type: 'consultation',
+          doctorId: latestPrescription.doctorId || null
+        }]
+      : [];
+
+    const items = [...consultationItems, ...medicineItems, ...labItems];
     const medicineAmount = medicineItems.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
     const labTestAmount = labItems.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+    const totalAmount = consultationAmount + medicineAmount + labTestAmount;
 
     res.json({
       success: true,
@@ -698,9 +717,10 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
         prescriptionNo: latestPrescription.prescriptionNo,
         doctor: latestPrescription.doctor || null,
         items,
+        consultationAmount,
         medicineAmount,
         labTestAmount,
-        totalAmount: medicineAmount + labTestAmount,
+        totalAmount,
         hasPrefill: items.length > 0
       }
     });

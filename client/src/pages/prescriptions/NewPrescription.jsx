@@ -222,57 +222,77 @@ export default function NewPrescription() {
       // Create a draft bill for this prescription so clinic staff can publish/modify
       try {
         const payloadSnapshot = lastPayloadRef.current || {};
-        const billItems = [];
-
-        // Always add a consultation item by default (doctor raised prescription)
-        let consultationFee = 0;
-        let consultationLabel = 'Consultation';
-        if (payloadSnapshot.appointmentId && Array.isArray(patientAppointmentsData?.data)) {
-          const appt = (patientAppointmentsData.data || []).find(x => x.id === payloadSnapshot.appointmentId);
-          if (appt) {
-            consultationFee = appt.consultationFee || 0;
-            consultationLabel = `Consultation (${appt.appointmentNo || ''})`;
+        let billItems = [];
+        try {
+          const prefillRes = await billingService.getPrefill(prescriptionData.patientId || payloadSnapshot.patientId);
+          const prefillItems = prefillRes?.data?.items || [];
+          billItems = prefillItems.map((it) => ({
+            description: it.description || '',
+            quantity: Number(it.quantity) || 1,
+            unitPrice: Number(it.unitPrice) || 0,
+            type: it.type === 'medicine' ? 'pharmacy' : it.type === 'lab' ? 'lab_test' : (it.type || 'other'),
+            productId: it.productId || null,
+            labId: it.labId || null,
+            labTestId: it.labTestId || null,
+            doctorId: it.doctorId || null,
+          }));
+        } catch (e) {
+          // fallback to local snapshot mapping if prefill call fails
+          const fallbackItems = [];
+          let consultationFee = 0;
+          let consultationLabel = 'Consultation';
+          if (payloadSnapshot.appointmentId && Array.isArray(patientAppointmentsData?.data)) {
+            const appt = (patientAppointmentsData.data || []).find((x) => x.id === payloadSnapshot.appointmentId);
+            if (appt) {
+              consultationFee = appt.consultationFee || 0;
+              consultationLabel = `Consultation (${appt.appointmentNo || ''})`;
+            }
           }
-        }
-        if (!consultationFee) {
-          const consultationDoctorId = payloadSnapshot.doctorId || user?.id;
-          consultationFee = Number(consultationFees?.[consultationDoctorId] || 0);
-        }
-        billItems.push({ description: consultationLabel, quantity: 1, unitPrice: consultationFee, type: 'consultation' });
-
-        // Medicines
-        (payloadSnapshot.medicines || []).forEach((m) => {
-          billItems.push({
-            description: m.medicineName || m.name || m.medicine || '',
-            quantity: m.quantity || 1,
-            unitPrice: m.price || m.unitPrice || 0,
-            type: 'pharmacy',
-            productId: m.productId || null
+          if (!consultationFee) {
+            const consultationDoctorId = payloadSnapshot.doctorId || user?.id;
+            consultationFee = Number(consultationFees?.[consultationDoctorId] || 0);
+          }
+          fallbackItems.push({ description: consultationLabel, quantity: 1, unitPrice: consultationFee, type: 'consultation' });
+          (payloadSnapshot.medicines || []).forEach((m) => {
+            fallbackItems.push({
+              description: m.medicineName || m.name || m.medicine || '',
+              quantity: Number(m.quantity) || 1,
+              unitPrice: Number(m.price || m.unitPrice || 0),
+              type: 'pharmacy',
+              productId: m.productId || null
+            });
           });
-        });
-
-        // Lab tests
-        (payloadSnapshot.labTests || []).forEach((lt) => {
-          billItems.push({
-            description: lt.testName || lt.name || '',
-            quantity: 1,
-            unitPrice: lt.price || 0,
-            type: 'lab_test',
-            labId: lt.labId || null,
-            labTestId: lt.testId || null
+          (payloadSnapshot.labTests || []).forEach((lt) => {
+            fallbackItems.push({
+              description: lt.testName || lt.name || '',
+              quantity: 1,
+              unitPrice: Number(lt.price || 0),
+              type: 'lab_test',
+              labId: lt.labId || null,
+              labTestId: lt.testId || null
+            });
           });
-        });
+          billItems = fallbackItems;
+        }
 
         if (billItems.length > 0) {
+          let resolvedTaxSettings = taxSettings;
+          if (!resolvedTaxSettings) {
+            try {
+              resolvedTaxSettings = await settingsService.getTaxSettings();
+            } catch (e) {
+              resolvedTaxSettings = null;
+            }
+          }
           const billReq = {
             patientId: prescriptionData.patientId || payloadSnapshot.patientId,
             type: 'MIXED',
             items: billItems,
             notes: `Draft bill for prescription ${prescriptionData.prescriptionNo || ''}`,
-            doctorId: payloadSnapshot.doctorId || user?.id,
-            defaultConsultationGstPercent: Number(taxSettings?.consultationGST || 0),
-            defaultPharmacyGstPercent: Number(taxSettings?.pharmacyGST || 0),
-            defaultLabTestGstPercent: Number(taxSettings?.labGST || 0),
+            doctorId: prescriptionData.doctorId || payloadSnapshot.doctorId || user?.id,
+            defaultConsultationGstPercent: Number(resolvedTaxSettings?.consultationGST || 0),
+            defaultPharmacyGstPercent: Number(resolvedTaxSettings?.pharmacyGST || 0),
+            defaultLabTestGstPercent: Number(resolvedTaxSettings?.labGST || 0),
             defaultConsultationDiscountPercent: 0,
             defaultPharmacyDiscountPercent: 0,
             defaultLabTestDiscountPercent: 0,
