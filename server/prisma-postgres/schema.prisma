@@ -608,6 +608,13 @@ model StaffAssignment {
 // ==========================================
 
 model Bill {
+  // Optional default GST and discount for each module (for UI/server logic)
+  defaultConsultationGstPercent      Float? // e.g. 5% for all consultations
+  defaultPharmacyGstPercent          Float? // e.g. 10% for all pharmacy items
+  defaultLabTestGstPercent           Float? // e.g. 20% for all lab tests
+  defaultConsultationDiscountPercent Float?
+  defaultPharmacyDiscountPercent     Float?
+  defaultLabTestDiscountPercent      Float?
   id              String   @id @default(uuid())
   billNo          String   @unique
   date            DateTime @default(now())
