@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth, useHasPerm } from './context/AuthContext';
 import { SessionTimeoutWarning } from './components/common';
@@ -78,6 +78,24 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 function App() {
   const { user } = useAuth();
+
+  useEffect(() => {
+    document.documentElement.setAttribute('lang', 'en-GB');
+
+    const preventNumberArrowChange = (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement &&
+        target.type === 'number' &&
+        (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      ) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', preventNumberArrowChange, true);
+    return () => window.removeEventListener('keydown', preventNumberArrowChange, true);
+  }, []);
 
   return (
     <>

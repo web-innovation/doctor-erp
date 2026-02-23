@@ -270,9 +270,9 @@ export default function LabsAgents() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -823,7 +823,7 @@ export default function LabsAgents() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
               <input
-                type="date"
+                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                 {...registerPayment('paymentDate')}
                 defaultValue={new Date().toISOString().split('T')[0]}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"

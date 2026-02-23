@@ -263,7 +263,7 @@ const ClinicDetail = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{clinic.name}</h1>
             <p className="text-gray-600">
-              Created on {new Date(clinic.createdAt).toLocaleDateString()}
+              Created on {new Date(clinic.createdAt).toLocaleDateString('en-GB')}
             </p>
           </div>
         </div>

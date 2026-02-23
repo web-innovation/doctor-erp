@@ -402,7 +402,7 @@ const AdminDashboard = () => {
                       {clinic.patientsCount || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                      {new Date(clinic.createdAt).toLocaleDateString()}
+                      {new Date(clinic.createdAt).toLocaleDateString('en-GB')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

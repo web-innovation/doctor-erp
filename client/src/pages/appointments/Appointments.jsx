@@ -50,6 +50,34 @@ const toLocalDateString = (date) => {
   return `${y}-${m}-${d}`;
 };
 
+const parseDDMMYYYYToISO = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return '';
+  const [, dd, mm, yyyy] = match;
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  const dt = new Date(y, m - 1, d);
+  if (
+    dt.getFullYear() !== y ||
+    dt.getMonth() !== m - 1 ||
+    dt.getDate() !== d
+  ) {
+    return '';
+  }
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const isoToDDMMYYYY = (value) => {
+  if (!value || typeof value !== 'string' || !value.includes('-')) return '';
+  const [yyyy, mm, dd] = value.split('-');
+  if (!yyyy || !mm || !dd) return '';
+  return `${dd}/${mm}/${yyyy}`;
+};
+
 export default function Appointments() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -59,7 +87,7 @@ export default function Appointments() {
   );
   const [activeStatus, setActiveStatus] = useState('all');
   const [dateFilter, setDateFilter] = useState('today');
-  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' }); // dd/mm/yyyy
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [actionMenuId, setActionMenuId] = useState(null);
@@ -100,9 +128,12 @@ export default function Appointments() {
         endDate: toLocalDateString(weekEnd),
       };
     } else if (dateFilter === 'custom' && customDateRange.start && customDateRange.end) {
+      const startIso = parseDDMMYYYYToISO(customDateRange.start);
+      const endIso = parseDDMMYYYYToISO(customDateRange.end);
+      if (!startIso || !endIso) return {};
       return {
-        startDate: customDateRange.start,
-        endDate: customDateRange.end,
+        startDate: startIso,
+        endDate: endIso,
       };
     }
     return {};
@@ -176,10 +207,16 @@ export default function Appointments() {
   });
 
   const onSubmit = (data) => {
+    const dateIso = parseDDMMYYYYToISO(data.date);
+    if (!dateIso) {
+      toast.error('Use date format dd/mm/yyyy');
+      return;
+    }
+
     // Client-side validation: prevent scheduling in the past
     try {
-      if (data.date && data.time) {
-        const apptDt = new Date(`${data.date}T${data.time}`);
+      if (dateIso && data.time) {
+        const apptDt = new Date(`${dateIso}T${data.time}`);
         if (apptDt < new Date()) {
           toast.error('Appointment date and time cannot be in the past');
           return;
@@ -191,7 +228,7 @@ export default function Appointments() {
 
     createMutation.mutate({
       patientId: data.patient?.value,
-      date: data.date,
+      date: dateIso,
       timeSlot: data.time,
       type: data.type?.value || 'CONSULTATION',
       symptoms: data.reason,
@@ -215,9 +252,9 @@ export default function Appointments() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -264,20 +301,24 @@ export default function Appointments() {
             {dateFilter === 'custom' && (
               <div className="flex items-center gap-2">
                 <input
-                  type="date"
+                  type="text"
+                  inputMode="numeric"
                   value={customDateRange.start}
                   onChange={(e) =>
                     setCustomDateRange((prev) => ({ ...prev, start: e.target.value }))
                   }
+                  placeholder="dd/mm/yyyy"
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <span className="text-gray-500">to</span>
                 <input
-                  type="date"
+                  type="text"
+                  inputMode="numeric"
                   value={customDateRange.end}
                   onChange={(e) =>
                     setCustomDateRange((prev) => ({ ...prev, end: e.target.value }))
                   }
+                  placeholder="dd/mm/yyyy"
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -567,8 +608,10 @@ export default function Appointments() {
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
-                type="date"
-                min={new Date().toISOString().split('T')[0]}
+                type="text"
+                inputMode="numeric"
+                placeholder="dd/mm/yyyy"
+                helperText={`Today: ${isoToDDMMYYYY(toLocalDateString(new Date()))}`}
                 {...register('date', { required: 'Date is required' })}
                 error={errors.date?.message}
               />

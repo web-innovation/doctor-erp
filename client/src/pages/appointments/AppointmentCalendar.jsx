@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   FaChevronLeft,
@@ -38,9 +38,15 @@ export default function AppointmentCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
+  const [jumpMonth, setJumpMonth] = useState('');
 
   const currentMonth = currentDate.getMonth();
   const currentYear = currentDate.getFullYear();
+
+  useEffect(() => {
+    const month = String(currentMonth + 1).padStart(2, '0');
+    setJumpMonth(`${currentYear}-${month}`);
+  }, [currentMonth, currentYear]);
 
   // Fetch calendar data
   const { data: calendarData, isLoading } = useQuery({
@@ -137,6 +143,16 @@ export default function AppointmentCalendar() {
     setCurrentDate(new Date());
   };
 
+  const jumpToMonth = (value) => {
+    setJumpMonth(value);
+    if (!value || !value.includes('-')) return;
+    const [yearStr, monthStr] = value.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) return;
+    setCurrentDate(new Date(year, month - 1, 1));
+  };
+
   const formatDateKey = (date) => {
     return date.toISOString().split('T')[0];
   };
@@ -220,7 +236,7 @@ export default function AppointmentCalendar() {
               <h2 className="text-xl font-semibold text-gray-900">
                 {viewMode === 'month'
                   ? `${MONTHS[currentMonth]} ${currentYear}`
-                  : `Week of ${currentDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                  : `Week of ${currentDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}`}
               </h2>
               <button
                 onClick={navigateNext}
@@ -229,13 +245,22 @@ export default function AppointmentCalendar() {
                 <FaChevronRight className="text-gray-600" />
               </button>
             </div>
-
-            <button
-              onClick={goToToday}
-              className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition-colors"
-            >
-              Today
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="month"
+                lang="en-GB"
+                value={jumpMonth}
+                onChange={(e) => jumpToMonth(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                aria-label="Jump to month and year"
+              />
+              <button
+                onClick={goToToday}
+                className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition-colors"
+              >
+                Today
+              </button>
+            </div>
           </div>
 
           {/* Status Legend */}

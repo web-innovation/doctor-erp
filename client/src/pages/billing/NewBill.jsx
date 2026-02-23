@@ -33,8 +33,11 @@ const BILL_TYPES = [
 const GST_RATES = [
   { value: 0, label: 'No GST (0%)' },
   { value: 5, label: 'GST 5%' },
+  { value: 10, label: 'GST 10%' },
   { value: 12, label: 'GST 12%' },
   { value: 18, label: 'GST 18%' },
+  { value: 20, label: 'GST 20%' },
+  { value: 30, label: 'GST 30%' },
 ];
 
 const PAYMENT_METHODS = [

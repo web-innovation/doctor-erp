@@ -92,9 +92,9 @@ export default function Prescriptions() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -216,9 +216,7 @@ export default function Prescriptions() {
                               {prescription.patient?.name || 'Unknown Patient'}
                             </p>
                             <p className="text-sm text-gray-500">
-                              {prescription.patient?.patientId ||
-                                (prescription.patient?.id &&
-                                  `P${String(prescription.patient.id).padStart(5, '0')}`)}
+                              {prescription.patient?.patientId || '-'}
                             </p>
                           </div>
                         </div>

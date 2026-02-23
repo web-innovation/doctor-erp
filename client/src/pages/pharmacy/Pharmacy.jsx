@@ -319,9 +319,9 @@ export default function Pharmacy() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -788,7 +788,7 @@ export default function Pharmacy() {
                 Expiry Date
               </label>
               <input
-                type="date"
+                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                 {...register('expiryDate')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -895,7 +895,7 @@ export default function Pharmacy() {
                 Expiry Date
               </label>
               <input
-                type="date"
+                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                 {...registerStock('expiryDate')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -986,7 +986,7 @@ export default function Pharmacy() {
                 {batches.map((b) => (
                   <tr key={b.id} className="border-b">
                     <td className="p-2">{b.batchNumber || '-'}</td>
-                    <td className="p-2">{b.expiryDate ? new Date(b.expiryDate).toLocaleDateString() : '-'}</td>
+                    <td className="p-2">{b.expiryDate ? new Date(b.expiryDate).toLocaleDateString('en-GB') : '-'}</td>
                     <td className="p-2 text-right">{b.quantity}</td>
                     <td className="p-2 text-right">{formatCurrency(b.costPrice)}</td>
                   </tr>
@@ -1018,7 +1018,7 @@ export default function Pharmacy() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Opening Date</label>
               <input
-                type="date"
+                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                 value={openingImportDate}
                 onChange={(e) => setOpeningImportDate(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
@@ -1235,7 +1235,7 @@ export default function Pharmacy() {
                 Expiry Date
               </label>
               <input
-                type="date"
+                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                 {...register('expiryDate')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />

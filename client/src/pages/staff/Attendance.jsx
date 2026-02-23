@@ -354,7 +354,7 @@ export default function Attendance() {
                   <div className="flex items-center gap-2">
                     <FaCalendarAlt className="text-gray-400" />
                     <input
-                      type="date"
+                      type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -487,7 +487,7 @@ export default function Attendance() {
                   <div className="flex items-center gap-2">
                     <FaCalendarAlt className="text-gray-400" />
                     <input
-                      type="date"
+                      type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       max={today.toISOString().split('T')[0]}

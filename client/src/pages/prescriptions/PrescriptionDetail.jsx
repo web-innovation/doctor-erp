@@ -124,9 +124,9 @@ export default function PrescriptionDetail() {
     
     const printWindow = window.open('', '_blank');
     const prescNo = prescription.prescriptionNo || 'RX' + String(prescription.id).padStart(5, '0');
-    const dateStr = new Date(prescription.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const dateStr = new Date(prescription.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const patientName = prescription.patient?.name || 'N/A';
-    const patientId = prescription.patient?.patientId || 'P' + String(prescription.patient?.id).padStart(5, '0');
+    const patientId = prescription.patient?.patientId || 'N/A';
     const phone = prescription.patient?.phone || 'N/A';
     
     const vitalsHtml = buildVitalsHtml(prescription.vitalsSnapshot);
@@ -148,7 +148,7 @@ export default function PrescriptionDetail() {
     const followupHtml = prescription.followUpDate ? `
       <div class="followup">
         <div class="followup-label">Follow-up Date</div>
-        <div class="followup-date">${new Date(prescription.followUpDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+        <div class="followup-date">${new Date(prescription.followUpDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
       </div>
     ` : '<div></div>';
 
@@ -372,9 +372,9 @@ export default function PrescriptionDetail() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -458,7 +458,7 @@ export default function PrescriptionDetail() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Patient ID</p>
-                <p className="font-medium">{prescription.patient?.patientId || `P${String(prescription.patient?.id).padStart(5, '0')}`}</p>
+                <p className="font-medium">{prescription.patient?.patientId || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Phone</p>

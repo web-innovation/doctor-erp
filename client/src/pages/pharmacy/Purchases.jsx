@@ -197,7 +197,7 @@ export default function Purchases() {
                   <tr key={p.id} className="border-t hover:bg-gray-50">
                     <td className="p-3">{p.invoiceNo}</td>
                     <td className="p-3">{p.supplier?.name || (fetchedSuppliers[p.supplierId] ? fetchedSuppliers[p.supplierId].name : (p.supplierId ? 'Assigned' : '—'))}</td>
-                    <td className="p-3">{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString() : '-'}</td>
+                    <td className="p-3">{p.invoiceDate ? new Date(p.invoiceDate).toLocaleDateString('en-GB') : '-'}</td>
                     <td className="p-3 text-right">{p.totalAmount?.toFixed ? p.totalAmount.toFixed(2) : p.totalAmount}</td>
                     <td className="p-3">{p.status}</td>
                     <td className="p-3 text-right flex items-center justify-end gap-2">
@@ -350,7 +350,7 @@ export default function Purchases() {
                 </div>
                 <div className="mb-4">
                   <label className="block text-sm text-gray-600">Invoice Date</label>
-                  <input type="date" className="w-full p-2 border rounded" value={editPurchase.invoiceDate ? new Date(editPurchase.invoiceDate).toISOString().slice(0,10) : ''} onChange={(e) => setEditPurchase((s) => ({ ...s, invoiceDate: e.target.value }))} />
+                  <input type="date" lang="en-GB" placeholder="dd/mm/yyyy" className="w-full p-2 border rounded" value={editPurchase.invoiceDate ? new Date(editPurchase.invoiceDate).toISOString().slice(0,10) : ''} onChange={(e) => setEditPurchase((s) => ({ ...s, invoiceDate: e.target.value }))} />
                 </div>
 
                 <div className="mb-4">
@@ -466,7 +466,7 @@ export default function Purchases() {
                             </td>
                             <td className="p-2">
                               <input
-                                type="date"
+                                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                                 className="w-36 p-1 border rounded"
                                 value={it.expiryDate || ''}
                                 onChange={(e) => setItemsState(s => s.map((x, i) => i === idx ? ({ ...x, expiryDate: e.target.value }) : x))}

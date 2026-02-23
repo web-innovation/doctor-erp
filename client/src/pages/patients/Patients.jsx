@@ -19,6 +19,21 @@ import { useAuth, useHasPerm } from '../../context/AuthContext';
 import settingsService from '../../services/settingsService';
 import Modal from '../../components/common/Modal';
 
+const parseDDMMYYYYToISO = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return '';
+  const [, dd, mm, yyyy] = match;
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return '';
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function Patients() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,7 +85,7 @@ export default function Patients() {
     mutationFn: (data) => patientService.createPatient(data),
     onSuccess: () => {
       toast.success('Patient added successfully');
-      queryClient.invalidateQueries(['patients']);
+      queryClient.invalidateQueries({ queryKey: ['patients'] });
       setIsAddModalOpen(false);
       reset();
     },
@@ -80,6 +95,12 @@ export default function Patients() {
   });
 
   const onSubmit = (data) => {
+    const dateOfBirthIso = data.dateOfBirth ? parseDDMMYYYYToISO(data.dateOfBirth) : '';
+    if (data.dateOfBirth && !dateOfBirthIso) {
+      toast.error('Date of birth format should be dd/mm/yyyy');
+      return;
+    }
+
     // Transform allergies (comma-separated) and medicalHistory (lines) into arrays
     const allergiesArr = data.allergies
       ? data.allergies.split(',').map((s) => s.trim()).filter(Boolean)
@@ -90,10 +111,10 @@ export default function Patients() {
 
     createMutation.mutate({
       ...data,
-      dateOfBirth: data.dateOfBirth || undefined,
+      dateOfBirth: dateOfBirthIso || undefined,
       allergies: allergiesArr,
       medicalHistory: medHistArr,
-      insurance: data.insurance || undefined,
+      insurance: data.insurance ? data.insurance.trim() : undefined,
     });
   };
 
@@ -131,9 +152,9 @@ export default function Patients() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -233,6 +254,7 @@ export default function Patients() {
                   </label>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={filters.fromDate}
                     onChange={(e) => handleFilterChange('fromDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -245,6 +267,7 @@ export default function Patients() {
                   </label>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={filters.toDate}
                     onChange={(e) => handleFilterChange('toDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -484,8 +507,10 @@ export default function Patients() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
               <input
-                type="date"
+                type="text"
+                inputMode="numeric"
                 {...register('dateOfBirth')}
+                placeholder="dd/mm/yyyy"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

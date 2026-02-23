@@ -521,7 +521,7 @@ export default function ManualEntry() {
                             />
                             <input
                               aria-label={`expiry-${idx}`}
-                              type="date"
+                              type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                               className="p-1 border rounded w-36"
                               value={it.expiryDate || ''}
                               onChange={(e) => setItemsList((s) => s.map((x, i) => (i === idx ? { ...x, expiryDate: e.target.value } : x)))}
@@ -660,7 +660,7 @@ export default function ManualEntry() {
 
           <div>
             <input className="w-full p-2 border rounded" placeholder="Amount" type="number" value={manualAmount} onChange={(e) => setManualAmount(e.target.value)} />
-            <input className="w-full p-2 border rounded mt-2" placeholder="Date (optional)" type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
+              <input className="w-full p-2 border rounded mt-2" placeholder="Date (optional)" type="date" lang="en-GB" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
             <textarea className="w-full p-2 border rounded mt-2" placeholder="Note (optional)" value={manualNote} onChange={(e) => setManualNote(e.target.value)} />
             {previewAmount > 0 && (
               <div className="mt-2 text-xs text-gray-500">

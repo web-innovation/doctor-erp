@@ -36,6 +36,8 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+const GST_OPTIONS = [0, 5, 10, 12, 18, 20, 30];
+
 export default function Billing() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -50,6 +52,7 @@ export default function Billing() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [updatingGstBillId, setUpdatingGstBillId] = useState(null);
   const pageSize = 10;
 
   const {
@@ -94,6 +97,21 @@ export default function Billing() {
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to record payment');
     },
+  });
+
+  const updateGstMutation = useMutation({
+    mutationFn: ({ id, payload }) => billingService.updateBill(id, payload),
+    onSuccess: () => {
+      toast.success('GST updated');
+      queryClient.invalidateQueries(['bills']);
+      if (selectedBill?.id) {
+        queryClient.invalidateQueries(['bill', selectedBill.id]);
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to update GST');
+    },
+    onSettled: () => setUpdatingGstBillId(null),
   });
 
   const handleSearch = (e) => {
@@ -233,9 +251,9 @@ export default function Billing() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
@@ -250,6 +268,43 @@ export default function Billing() {
 
   const getBalanceDue = (bill) => {
     return bill.dueAmount || 0;
+  };
+
+  const getBillGstRate = (bill) => {
+    const taxableBase = Number(bill?.subtotal || 0) - Number(bill?.discountAmount || 0);
+    const taxAmount = Number(bill?.taxAmount || 0);
+    if (taxableBase <= 0 || taxAmount <= 0) return 0;
+    const computed = Math.round(((taxAmount / taxableBase) * 100) * 100) / 100;
+    const exact = GST_OPTIONS.find((rate) => Number(rate) === Number(computed));
+    return exact !== undefined ? exact : 0;
+  };
+
+  const handleApplyGst = (bill, gstRate) => {
+    const normalizedRate = Number(gstRate || 0);
+    const hasPercentDiscount = Number(bill?.discountPercent || 0) > 0;
+    const payload = {
+      notes: bill?.notes || '',
+      doctorId: bill?.doctorId || undefined,
+      type: bill?.type || undefined,
+      discountType: hasPercentDiscount ? 'PERCENTAGE' : 'AMOUNT',
+      discount: hasPercentDiscount
+        ? Number(bill?.discountPercent || 0)
+        : Number(bill?.discountAmount || 0),
+      taxConfig: { gstRate: normalizedRate },
+      items: (bill?.items || []).map((item) => ({
+        description: item.description,
+        quantity: Number(item.quantity) || 1,
+        unitPrice: Number(item.unitPrice) || 0,
+        gstPercent: Number(item.gstPercent) || 0,
+        productId: item.productId || null,
+        labId: item.labId || null,
+        labTestId: item.labTestId || null,
+        doctorId: item.doctorId || null,
+      })),
+    };
+
+    setUpdatingGstBillId(bill.id);
+    updateGstMutation.mutate({ id: bill.id, payload });
   };
 
   const hasActiveFilters = filters.status || filters.startDate || filters.endDate;
@@ -333,6 +388,7 @@ export default function Billing() {
                   </label>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={filters.startDate}
                     onChange={(e) => handleFilterChange('startDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -344,6 +400,7 @@ export default function Billing() {
                   </label>
                   <input
                     type="date"
+                    lang="en-GB"
                     value={filters.endDate}
                     onChange={(e) => handleFilterChange('endDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -398,6 +455,9 @@ export default function Billing() {
                         Amount
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        GST
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Status
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -444,6 +504,24 @@ export default function Billing() {
                               </p>
                             )}
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {canEditBilling ? (
+                            <select
+                              value={getBillGstRate(bill)}
+                              onChange={(e) => handleApplyGst(bill, e.target.value)}
+                              disabled={updatingGstBillId === bill.id}
+                              className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white disabled:opacity-60"
+                            >
+                              {GST_OPTIONS.map((rate) => (
+                                <option key={rate} value={rate}>
+                                  {rate}%
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-sm text-gray-600">{getBillGstRate(bill)}%</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span
@@ -735,9 +813,9 @@ export default function Billing() {
                   <span className="text-red-600">-{formatCurrency(selectedBill.discount)}</span>
                 </div>
               )}
-              {selectedBill.tax > 0 && (
+              {getBillGstRate(selectedBill) > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Tax ({selectedBill.tax}%)</span>
+                  <span className="text-gray-500">Tax ({getBillGstRate(selectedBill)}%)</span>
                   <span className="text-gray-600">
                     {formatCurrency(selectedBill.taxAmount || 0)}
                   </span>

@@ -20,7 +20,7 @@ async function generatePatientId(clinicId) {
 // Compute age in years from a date string (returns undefined for invalid input)
 function computeAgeFromDOB(dobStr) {
   if (!dobStr) return undefined;
-  const d = new Date(dobStr);
+  const d = parsePatientDate(dobStr);
   if (Number.isNaN(d.getTime())) return undefined;
   const today = new Date();
   let age = today.getFullYear() - d.getFullYear();
@@ -29,6 +29,25 @@ function computeAgeFromDOB(dobStr) {
     age--;
   }
   return age;
+}
+
+function parsePatientDate(value) {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (m) {
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yyyy = Number(m[3]);
+    const d = new Date(yyyy, mm - 1, dd);
+    if (d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd) return d;
+  }
+  const fallback = new Date(trimmed);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 // GET / - List patients
@@ -120,6 +139,8 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
     const clinicId = req.user.clinicId;
     const patientId = await generatePatientId(clinicId);
     const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory, insurance } = req.body;
+    const normalizedGender = gender ? String(gender).toUpperCase() : undefined;
+    const parsedDOB = dateOfBirth ? parsePatientDate(dateOfBirth) : null;
 
     // Determine numeric age: prefer explicit `age` coerced to int, otherwise compute from dateOfBirth
     let ageValue;
@@ -138,8 +159,8 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       name,
       phone,
       email,
-      gender,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      gender: normalizedGender,
+      dateOfBirth: parsedDOB || null,
       age: typeof ageValue === 'number' ? ageValue : undefined,
       bloodGroup,
       address,
@@ -147,21 +168,9 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
       emergencyContact,
       allergies: allergies ? JSON.stringify(allergies) : null,
       medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : null,
+      insurance: insurance === undefined ? null : (String(insurance).trim() || null),
       clinicId
     };
-
-    try {
-      // Detect if `insurance` field exists in Prisma datamodel at runtime
-      const dmmf = prisma._dmmf;
-      let hasInsurance = false;
-      if (dmmf && dmmf.datamodel && Array.isArray(dmmf.datamodel.models)) {
-        const model = dmmf.datamodel.models.find((m) => m.name === 'Patient');
-        hasInsurance = !!(model && Array.isArray(model.fields) && model.fields.some((f) => f.name === 'insurance'));
-      }
-      if (hasInsurance && insurance) createData.insurance = insurance;
-    } catch (e) {
-      // ignore detection errors - proceed without insurance
-    }
 
     const patient = await prisma.patient.create({ data: createData });
 
@@ -178,6 +187,8 @@ router.post('/', checkPermission('patients', 'create'), async (req, res, next) =
 router.put('/:id', checkPermission('patients', 'update'), async (req, res, next) => {
   try {
     const { name, phone, email, gender, dateOfBirth, age, bloodGroup, address, city, emergencyContact, allergies, medicalHistory, insurance } = req.body;
+    const normalizedGender = gender ? String(gender).toUpperCase() : undefined;
+    const parsedDOB = dateOfBirth ? parsePatientDate(dateOfBirth) : null;
 
     // Coerce age to integer if provided, otherwise compute from dateOfBirth when present
     let ageValue;
@@ -195,8 +206,8 @@ router.put('/:id', checkPermission('patients', 'update'), async (req, res, next)
       name,
       phone,
       email,
-      gender,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      gender: normalizedGender,
+      dateOfBirth: dateOfBirth ? (parsedDOB || undefined) : undefined,
       age: typeof ageValue === 'number' ? ageValue : undefined,
       bloodGroup,
       address,
@@ -204,19 +215,8 @@ router.put('/:id', checkPermission('patients', 'update'), async (req, res, next)
       emergencyContact,
       allergies: allergies ? JSON.stringify(allergies) : undefined,
       medicalHistory: medicalHistory ? JSON.stringify(medicalHistory) : undefined,
+      insurance: insurance === undefined ? undefined : (String(insurance).trim() || null),
     };
-
-    try {
-      const dmmf = prisma._dmmf;
-      let hasInsurance = false;
-      if (dmmf && dmmf.datamodel && Array.isArray(dmmf.datamodel.models)) {
-        const model = dmmf.datamodel.models.find((m) => m.name === 'Patient');
-        hasInsurance = !!(model && Array.isArray(model.fields) && model.fields.some((f) => f.name === 'insurance'));
-      }
-      if (hasInsurance && insurance !== undefined) updateData.insurance = insurance;
-    } catch (e) {
-      // ignore detection errors - proceed without insurance
-    }
 
     const patient = await prisma.patient.update({ where: { id: req.params.id }, data: updateData });
 

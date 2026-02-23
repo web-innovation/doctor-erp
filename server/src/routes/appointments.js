@@ -17,6 +17,23 @@ async function generateAppointmentNo(clinicId) {
   return `A-${(lastNum + 1).toString().padStart(4, '0')}`;
 }
 
+function parseDateInputToDate(value) {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  const d = new Date(yyyy, mm - 1, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return d;
+}
+
 // GET / - List appointments
 router.get('/', checkPermission('appointments', 'read'), async (req, res, next) => {
   try {
@@ -269,13 +286,15 @@ router.post('/', async (req, res, next) => {
 
     // Server-side validation: appointment datetime must not be in the past
     try {
-      if (date && timeSlot) {
-        const apptDt = new Date(`${date}T${timeSlot}`);
+      const parsedDate = parseDateInputToDate(date);
+      if (parsedDate && timeSlot) {
+        const isoDate = parsedDate.toISOString().split('T')[0];
+        const apptDt = new Date(`${isoDate}T${timeSlot}`);
         if (apptDt < new Date()) {
           return res.status(400).json({ success: false, message: 'Appointment date and time cannot be in the past' });
         }
-      } else if (date) {
-        const apptDateOnly = new Date(date);
+      } else if (parsedDate) {
+        const apptDateOnly = new Date(parsedDate);
         apptDateOnly.setHours(0, 0, 0, 0);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -294,7 +313,7 @@ router.post('/', async (req, res, next) => {
         appointmentNo,
         patientId,
         clinicId,
-        date: date ? new Date(date) : undefined,
+        date: date ? parseDateInputToDate(date) : undefined,
         timeSlot,
         type: type || 'CONSULTATION',
         symptoms,
@@ -325,12 +344,14 @@ router.put('/:id', checkPermission('appointments', 'update'), async (req, res, n
     // Server-side validation: ensure updated appointment datetime is not in the past
     try {
       const finalDate = date || (existing.date ? existing.date.toISOString().split('T')[0] : undefined);
+      const parsedFinalDate = parseDateInputToDate(finalDate);
       const finalTime = timeSlot || existing.timeSlot;
-      if (finalDate && finalTime) {
-        const apptDt = new Date(`${finalDate}T${finalTime}`);
+      if (parsedFinalDate && finalTime) {
+        const isoDate = parsedFinalDate.toISOString().split('T')[0];
+        const apptDt = new Date(`${isoDate}T${finalTime}`);
         if (apptDt < new Date()) return res.status(400).json({ success: false, message: 'Appointment date and time cannot be in the past' });
-      } else if (finalDate && !finalTime) {
-        const apptDateOnly = new Date(finalDate);
+      } else if (parsedFinalDate && !finalTime) {
+        const apptDateOnly = new Date(parsedFinalDate);
         apptDateOnly.setHours(0, 0, 0, 0);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -343,7 +364,7 @@ router.put('/:id', checkPermission('appointments', 'update'), async (req, res, n
     const appointment = await prisma.appointment.update({
       where: { id: req.params.id },
       data: {
-        date: date ? new Date(date) : undefined,
+        date: date ? parseDateInputToDate(date) : undefined,
         timeSlot, type, status, symptoms, notes, consultationFee,
         confirmedAt: status === 'CONFIRMED' ? new Date() : undefined
       },

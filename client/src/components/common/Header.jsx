@@ -138,7 +138,7 @@ const Header = ({ onMenuClick }) => {
   }, [location.pathname]);
 
   // Get today's date
-  const today = new Date().toLocaleDateString('en-US', {
+  const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',

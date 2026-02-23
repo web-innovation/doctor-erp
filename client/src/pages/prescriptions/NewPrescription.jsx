@@ -182,7 +182,7 @@ export default function NewPrescription() {
     enabled: !!patientIdSelected() && (!!selectedDoctorId || !isAdminCreator),
   });
 
-  const appointmentOptions = (patientAppointmentsData?.data || []).map(a => ({ value: a.id, label: `${a.appointmentNo || ''} ${a.date ? `- ${new Date(a.date).toLocaleDateString()}` : ''}`, appt: a }));
+  const appointmentOptions = (patientAppointmentsData?.data || []).map(a => ({ value: a.id, label: `${a.appointmentNo || ''} ${a.date ? `- ${new Date(a.date).toLocaleDateString('en-GB')}` : ''}`, appt: a }));
 
   // Search medicines
   const { data: medicinesData } = useQuery({

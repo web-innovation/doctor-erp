@@ -426,7 +426,7 @@ export default function UploadPurchase() {
                 <input className="p-2 border rounded" placeholder="Unit" value={createProductForm.unit} onChange={(e) => setCreateProductForm((s) => ({ ...s, unit: e.target.value }))} />
               </div>
               <input className="w-full p-2 border rounded" placeholder="Manufacturer" value={createProductForm.manufacturer} onChange={(e) => setCreateProductForm((s) => ({ ...s, manufacturer: e.target.value }))} />
-              <input className="w-full p-2 border rounded" placeholder="Expiry Date" type="date" value={createProductForm.expiryDate} onChange={(e) => setCreateProductForm((s) => ({ ...s, expiryDate: e.target.value }))} />
+                <input className="w-full p-2 border rounded" placeholder="Expiry Date" type="date" lang="en-GB" value={createProductForm.expiryDate} onChange={(e) => setCreateProductForm((s) => ({ ...s, expiryDate: e.target.value }))} />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button className="px-3 py-1 border rounded" onClick={() => { setShowCreateProductModal(false); setCreatingProductRow(null); }}>Cancel</button>

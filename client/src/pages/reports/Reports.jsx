@@ -639,7 +639,7 @@ export default function Reports() {
                 <FaCalendarAlt className="text-gray-400" />
                 <span className="text-sm text-gray-600">From:</span>
                 <input
-                  type="date"
+                  type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                   value={dateRange.startDate}
                   onChange={(e) => setDateRange((prev) => ({ ...prev, startDate: e.target.value }))}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -648,7 +648,7 @@ export default function Reports() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">To:</span>
                 <input
-                  type="date"
+                  type="date" lang="en-GB" placeholder="dd/mm/yyyy"
                   value={dateRange.endDate}
                   onChange={(e) => setDateRange((prev) => ({ ...prev, endDate: e.target.value }))}
                   className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"

@@ -401,11 +401,11 @@ export default function Ledger() {
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">From Date</label>
-              <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
+              <input type="date" lang="en-GB" placeholder="dd/mm/yyyy" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">To Date</label>
-              <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
+              <input type="date" lang="en-GB" placeholder="dd/mm/yyyy" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="h-10 px-3 border rounded-lg w-full" />
             </div>
 
             <div className="md:col-span-12 flex flex-wrap gap-2 justify-start md:justify-end pt-1">

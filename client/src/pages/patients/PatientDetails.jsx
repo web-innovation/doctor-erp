@@ -25,6 +25,28 @@ import { prescriptionService } from '../../services/prescriptionService';
 import { useHasPerm } from '../../context/AuthContext';
 import Modal from '../../components/common/Modal';
 
+const parseDDMMYYYYToISO = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return '';
+  const [, dd, mm, yyyy] = match;
+  const d = Number(dd);
+  const m = Number(mm);
+  const y = Number(yyyy);
+  if (!d || !m || !y || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return '';
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const isoToDDMMYYYY = (value) => {
+  if (!value || typeof value !== 'string' || !value.includes('-')) return '';
+  const [yyyy, mm, dd] = value.split('T')[0].split('-');
+  if (!yyyy || !mm || !dd) return '';
+  return `${dd}/${mm}/${yyyy}`;
+};
+
 const tabs = [
   { id: 'overview', label: 'Overview', icon: FaUser },
   { id: 'history', label: 'History', icon: FaNotesMedical },
@@ -40,6 +62,17 @@ export default function PatientDetails() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [showVitalsForm, setShowVitalsForm] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({
+    bloodPressure: '',
+    pulse: '',
+    temperature: '',
+    weight: '',
+    height: '',
+    spO2: '',
+    bloodSugar: '',
+    notes: '',
+  });
   
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm();
 
@@ -68,8 +101,8 @@ export default function PatientDetails() {
         name: patient.name || '',
         phone: patient.phone || '',
         email: patient.email || '',
-        gender: patient.gender || '',
-        dateOfBirth: patient.dateOfBirth ? patient.dateOfBirth.split('T')[0] : '',
+        gender: patient.gender ? String(patient.gender).toUpperCase() : '',
+        dateOfBirth: patient.dateOfBirth ? isoToDDMMYYYY(patient.dateOfBirth) : '',
         // Age is auto-calculated from DOB on the client; do not require manual input
         age: patient.age || '',
         bloodGroup: patient.bloodGroup || '',
@@ -129,7 +162,7 @@ export default function PatientDetails() {
   const addVitalsMutation = useMutation({
     mutationFn: (vitalsData) => patientService.addVitals(id, vitalsData),
     onSuccess: () => {
-      queryClient.invalidateQueries(['patientVitals', id]);
+      queryClient.invalidateQueries({ queryKey: ['patientVitals', id] });
       toast.success('Vitals added successfully');
     },
     onError: () => {
@@ -141,8 +174,8 @@ export default function PatientDetails() {
   const updatePatientMutation = useMutation({
     mutationFn: (data) => patientService.updatePatient(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['patient', id]);
-      queryClient.invalidateQueries(['patients']);
+      queryClient.invalidateQueries({ queryKey: ['patient', id] });
+      queryClient.invalidateQueries({ queryKey: ['patients'] });
       toast.success('Patient updated successfully');
       setIsEditModalOpen(false);
       navigate(`/patients/${id}`);
@@ -158,6 +191,12 @@ export default function PatientDetails() {
   };
 
   const onEditSubmit = (data) => {
+    const dateOfBirthIso = data.dateOfBirth ? parseDDMMYYYYToISO(data.dateOfBirth) : '';
+    if (data.dateOfBirth && !dateOfBirthIso) {
+      toast.error('Date of birth format should be dd/mm/yyyy');
+      return;
+    }
+
     const allergiesArr = data.allergies
       ? data.allergies.split(',').map((s) => s.trim()).filter(Boolean)
       : undefined;
@@ -167,26 +206,28 @@ export default function PatientDetails() {
 
     updatePatientMutation.mutate({
       ...data,
-      dateOfBirth: data.dateOfBirth || undefined,
+      dateOfBirth: dateOfBirthIso || undefined,
       allergies: allergiesArr,
       medicalHistory: medHistArr,
-      insurance: data.insurance || undefined,
+      insurance: data.insurance ? data.insurance.trim() : null,
     });
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit',
       year: 'numeric',
     });
   };
 
   const calculateAge = (dob) => {
     if (!dob) return '-';
+    const parsedIso = dob.includes('/') ? parseDDMMYYYYToISO(dob) : dob;
+    if (!parsedIso) return '-';
     const today = new Date();
-    const birthDate = new Date(dob);
+    const birthDate = new Date(parsedIso);
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
@@ -194,6 +235,69 @@ export default function PatientDetails() {
     }
     return age;
   };
+
+  const getLatestVital = (key) => {
+    if (!vitals?.length) return null;
+    return vitals.find((entry) => entry[key] !== null && entry[key] !== undefined && entry[key] !== '');
+  };
+
+  const getVitalBadge = (type, value) => {
+    if (value === null || value === undefined || value === '') {
+      return { label: 'No data', className: 'bg-gray-100 text-gray-600' };
+    }
+    if (type === 'spO2') {
+      if (Number(value) >= 95) return { label: 'Normal', className: 'bg-green-100 text-green-700' };
+      if (Number(value) >= 90) return { label: 'Low', className: 'bg-yellow-100 text-yellow-700' };
+      return { label: 'Critical', className: 'bg-red-100 text-red-700' };
+    }
+    if (type === 'pulse') {
+      if (Number(value) >= 60 && Number(value) <= 100) return { label: 'Normal', className: 'bg-green-100 text-green-700' };
+      return { label: 'Review', className: 'bg-yellow-100 text-yellow-700' };
+    }
+    if (type === 'temperature') {
+      if (Number(value) >= 97 && Number(value) <= 99) return { label: 'Normal', className: 'bg-green-100 text-green-700' };
+      if (Number(value) > 99) return { label: 'Fever', className: 'bg-red-100 text-red-700' };
+      return { label: 'Low', className: 'bg-yellow-100 text-yellow-700' };
+    }
+    return { label: 'Recorded', className: 'bg-blue-100 text-blue-700' };
+  };
+
+  const submitVitals = () => {
+    const payload = {
+      bloodPressure: vitalsForm.bloodPressure || null,
+      pulse: vitalsForm.pulse ? Number(vitalsForm.pulse) : null,
+      temperature: vitalsForm.temperature ? Number(vitalsForm.temperature) : null,
+      weight: vitalsForm.weight ? Number(vitalsForm.weight) : null,
+      height: vitalsForm.height ? Number(vitalsForm.height) : null,
+      spO2: vitalsForm.spO2 ? Number(vitalsForm.spO2) : null,
+      bloodSugar: vitalsForm.bloodSugar ? Number(vitalsForm.bloodSugar) : null,
+      notes: vitalsForm.notes || null,
+    };
+
+    addVitalsMutation.mutate(payload, {
+      onSuccess: () => {
+        setVitalsForm({
+          bloodPressure: '',
+          pulse: '',
+          temperature: '',
+          weight: '',
+          height: '',
+          spO2: '',
+          bloodSugar: '',
+          notes: '',
+        });
+        setShowVitalsForm(false);
+      },
+    });
+  };
+
+  const latestPulse = getLatestVital('pulse');
+  const latestSpO2 = getLatestVital('spO2');
+  const latestTemp = getLatestVital('temperature');
+  const latestBp = getLatestVital('bloodPressure');
+  const pulseBadge = getVitalBadge('pulse', latestPulse?.pulse);
+  const spO2Badge = getVitalBadge('spO2', latestSpO2?.spO2);
+  const tempBadge = getVitalBadge('temperature', latestTemp?.temperature);
 
   if (isLoading) {
     return (
@@ -533,29 +637,64 @@ export default function PatientDetails() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-gray-900">Vitals Record</h3>
                     <button
-                      onClick={() => {
-                        // This would typically open a modal - for now using sample data
-                        const vitalsData = {
-                          bloodPressure: '120/80',
-                          pulse: 72,
-                          temperature: 98.6,
-                          weight: 70,
-                          height: 170,
-                          spO2: 98,
-                        };
-                        addVitalsMutation.mutate(vitalsData);
-                      }}
+                      onClick={() => setShowVitalsForm((v) => !v)}
                       disabled={addVitalsMutation.isPending}
                       className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
                     >
-                      {addVitalsMutation.isPending ? (
-                        <FaSpinner className="animate-spin" />
-                      ) : (
-                        <FaPlus />
-                      )}
-                      Add Vitals
+                      <FaPlus />
+                      {showVitalsForm ? 'Close Form' : 'Add Vitals'}
                     </button>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                    <div className="rounded-lg border border-gray-200 p-3 bg-white">
+                      <p className="text-xs text-gray-500">Latest BP</p>
+                      <p className="text-lg font-semibold text-gray-900">{latestBp?.bloodPressure || '-'}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3 bg-white">
+                      <p className="text-xs text-gray-500">Latest Pulse</p>
+                      <p className="text-lg font-semibold text-gray-900">{latestPulse?.pulse ? `${latestPulse.pulse} bpm` : '-'}</p>
+                      <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-xs ${pulseBadge.className}`}>{pulseBadge.label}</span>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3 bg-white">
+                      <p className="text-xs text-gray-500">Latest Temperature</p>
+                      <p className="text-lg font-semibold text-gray-900">{latestTemp?.temperature ? `${latestTemp.temperature} F` : '-'}</p>
+                      <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-xs ${tempBadge.className}`}>{tempBadge.label}</span>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3 bg-white">
+                      <p className="text-xs text-gray-500">Latest SpO2</p>
+                      <p className="text-lg font-semibold text-gray-900">{latestSpO2?.spO2 ? `${latestSpO2.spO2}%` : '-'}</p>
+                      <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-xs ${spO2Badge.className}`}>{spO2Badge.label}</span>
+                    </div>
+                  </div>
+
+                  {showVitalsForm && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 mb-4">
+                      <p className="text-sm font-medium text-gray-700 mb-3">
+                        Vitals help track trends between visits and flag issues early.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <input type="text" placeholder="BP (e.g. 120/80)" value={vitalsForm.bloodPressure} onChange={(e) => setVitalsForm((s) => ({ ...s, bloodPressure: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="numeric" placeholder="Pulse" value={vitalsForm.pulse} onChange={(e) => setVitalsForm((s) => ({ ...s, pulse: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="decimal" placeholder="Temperature (F)" value={vitalsForm.temperature} onChange={(e) => setVitalsForm((s) => ({ ...s, temperature: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="numeric" placeholder="SpO2 (%)" value={vitalsForm.spO2} onChange={(e) => setVitalsForm((s) => ({ ...s, spO2: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="decimal" placeholder="Weight (kg)" value={vitalsForm.weight} onChange={(e) => setVitalsForm((s) => ({ ...s, weight: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="decimal" placeholder="Height (cm)" value={vitalsForm.height} onChange={(e) => setVitalsForm((s) => ({ ...s, height: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" inputMode="decimal" placeholder="Blood Sugar (optional)" value={vitalsForm.bloodSugar} onChange={(e) => setVitalsForm((s) => ({ ...s, bloodSugar: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
+                        <textarea placeholder="Notes (optional)" value={vitalsForm.notes} onChange={(e) => setVitalsForm((s) => ({ ...s, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg md:col-span-4 resize-none" />
+                      </div>
+                      <div className="flex justify-end mt-3">
+                        <button
+                          type="button"
+                          onClick={submitVitals}
+                          disabled={addVitalsMutation.isPending}
+                          className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                        >
+                          {addVitalsMutation.isPending ? <FaSpinner className="animate-spin" /> : null}
+                          Save Vitals
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {vitals?.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -595,7 +734,7 @@ export default function PatientDetails() {
                                 {vital.pulse ? `${vital.pulse} bpm` : '-'}
                               </td>
                               <td className="py-3 px-4 text-gray-600">
-                                {vital.temperature ? `${vital.temperature}°F` : '-'}
+                                {vital.temperature ? `${vital.temperature} F` : '-'}
                               </td>
                               <td className="py-3 px-4 text-gray-600">
                                 {vital.weight ? `${vital.weight} kg` : '-'}
@@ -675,9 +814,9 @@ export default function PatientDetails() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+                <option value="OTHER">Other</option>
               </select>
             </div>
             <div>
@@ -685,8 +824,10 @@ export default function PatientDetails() {
                 Date of Birth
               </label>
               <input
-                type="date"
+                type="text"
+                inputMode="numeric"
                 {...register('dateOfBirth')}
+                placeholder="dd/mm/yyyy"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
