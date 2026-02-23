@@ -145,6 +145,15 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
   // Filter menu items based on user role and clinic-level rolePermissions (if present)
   const filteredMenuItems = menuItems.filter((item) => {
+      // Debug: Log role and permissions for Accountant, after all variables are initialized
+      if (normalizedRole === 'ACCOUNTANT' && item.path === '/reports') {
+        console.log('[Sidebar] Accountant debug:', {
+          normalizedRole,
+          effectiveRoleForMatch,
+          rolePermissions,
+          item,
+        });
+      }
     const normalizeDisabled = (value) => {
       const raw = String(value || '').trim().toLowerCase();
       if (!raw) return '';
@@ -175,6 +184,8 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
       ? (rolePermissions[roleKey] ? roleKey : (rolePermissions[effectiveRoleForMatch] ? effectiveRoleForMatch : roleKey))
       : roleKey;
     const permsForRole = rolePermissions && rolePermissions[roleKeyForPerms];
+    console.log("permsForRole>>>>", permsForRole)
+    console.log("requiredPermKeys>>>>", requiredPermKeys)
 
     // Special handling for Reports menu: only show if user has any report permission
     if (item.path === '/reports') {

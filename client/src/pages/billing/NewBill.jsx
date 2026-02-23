@@ -95,8 +95,41 @@ export default function NewBill() {
       paymentAmount: 0,
       paymentReference: '',
       notes: '',
+      // Module-level GST/discount defaults
+      defaultConsultationGstPercent: 5,
+      defaultPharmacyGstPercent: 10,
+      defaultLabTestGstPercent: 20,
+      defaultConsultationDiscountPercent: 0,
+      defaultPharmacyDiscountPercent: 0,
+      defaultLabTestDiscountPercent: 0,
     },
   });
+  // --- UI for module-level GST/discount ---
+  const renderModuleDefaults = () => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">Module GST & Discount Defaults</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs mb-1">Consultation GST (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultConsultationGstPercent')} className="input input-bordered w-full mb-2" />
+          <label className="block text-xs mb-1">Consultation Discount (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultConsultationDiscountPercent')} className="input input-bordered w-full" />
+        </div>
+        <div>
+          <label className="block text-xs mb-1">Pharmacy GST (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultPharmacyGstPercent')} className="input input-bordered w-full mb-2" />
+          <label className="block text-xs mb-1">Pharmacy Discount (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultPharmacyDiscountPercent')} className="input input-bordered w-full" />
+        </div>
+        <div>
+          <label className="block text-xs mb-1">Lab Test GST (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultLabTestGstPercent')} className="input input-bordered w-full mb-2" />
+          <label className="block text-xs mb-1">Lab Test Discount (%)</label>
+          <input type="number" step="0.01" min="0" max="100" {...register('defaultLabTestDiscountPercent')} className="input input-bordered w-full" />
+        </div>
+      </div>
+    </div>
+  );
 
   const { fields, append, remove, replace } = useFieldArray({
     control,
@@ -518,6 +551,7 @@ export default function NewBill() {
             {/* Left Column - Main Form */}
             <div className="lg:col-span-2 space-y-6">
               {/* Patient Selection */}
+              {renderModuleDefaults()}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <FaUser className="text-blue-600" />
@@ -771,7 +805,7 @@ export default function NewBill() {
                         key={field.id}
                         className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
                       >
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-7 gap-3">
                           <div className="md:col-span-2">
                             <label className="block text-xs font-medium text-gray-500 mb-1">
                               Description
@@ -792,7 +826,6 @@ export default function NewBill() {
                                 {...register(`items.${index}.doctorId`)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                               >
-                                {/* If current user cannot see all doctors, ensure their own entry is available */}
                                 {!canSeeAllDoctors && <option value={user?.id}>{user?.name}</option>}
                                 {canSeeAllDoctors && <option value="">Select doctor</option>}
                                 {augmentedDoctors.map((d) => (
@@ -802,9 +835,7 @@ export default function NewBill() {
                             </div>
                           )}
                           <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">
-                              Qty
-                            </label>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Qty</label>
                             <input
                               type="number"
                               min="1"
@@ -816,9 +847,7 @@ export default function NewBill() {
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">
-                              Price (₹)
-                            </label>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Price (₹)</label>
                             <input
                               type="number"
                               step="0.01"
@@ -827,6 +856,38 @@ export default function NewBill() {
                                 required: true,
                                 min: 0,
                               })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">GST (%)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              {...register(`items.${index}.gstPercent`)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Discount (%)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              {...register(`items.${index}.discountPercent`)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Discount Amt</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              {...register(`items.${index}.discountAmount`)}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                           </div>

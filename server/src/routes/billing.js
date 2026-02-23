@@ -586,7 +586,14 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
       discountType = 'AMOUNT',
       notes,
       taxConfig,
-      labId
+      labId,
+      // New fields for module-level GST/discount
+      defaultConsultationGstPercent,
+      defaultPharmacyGstPercent,
+      defaultLabTestGstPercent,
+      defaultConsultationDiscountPercent,
+      defaultPharmacyDiscountPercent,
+      defaultLabTestDiscountPercent
     } = req.body;
     
     // Validation
@@ -616,13 +623,41 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           unitPrice = Number(consultationFeeMap?.[consultationDoctorId] || 0);
         }
       }
-      const itemTotal = quantity * unitPrice;
+
+      // Determine GST and discount for this item
+      let gstPercent = item.gstPercent;
+      let discountPercent = item.discountPercent;
+      let discountAmount = item.discountAmount;
+
+      // Apply module-level defaults if not set per item
+      if (gstPercent == null) {
+        if (itemType === 'consultation' && defaultConsultationGstPercent != null) gstPercent = defaultConsultationGstPercent;
+        if (itemType === 'pharmacy' && defaultPharmacyGstPercent != null) gstPercent = defaultPharmacyGstPercent;
+        if (itemType === 'lab_test' && defaultLabTestGstPercent != null) gstPercent = defaultLabTestGstPercent;
+      }
+      if (discountPercent == null) {
+        if (itemType === 'consultation' && defaultConsultationDiscountPercent != null) discountPercent = defaultConsultationDiscountPercent;
+        if (itemType === 'pharmacy' && defaultPharmacyDiscountPercent != null) discountPercent = defaultPharmacyDiscountPercent;
+        if (itemType === 'lab_test' && defaultLabTestDiscountPercent != null) discountPercent = defaultLabTestDiscountPercent;
+      }
+      // Calculate discount amount if percent is set
+      if (discountPercent != null && discountAmount == null) {
+        discountAmount = (unitPrice * quantity * discountPercent) / 100;
+      }
+      if (discountAmount == null) discountAmount = 0;
+
+      // Calculate item total after discount
+      const itemSubtotal = unitPrice * quantity;
+      const itemTotal = itemSubtotal - discountAmount;
       subtotal += itemTotal;
       return {
         ...item,
         quantity,
         unitPrice,
-        amount: itemTotal
+        amount: itemTotal,
+        gstPercent: gstPercent || 0,
+        discountPercent: discountPercent || 0,
+        discountAmount: discountAmount || 0
       };
     });
     
@@ -675,6 +710,13 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           dueAmount: totalAmount,
           paymentStatus: 'PENDING',
           notes,
+          // Store module-level GST/discount defaults if provided
+          defaultConsultationGstPercent: defaultConsultationGstPercent || null,
+          defaultPharmacyGstPercent: defaultPharmacyGstPercent || null,
+          defaultLabTestGstPercent: defaultLabTestGstPercent || null,
+          defaultConsultationDiscountPercent: defaultConsultationDiscountPercent || null,
+          defaultPharmacyDiscountPercent: defaultPharmacyDiscountPercent || null,
+          defaultLabTestDiscountPercent: defaultLabTestDiscountPercent || null,
           items: {
             create: processedItems.map(item => ({
               description: item.description,
@@ -685,7 +727,9 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
               productId: item.productId || null,
               labId: item.labId || null,
               labTestId: item.labTestId || null,
-              doctorId: item.doctorId || null
+              doctorId: item.doctorId || null,
+              discountPercent: item.discountPercent || 0,
+              discountAmount: item.discountAmount || 0
             }))
           }
         },
