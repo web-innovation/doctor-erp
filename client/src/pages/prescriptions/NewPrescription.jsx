@@ -224,7 +224,10 @@ export default function NewPrescription() {
         const payloadSnapshot = lastPayloadRef.current || {};
         let billItems = [];
         try {
-          const prefillRes = await billingService.getPrefill(prescriptionData.patientId || payloadSnapshot.patientId);
+          const prefillRes = await billingService.getPrefill(
+            prescriptionData.patientId || payloadSnapshot.patientId,
+            { prescriptionId: prescriptionData.id }
+          );
           const prefillItems = prefillRes?.data?.items || [];
           billItems = prefillItems.map((it) => ({
             description: it.description || '',
@@ -300,8 +303,10 @@ export default function NewPrescription() {
           try {
             await billingService.createBill(billReq);
             try { queryClient.invalidateQueries({ queryKey: ['bills'] }); } catch (e) {}
+            toast.success('Draft bill created automatically');
           } catch (e) {
             console.error('Failed creating draft bill:', e);
+            toast.error(e?.response?.data?.message || 'Auto bill creation failed');
           }
         }
       } catch (e) {

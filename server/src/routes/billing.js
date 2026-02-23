@@ -597,16 +597,14 @@ router.get('/doctors', authenticate, checkPermission('billing:create'), async (r
 router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'), async (req, res) => {
   try {
     const { patientId } = req.params;
+    const requestedPrescriptionId = req.query?.prescriptionId;
+    const prescriptionWhere = requestedPrescriptionId
+      ? { id: requestedPrescriptionId, clinicId: req.user.clinicId, patientId }
+      : { clinicId: req.user.clinicId, patientId };
 
     const latestPrescription = await prisma.prescription.findFirst({
-      where: {
-        clinicId: req.user.clinicId,
-        patientId
-      },
-      orderBy: [
-        { date: 'desc' },
-        { createdAt: 'desc' }
-      ],
+      where: prescriptionWhere,
+      orderBy: requestedPrescriptionId ? undefined : [{ date: 'desc' }, { createdAt: 'desc' }],
       include: {
         doctor: { select: { id: true, name: true } },
         appointment: { select: { id: true, appointmentNo: true, consultationFee: true } },

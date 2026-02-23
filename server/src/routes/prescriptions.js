@@ -463,7 +463,7 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
         }
       },
       include: {
-        patient: { select: { id: true, name: true, phone: true } },
+        patient: { select: { id: true, patientId: true, name: true, phone: true } },
         doctor: { select: { id: true, name: true } },
         medicines: true,
         labTests: true
@@ -519,7 +519,7 @@ router.put('/:id', checkPermission('prescriptions', 'create'), async (req, res, 
       where: { id },
       data: updateData,
       include: {
-        patient: { select: { id: true, name: true, phone: true } },
+        patient: { select: { id: true, patientId: true, name: true, phone: true } },
         doctor: { select: { id: true, name: true } },
         medicines: true,
         labTests: true

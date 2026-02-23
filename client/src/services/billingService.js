@@ -115,8 +115,8 @@ const billingService = {
    * Prefill bill items from latest patient prescription
    * @param {string} patientId - Patient ID
    */
-  getPrefill: async (patientId) => {
-    const response = await api.get(`/billing/prefill/${patientId}`);
+  getPrefill: async (patientId, params = {}) => {
+    const response = await api.get(`/billing/prefill/${patientId}`, { params });
     return response.data;
   },
 };
