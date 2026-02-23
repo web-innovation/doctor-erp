@@ -266,8 +266,12 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
   let roleKeyForLookup = effRoleKey;
   if (rolePermissions) {
     if (!rolePermissions[roleKeyForLookup]) {
+      // fallback: nurse/lab technician should inherit STAFF permissions unless explicitly overridden
+      if (['NURSE', 'LAB_TECHNICIAN'].includes(roleKeyForLookup) && rolePermissions['STAFF']) {
+        roleKeyForLookup = 'STAFF';
+      }
       // fallback: treat STAFF as DOCTOR when DOCTOR override exists
-      if (roleKeyForLookup === 'STAFF' && rolePermissions['DOCTOR']) {
+      else if (roleKeyForLookup === 'STAFF' && rolePermissions['DOCTOR']) {
         roleKeyForLookup = 'DOCTOR';
       }
     }

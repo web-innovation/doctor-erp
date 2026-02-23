@@ -362,8 +362,12 @@ function getUserRoleTokens(req) {
       const up = (r || '').toString().toUpperCase().trim();
       if (!up) continue;
       out.add(up);
+      if (['NURSE', 'LAB_TECHNICIAN'].includes(up)) out.add('STAFF');
       const parts = up.split(/[^A-Z0-9]+/i).map(p => p.trim()).filter(Boolean);
-      for (const p of parts) out.add(p);
+      for (const p of parts) {
+        out.add(p);
+        if (['NURSE', 'LAB_TECHNICIAN'].includes(p)) out.add('STAFF');
+      }
     }
   } catch (e) {
     // ignore

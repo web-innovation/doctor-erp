@@ -230,9 +230,9 @@ const Header = ({ onMenuClick }) => {
       if (r.includes('doctor')) return 'DOCTOR';
       if (r.includes('recept') || r.includes('reception')) return 'RECEPTIONIST';
       if (r.includes('account')) return 'ACCOUNTANT';
-      if (r.includes('nurse')) return 'NURSE';
-      if (r.includes('lab')) return 'LAB_TECHNICIAN';
     }
+    // Keep generic staff designations (e.g., nurse/lab assistant) as STAFF so
+    // Access Management under STAFF role applies consistently.
     return 'STAFF';
   };
 

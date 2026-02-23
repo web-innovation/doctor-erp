@@ -106,7 +106,7 @@ export default function Dashboard() {
     queryFn: () => settingsService.getRolePermissions(),
     staleTime: 5 * 60 * 1000,
   });
-  const rolePermissions = rolePermResp?.data || rolePermResp || null;
+  const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || rolePermResp || null;
 
   // Effective role: when viewing as another user, use their role; else use logged-in user's role
   const effectiveRole = normalizeRole
@@ -123,7 +123,16 @@ export default function Dashboard() {
       return ['DOCTOR', 'SUPER_ADMIN'].includes((effectiveRole || '').toString().toUpperCase());
     }
 
-    const perms = rolePermissions[effectiveRole?.toString().toUpperCase()];
+    const effectiveRoleKey = (effectiveRole || '').toString().toUpperCase();
+    let roleKeyForLookup = effectiveRoleKey;
+    if (!rolePermissions[roleKeyForLookup]) {
+      if (['NURSE', 'LAB_TECHNICIAN'].includes(roleKeyForLookup) && rolePermissions.STAFF) {
+        roleKeyForLookup = 'STAFF';
+      } else if (roleKeyForLookup === 'STAFF' && rolePermissions.DOCTOR) {
+        roleKeyForLookup = 'DOCTOR';
+      }
+    }
+    const perms = rolePermissions[roleKeyForLookup];
     if (!perms) return false;
     return perms.includes(permKey);
   };

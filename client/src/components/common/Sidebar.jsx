@@ -69,15 +69,20 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     staleTime: 5 * 60 * 1000,
     enabled: !!user && !isAdminRoute,
   });
-  const accessControls = accessResp?.data || accessResp || null;
+  const accessControls = accessResp?.data?.data || accessResp?.data || accessResp || null;
   
   // Get user role from AuthContext — if viewing as another staff, use their role
   const userRoleRaw = activeViewUser?.role || user?.role || 'DOCTOR';
   const normalizedRole = normalizeRole ? normalizeRole(userRoleRaw) : (userRoleRaw || 'DOCTOR').toString().toUpperCase();
-  // Some users in the seed/DB use 'STAFF' for doctors — only fallback to DOCTOR
-  // when clinic-level rolePermissions do NOT define a STAFF override but DOCTOR exists.
+  // Map designation-derived staff roles back to STAFF when no explicit role override exists.
+  // Also keep historical STAFF->DOCTOR fallback for doctor-staff setups.
   const effectiveRoleForMatch = (() => {
-    if (normalizedRole !== 'STAFF') return normalizedRole;
+    const role = normalizedRole;
+    const isStaffVariant = ['NURSE', 'LAB_TECHNICIAN'].includes(role);
+    if (isStaffVariant && rolePermissions && !rolePermissions[role] && rolePermissions.STAFF) {
+      return 'STAFF';
+    }
+    if (role !== 'STAFF') return role;
     if (!rolePermissions) return 'DOCTOR';
     const hasStaffOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'STAFF');
     const hasDoctorOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'DOCTOR');
