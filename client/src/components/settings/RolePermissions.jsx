@@ -12,6 +12,7 @@ const DEFAULT_PERMISSIONS = [
   'patients:read','patients:create','patients:update',
   'appointments:read','appointments:create','appointments:update',
   'prescriptions:read','prescriptions:create',
+  'staff:read','staff:create','staff:update',
   'pharmacy:read','pharmacy:create','billing:read','billing:create','billing:edit','reports:opd',
   // Purchases / Ledger permissions
   'purchases:read','purchases:create','ledger:read','ledger:create','ledger:update','ledger:delete'

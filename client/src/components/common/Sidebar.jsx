@@ -30,9 +30,9 @@ const menuItems = [
   { name: 'Pharmacy', path: '/pharmacy', icon: BuildingStorefrontIcon, roles: ['admin', 'pharmacist', 'DOCTOR', 'PHARMACIST', 'SUPER_ADMIN'] },
   { name: 'Ledger', path: '/ledger', icon: DocumentTextIcon, roles: ['admin', 'doctor', 'pharmacist', 'accountant', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Billing', path: '/billing', icon: CurrencyDollarIcon, roles: ['admin', 'receptionist', 'accountant', 'DOCTOR', 'RECEPTIONIST', 'ACCOUNTANT', 'SUPER_ADMIN'] },
-  { name: 'Staff', path: '/staff', icon: UsersIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
-  { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
-  { name: 'Leave', path: '/staff/leave', icon: CalendarIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Staff', path: '/staff', icon: UsersIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
+  { name: 'Attendance', path: '/staff/attendance', icon: ClockIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
+  { name: 'Leave', path: '/staff/leave', icon: CalendarIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT', 'RECEPTIONIST', 'STAFF'] },
   { name: 'Reports', path: '/reports', icon: ChartBarIcon, roles: ['admin', 'doctor', 'accountant', 'DOCTOR', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Labs', path: '/labs', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Agents & Commissions', path: '/agents', icon: UsersIcon, roles: ['admin', 'accountant', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
@@ -174,11 +174,21 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     // If clinic-level overrides are configured, they are authoritative for mapped permissions.
     if (rolePermissions) {
       if (requiredPermKey) {
-        // If this role has no override (undefined or empty array), deny access
-        // to any menu item that depends on a mapped permission. This ensures
-        // explicit Access Management settings are enforced.
-        if (!Array.isArray(permsForRole) || permsForRole.length === 0) return false;
-        return permsForRole.includes(requiredPermKey);
+        // Backward compatibility: older clinics may not have complete permission
+        // keys for all roles; fall back to static role mapping in that case.
+        if (!Array.isArray(permsForRole) || permsForRole.length === 0) return roleMatch;
+        if (permsForRole.includes(requiredPermKey)) return true;
+
+        // For legacy role-permission sets that don't include any `staff:*` keys,
+        // keep Staff menu visible for matching roles.
+        if (
+          requiredPermKey.startsWith('staff:') &&
+          roleMatch &&
+          !permsForRole.some((p) => String(p || '').startsWith('staff:'))
+        ) {
+          return true;
+        }
+        return false;
       }
       return roleMatch;
     }
