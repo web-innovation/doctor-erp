@@ -65,8 +65,10 @@ export function hipaaSecurityHeaders(req, res, next) {
  * HTTPS redirect middleware for production
  */
 export function forceHTTPS(req, res, next) {
-  if (process.env.NODE_ENV === 'production' && !req.secure && req.get('x-forwarded-proto') !== 'https') {
-    return res.redirect(301, `https://${req.get('host')}${req.url}`);
+  const xfProto = (req.get('x-forwarded-proto') || '').split(',')[0].trim();
+  if (process.env.NODE_ENV === 'production' && !req.secure && xfProto !== 'https') {
+    // Use 308 so POST/PUT methods and request bodies are preserved across redirects.
+    return res.redirect(308, `https://${req.get('host')}${req.url}`);
   }
   next();
 }
