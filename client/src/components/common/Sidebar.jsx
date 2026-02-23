@@ -112,24 +112,25 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   
   const todayOPDCount = dashboardStats?.data?.appointments?.total || 0;
 
-  // Map menu paths to permission keys used in rolePermissions
+  // Map menu paths to permission keys used in rolePermissions.
+  // A menu is shown when any mapped permission is granted.
   const menuPermissionMap = {
-    '/dashboard': 'dashboard:read',
-    '/patients': 'patients:read',
-    '/appointments': 'appointments:read',
-    '/prescriptions': 'prescriptions:read',
-    '/pharmacy': 'pharmacy:read',
-    '/ledger': 'ledger:read',
-    '/billing': 'billing:read',
-    '/staff': 'staff:read',
-    '/staff/attendance': 'staff:read',
-    '/staff/leave': 'leaves:read',
-    '/reports': 'reports:opd',
-    '/settings': 'settings:clinic',
+    '/dashboard': ['dashboard:read', 'dashboard:view'],
+    '/patients': ['patients:read', 'patients:create', 'patients:update'],
+    '/appointments': ['appointments:read', 'appointments:create', 'appointments:update'],
+    '/prescriptions': ['prescriptions:read', 'prescriptions:create'],
+    '/pharmacy': ['pharmacy:read', 'pharmacy:create'],
+    '/ledger': ['ledger:read', 'ledger:create', 'ledger:update', 'ledger:delete'],
+    '/billing': ['billing:read', 'billing:create', 'billing:edit'],
+    '/staff': ['staff:read', 'staff:create', 'staff:update'],
+    '/staff/attendance': ['staff:read', 'staff:update'],
+    '/staff/leave': ['leaves:read', 'leaves:create', 'leaves:update'],
+    '/reports': ['reports:opd', 'reports:collections'],
+    '/settings': ['settings:clinic'],
     // granular mappings for labs and agents
-    '/labs-agents': 'labs:read',
-    '/labs': 'labs:read',
-    '/agents': 'agents:read'
+    '/labs-agents': ['labs:read', 'labs:create', 'labs:update'],
+    '/labs': ['labs:read', 'labs:create', 'labs:update', 'labs:tests'],
+    '/agents': ['agents:read', 'agents:create', 'agents:update', 'commissions:read', 'commissions:pay']
   };
 
   // Admin should only bypass clinic-level role permissions when NOT viewing-as another staff.
@@ -146,12 +147,14 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     };
     const disabledList = Array.isArray(accessControls?.disabledPermissions) ? accessControls.disabledPermissions : [];
     const disabledSet = new Set(disabledList.map(normalizeDisabled).filter(Boolean));
-    const requiredPerm = menuPermissionMap[item.path];
-    const perm = String(requiredPerm || '').toLowerCase();
-    const resource = perm.split(':')[0];
-    const isDisabled = perm
-      ? (disabledSet.has(perm) || disabledSet.has(resource) || disabledSet.has(`${resource}:*`) || disabledSet.has('*'))
-      : (disabledSet.has('*'));
+    const requiredPerms = Array.isArray(menuPermissionMap[item.path]) ? menuPermissionMap[item.path] : [];
+    const isDisabled = requiredPerms.length
+      ? requiredPerms.some((p) => {
+          const perm = String(p || '').toLowerCase();
+          const resource = perm.split(':')[0];
+          return disabledSet.has(perm) || disabledSet.has(resource) || disabledSet.has(`${resource}:*`) || disabledSet.has('*');
+        })
+      : disabledSet.has('*');
 
     // Super admin disables should hide for clinic users (including clinic admin)
     if (isDisabled && normalizedRole !== 'SUPER_ADMIN') return false;
@@ -161,7 +164,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
     const roleMatch = item.roles.some(r => r.toString().toUpperCase() === effectiveRoleForMatch);
     const roleKey = normalizedRole;
-    const requiredPermKey = requiredPerm;
+    const requiredPermKeys = requiredPerms;
     // Determine which role key to use when looking up clinic overrides. If the
     // clinic has an explicit override for the normalizedRole, use it. Otherwise
     // fall back to the effectiveRoleForMatch (e.g., treat STAFF as DOCTOR when
@@ -173,16 +176,16 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
     // If clinic-level overrides are configured, they are authoritative for mapped permissions.
     if (rolePermissions) {
-      if (requiredPermKey) {
+      if (requiredPermKeys.length > 0) {
         // Backward compatibility: older clinics may not have complete permission
         // keys for all roles; fall back to static role mapping in that case.
         if (!Array.isArray(permsForRole) || permsForRole.length === 0) return roleMatch;
-        if (permsForRole.includes(requiredPermKey)) return true;
+        if (requiredPermKeys.some((permKey) => permsForRole.includes(permKey))) return true;
 
         // For legacy role-permission sets that don't include any `staff:*` keys,
         // keep Staff menu visible for matching roles.
         if (
-          requiredPermKey.startsWith('staff:') &&
+          requiredPermKeys.some((permKey) => permKey.startsWith('staff:')) &&
           roleMatch &&
           !permsForRole.some((p) => String(p || '').startsWith('staff:'))
         ) {
@@ -196,7 +199,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     // If there are NO clinic-level overrides, hide any menu item that has a mapped permission
     // (require explicit Access Management entry). If no mapped permission exists, fall back
     // to static role membership.
-    if (requiredPermKey) return false;
+    if (requiredPermKeys.length > 0) return false;
     return roleMatch;
   });
 

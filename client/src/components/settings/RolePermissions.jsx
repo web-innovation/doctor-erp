@@ -67,6 +67,16 @@ export default function RolePermissions() {
 
   // Permission dependency rules: enabling a permission may imply others (e.g. manage -> read)
   const DEPENDENCIES = {
+    'patients:create': ['patients:read'],
+    'patients:update': ['patients:read'],
+    'appointments:create': ['appointments:read'],
+    'appointments:update': ['appointments:read'],
+    'prescriptions:create': ['prescriptions:read'],
+    'billing:create': ['billing:read'],
+    'billing:edit': ['billing:read'],
+    'pharmacy:create': ['pharmacy:read'],
+    'staff:create': ['staff:read'],
+    'staff:update': ['staff:read'],
     'labs:manage': ['labs:read'],
     'labs:create': ['labs:read'],
     'labs:update': ['labs:read'],

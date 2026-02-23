@@ -223,14 +223,14 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
     queryFn: () => settingsService.getRolePermissions(),
     staleTime: 5 * 60 * 1000,
   });
-  const rolePermissions = rolePermResp?.data || rolePermResp || null;
+  const rolePermissions = rolePermResp?.data?.data || rolePermResp?.data || rolePermResp || null;
 
   const { data: accessResp } = useQuery({
     queryKey: ['accessControls'],
     queryFn: () => settingsService.getAccessControls(),
     staleTime: 5 * 60 * 1000,
   });
-  const accessControls = accessResp?.data || accessResp || null;
+  const accessControls = accessResp?.data?.data || accessResp?.data || accessResp || null;
 
   const effectiveRole = (activeViewUser && activeViewUser.role) || (user && normalizeRole(user.role)) || 'STAFF';
 
