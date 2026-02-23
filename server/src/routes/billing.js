@@ -825,19 +825,22 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           defaultPharmacyDiscountPercent: defaultPharmacyDiscountPercent || null,
           defaultLabTestDiscountPercent: defaultLabTestDiscountPercent || null,
           items: {
-            create: computed.processedItems.map(item => ({
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              gstPercent: item.gstPercent || 0,
-              amount: item.amount,
-              product: item.productId ? { connect: { id: item.productId } } : undefined,
-              lab: item.labId ? { connect: { id: item.labId } } : undefined,
-              labTest: item.labTestId ? { connect: { id: item.labTestId } } : undefined,
-              doctor: item.doctorId ? { connect: { id: item.doctorId } } : undefined,
-              discountPercent: item.discountPercent || 0,
-              discountAmount: item.discountAmount || 0
-            }))
+            create: computed.processedItems.map(item => {
+              const createItem = {
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                gstPercent: item.gstPercent || 0,
+                amount: item.amount,
+                discountPercent: item.discountPercent || 0,
+                discountAmount: item.discountAmount || 0
+              };
+              if (item.productId) createItem.product = { connect: { id: item.productId } };
+              if (item.labId) createItem.lab = { connect: { id: item.labId } };
+              if (item.labTestId) createItem.labTest = { connect: { id: item.labTestId } };
+              if (item.doctorId) createItem.doctor = { connect: { id: item.doctorId } };
+              return createItem;
+            })
           }
         },
         include: {

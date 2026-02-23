@@ -659,6 +659,8 @@ model BillItem {
   quantity    Int
   unitPrice   Float
   gstPercent  Float  @default(0)
+  discountPercent Float? @default(0)
+  discountAmount  Float? @default(0)
   amount      Float
 
   bill      Bill             @relation(fields: [billId], references: [id], onDelete: Cascade)
