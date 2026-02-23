@@ -179,23 +179,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
       : roleKey;
     const permsForRole = rolePermissions && rolePermissions[roleKeyForPerms];
 
-    // If clinic-level overrides are configured, they are authoritative for mapped permissions.
+    // If clinic-level overrides are configured, mapped menu visibility must come
+    // only from Access Management permissions.
     if (rolePermissions) {
       if (requiredPermKeys.length > 0) {
-        // Backward compatibility: older clinics may not have complete permission
-        // keys for all roles; fall back to static role mapping in that case.
-        if (!Array.isArray(permsForRole) || permsForRole.length === 0) return roleMatch;
+        if (!Array.isArray(permsForRole) || permsForRole.length === 0) return false;
         if (requiredPermKeys.some((permKey) => permsForRole.includes(permKey))) return true;
-
-        // For legacy role-permission sets that don't include any `staff:*` keys,
-        // keep Staff menu visible for matching roles.
-        if (
-          requiredPermKeys.some((permKey) => permKey.startsWith('staff:')) &&
-          roleMatch &&
-          !permsForRole.some((p) => String(p || '').startsWith('staff:'))
-        ) {
-          return true;
-        }
         return false;
       }
       return roleMatch;
