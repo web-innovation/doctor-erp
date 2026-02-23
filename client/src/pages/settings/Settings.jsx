@@ -28,6 +28,8 @@ import {
   PRESCRIPTION_TEMPLATE_OPTIONS,
   PRINT_TEMPLATE_PLACEHOLDERS,
   normalizePrintTemplateConfig,
+  renderBillPrintHtml,
+  renderPrescriptionPrintHtml,
 } from '../../utils/printTemplates';
 
 const TABS = [
@@ -119,6 +121,7 @@ export default function Settings() {
   const [printTemplates, setPrintTemplates] = useState(
     normalizePrintTemplateConfig({})
   );
+  const [printPreviewType, setPrintPreviewType] = useState('bill');
 
   // Fetch clinic settings
   const { data: clinicData, isLoading: clinicLoading } = useQuery({
@@ -369,6 +372,55 @@ export default function Settings() {
     const payload = normalizePrintTemplateConfig(printTemplates);
     updatePrintTemplatesMutation.mutate(payload);
   };
+
+  const sampleClinic = {
+    clinicName: clinicData?.clinicName || 'DocClinic Demo',
+    phone: clinicData?.phone || '+91 98765 43210',
+    address: clinicData?.address || '123 Wellness Street, Tricity',
+  };
+
+  const sampleBill = {
+    id: 'demo-bill',
+    billNo: 'B-01024',
+    createdAt: new Date().toISOString(),
+    paymentStatus: 'PENDING',
+    patient: { name: 'Ravi Kumar', phone: '+91 90000 11111' },
+    doctor: { name: 'Neha Sharma' },
+    items: [
+      { description: 'Consultation Fee', quantity: 1, unitPrice: 500 },
+      { description: 'CBC Test', quantity: 1, unitPrice: 350 },
+      { description: 'Medicine Pack', quantity: 2, unitPrice: 180 },
+    ],
+    subtotal: 1210,
+    discountAmount: 50,
+    taxAmount: 139.2,
+    totalAmount: 1299.2,
+    paidAmount: 500,
+    dueAmount: 799.2,
+    notes: 'Demo preview data',
+  };
+
+  const samplePrescription = {
+    id: 'demo-rx',
+    prescriptionNo: 'P-0102',
+    createdAt: new Date().toISOString(),
+    followUpDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    patient: { name: 'Ravi Kumar', patientId: 'P-0102', phone: '+91 90000 11111' },
+    doctor: { name: 'Neha Sharma' },
+    vitalsSnapshot: { bp: '120/80', pulse: 76, temp: 98.4, spo2: 99, weight: 72 },
+    diagnosis: ['Viral fever', 'Mild dehydration'],
+    medicines: [
+      { medicineName: 'Paracetamol 650', dosage: '1 tab', frequency: 'TID', duration: '3 days', timing: 'After food' },
+      { medicineName: 'ORS', dosage: '200 ml', frequency: 'BID', duration: '2 days', timing: 'Anytime' },
+    ],
+    labTests: [{ testName: 'CBC', instructions: 'Fasting not required' }],
+    clinicalNotes: 'Plenty of fluids, rest recommended.',
+    advice: 'Review after 3 days if fever persists.',
+  };
+
+  const previewHtml = printPreviewType === 'bill'
+    ? renderBillPrintHtml(sampleBill, sampleClinic, printTemplates)
+    : renderPrescriptionPrintHtml(samplePrescription, sampleClinic, printTemplates);
 
   // Render Profile Tab
   const renderProfileTab = () => (
@@ -1087,6 +1139,38 @@ export default function Settings() {
               </p>
             </div>
           )}
+
+          <div className="border border-gray-100 rounded-lg p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <h4 className="text-sm font-semibold text-gray-900">Live Preview</h4>
+              <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setPrintPreviewType('bill')}
+                  className={`px-3 py-1.5 text-sm ${printPreviewType === 'bill' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Bill Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintPreviewType('prescription')}
+                  className={`px-3 py-1.5 text-sm border-l border-gray-200 ${printPreviewType === 'prescription' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Prescription Preview
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Preview uses sample data. Actual print will use real patient, doctor, bill, and prescription data.
+            </p>
+            <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+              <iframe
+                title="Print template preview"
+                srcDoc={previewHtml}
+                className="w-full h-[640px] bg-white"
+              />
+            </div>
+          </div>
 
           <div className="flex justify-end">
             <button

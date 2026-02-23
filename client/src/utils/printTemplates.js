@@ -130,7 +130,12 @@ function buildPrescriptionMap(prescription, clinic = {}) {
     patientName: escapeHtml(prescription?.patient?.name || '-'),
     patientId: escapeHtml(prescription?.patient?.patientId || '-'),
     patientPhone: escapeHtml(prescription?.patient?.phone || '-'),
-    doctorName: escapeHtml(prescription?.doctor?.name || '-'),
+    doctorName: escapeHtml(
+      prescription?.doctor?.name ||
+      prescription?.doctorName ||
+      prescription?.doctor?.fullName ||
+      '-'
+    ),
     diagnosisList,
     medicinesTableRows: medicineRows,
     labTestsList,

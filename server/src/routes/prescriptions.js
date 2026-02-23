@@ -138,6 +138,9 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
           patient: {
             select: { id: true, patientId: true, name: true, phone: true }
           },
+          doctor: {
+            select: { id: true, name: true }
+          },
           medicines: true,
           labTests: true,
           appointment: {
@@ -275,6 +278,9 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
       include: {
         patient: {
           select: { id: true, patientId: true, name: true, phone: true, email: true }
+        },
+        doctor: {
+          select: { id: true, name: true }
         },
         medicines: {
           include: {
@@ -458,6 +464,7 @@ router.post('/', checkPermission('prescriptions', 'create'), async (req, res, ne
       },
       include: {
         patient: { select: { id: true, name: true, phone: true } },
+        doctor: { select: { id: true, name: true } },
         medicines: true,
         labTests: true
       }
@@ -513,6 +520,7 @@ router.put('/:id', checkPermission('prescriptions', 'create'), async (req, res, 
       data: updateData,
       include: {
         patient: { select: { id: true, name: true, phone: true } },
+        doctor: { select: { id: true, name: true } },
         medicines: true,
         labTests: true
       }
