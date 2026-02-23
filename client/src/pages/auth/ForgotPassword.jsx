@@ -5,7 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { FaHospital, FaSpinner, FaArrowLeft, FaEnvelope, FaCheckCircle } from 'react-icons/fa';
 import { authService } from '../../services/authService';
-
+console.log("hi")
 export default function ForgotPassword() {
   const [emailSent, setEmailSent] = useState(false);
 
