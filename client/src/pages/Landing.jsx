@@ -22,6 +22,8 @@ import {
   FaCheckCircle,
   FaFacebookF,
   FaYoutube,
+  FaBars,
+  FaTimes,
 } from 'react-icons/fa';
 import SEO from '../components/seo/SEO';
 
@@ -189,6 +191,7 @@ const seoFaqs = [
 
 export default function Landing() {
   const [showDemoModal, setShowDemoModal] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-white">
@@ -254,7 +257,50 @@ export default function Landing() {
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
             </div>
+
+            <button
+              className="md:hidden inline-flex items-center justify-center p-2 rounded-lg border border-gray-200 text-gray-700"
+              aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMobileNavOpen((prev) => !prev)}
+            >
+              {mobileNavOpen ? <FaTimes className="h-5 w-5" /> : <FaBars className="h-5 w-5" />}
+            </button>
           </div>
+
+          {mobileNavOpen && (
+            <div className="md:hidden pb-3 border-t border-gray-100">
+              <div className="flex flex-col pt-2">
+                <a
+                  href="#features"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Features
+                </a>
+                <a
+                  href="#why-choose"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Why Choose Us
+                </a>
+                <a
+                  href="#reports"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Reports
+                </a>
+                <Link
+                  to="/login"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Login
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </nav>
 
