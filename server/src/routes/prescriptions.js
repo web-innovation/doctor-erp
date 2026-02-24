@@ -24,6 +24,46 @@ async function generatePrescriptionNo() {
   return `RX-${newNumber.toString().padStart(4, '0')}`;
 }
 
+function isPatientUser(req) {
+  const role = (req.user?.effectiveRole || req.user?.role || '').toString().toUpperCase();
+  return role.split(/[^A-Z0-9]+/).includes('PATIENT');
+}
+
+function getPhoneCandidates(req) {
+  const userPhoneRaw = req.user?.phone || '';
+  const digits = String(userPhoneRaw).replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const candidates = new Set();
+  if (userPhoneRaw) candidates.add(userPhoneRaw);
+  if (digits) candidates.add(digits);
+  if (last10) candidates.add(last10);
+  if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
+  return Array.from(candidates);
+}
+
+function getClinicScope(req) {
+  if (!isPatientUser(req)) return req.user.clinicId;
+  return req.headers['x-clinic-id'] || req.query?.clinicId || req.user.clinicId || null;
+}
+
+async function resolveLinkedPatientForMobile(req, clinicId, preferredPatientId = null) {
+  const phoneCandidates = getPhoneCandidates(req);
+  const orClauses = [];
+  phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
+  if (req.user?.email) orClauses.push({ email: req.user.email });
+
+  if (preferredPatientId) {
+    const preferred = await prisma.patient.findFirst({
+      where: { id: String(preferredPatientId), clinicId, OR: orClauses }
+    });
+    if (preferred) return preferred;
+  }
+
+  return prisma.patient.findFirst({
+    where: { clinicId, OR: orClauses }
+  });
+}
+
 // GET / - List prescriptions
 router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next) => {
   try {
@@ -42,33 +82,17 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
 
-    const where = { clinicId: req.user.clinicId };
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+    const where = { clinicId };
 
     // Support patientId='me' from mobile clients: resolve to the Patient record
     if (patientId === 'me') {
       // Try to find a patient in this clinic matching the authenticated user's phone or email.
       // Mobile numbers may be stored in different formats (leading 0, country code). Build candidate variants.
-      const userPhoneRaw = req.user?.phone || '';
-      const digits = String(userPhoneRaw).replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const candidates = new Set();
-      if (userPhoneRaw) candidates.add(userPhoneRaw);
-      if (digits) candidates.add(digits);
-      if (last10) candidates.add(last10);
-      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
-
-      const phoneCandidates = Array.from(candidates);
-
-      const orClauses = [];
-      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
-      if (req.user?.email) orClauses.push({ email: req.user.email });
-
-      const linkedPatient = await prisma.patient.findFirst({
-        where: {
-          clinicId: req.user.clinicId,
-          OR: orClauses
-        }
-      });
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      const phoneCandidates = getPhoneCandidates(req);
       logger.info(`[Prescriptions] Resolving patientId=me for user=${req.user.id} phoneCandidates=${JSON.stringify(phoneCandidates)} foundPatient=${linkedPatient?.id || null}`);
       // Additional console debug for troubleshooting mobile lookups
       try {
@@ -91,7 +115,7 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
     } else if (patientId) {
       // Support clients passing patient code (e.g., P-0001) by mapping to internal id
       if (typeof patientId === 'string' && patientId.startsWith('P-')) {
-        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId: req.user.clinicId } });
+        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId } });
         if (p) where.patientId = p.id;
         else where.patientId = patientId; // fallback if not found
       } else {
@@ -273,8 +297,11 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
   try {
     const { id } = req.params;
 
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+
     const prescription = await prisma.prescription.findFirst({
-      where: { id, clinicId: req.user.clinicId },
+      where: { id, clinicId },
       include: {
         patient: {
           select: { id: true, patientId: true, name: true, phone: true, email: true }
@@ -300,6 +327,14 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+
+    if (isPatientUser(req)) {
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      if (!linkedPatient || prescription.patientId !== linkedPatient.id) {
+        return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
     }
 
     // Enforce doctor-only access: allow only own prescriptions or explicit `viewUserId` when authorized

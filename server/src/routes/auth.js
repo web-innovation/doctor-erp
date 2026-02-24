@@ -37,6 +37,20 @@ function normalizePhone(phone){
   return d;
 }
 
+function getPhoneCandidates(phone) {
+  const raw = String(phone || '');
+  const normalized = normalizePhone(raw);
+  const digits = raw.replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const out = new Set();
+  if (raw) out.add(raw);
+  if (normalized) out.add(normalized);
+  if (digits) out.add(digits);
+  if (last10) out.add(last10);
+  if (last10 && !last10.startsWith('91')) out.add(`91${last10}`);
+  return Array.from(out);
+}
+
 // ===========================================
 // PASSWORD REQUIREMENTS (for UI)
 // ===========================================
@@ -244,6 +258,59 @@ router.post('/verify-otp', async (req, res, next) => {
 
     res.json({ token, user: { id: user.id, name: user.name, phone: user.phone, role: user.role } });
   }catch(err){
+    next(err);
+  }
+});
+
+// ===========================================
+// PATIENT PROFILES FOR MOBILE APP
+// Returns all patient profiles (across clinics) linked to current mobile/email
+// ===========================================
+router.get('/patient-profiles', authenticate, async (req, res, next) => {
+  try {
+    const role = (req.user?.role || '').toString().toUpperCase();
+    if (role !== 'PATIENT') {
+      return res.status(403).json({ success: false, message: 'Only patient users can access profiles' });
+    }
+
+    const phoneCandidates = getPhoneCandidates(req.user?.phone);
+    const whereOr = [];
+    phoneCandidates.forEach((p) => whereOr.push({ phone: p }));
+    if (req.user?.email) whereOr.push({ email: req.user.email });
+    if (whereOr.length === 0) return res.json({ success: true, data: { profiles: [], defaultProfileId: null, defaultClinicId: null } });
+
+    const patients = await prisma.patient.findMany({
+      where: { OR: whereOr },
+      include: {
+        clinic: { select: { id: true, name: true, city: true, state: true } }
+      },
+      orderBy: [{ createdAt: 'desc' }]
+    });
+
+    const profiles = patients.map((p) => ({
+      id: p.id,
+      patientId: p.patientId,
+      name: p.name,
+      phone: p.phone,
+      clinicId: p.clinicId,
+      clinic: p.clinic,
+      age: p.age || null,
+      gender: p.gender || null
+    }));
+
+    let defaultProfile = null;
+    if (req.user?.clinicId) defaultProfile = profiles.find((p) => p.clinicId === req.user.clinicId) || null;
+    if (!defaultProfile && profiles.length > 0) defaultProfile = profiles[0];
+
+    res.json({
+      success: true,
+      data: {
+        profiles,
+        defaultProfileId: defaultProfile?.id || null,
+        defaultClinicId: defaultProfile?.clinicId || req.user?.clinicId || null
+      }
+    });
+  } catch (err) {
     next(err);
   }
 });

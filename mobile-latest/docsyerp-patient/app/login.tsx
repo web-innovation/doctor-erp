@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, Linking, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import auth from '@/services/auth';
+import { PatientTheme } from '@/constants/patientTheme';
 
 export default function Login() {
   const [mobile, setMobile] = useState('');
@@ -17,7 +18,7 @@ export default function Login() {
     try{
       await auth.requestOtp(mobile);
       router.push(`/otp?mobile=${encodeURIComponent(mobile)}`);
-    }catch(e){
+    }catch{
       Alert.alert('Could not request OTP');
     }finally{ setLoading(false); }
   }
@@ -50,12 +51,30 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, padding: 16, justifyContent:'center', backgroundColor: '#fff' },
-  form: { width: '100%', maxWidth: 420, alignSelf: 'center', padding: 20, borderRadius: 12, backgroundColor: '#fff' },
-  title: { fontSize: 22, marginBottom: 8, textAlign: 'center', fontWeight: '700' },
-  info: { fontSize: 14, color: '#555', marginBottom: 16, textAlign: 'center' },
-  input: { borderWidth: 1, borderColor: '#e2e8f0', padding: 12, marginBottom: 12, borderRadius: 8, fontSize: 18, backgroundColor: '#fff' },
+  container: { flex:1, padding: 16, justifyContent:'center', backgroundColor: PatientTheme.colors.bg },
+  form: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: PatientTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: PatientTheme.colors.border,
+  },
+  title: { fontSize: 24, marginBottom: 8, textAlign: 'center', fontWeight: '700', color: PatientTheme.colors.text },
+  info: { fontSize: 14, color: PatientTheme.colors.textMuted, marginBottom: 16, textAlign: 'center' },
+  input: {
+    borderWidth: 1,
+    borderColor: PatientTheme.colors.border,
+    padding: 12,
+    marginBottom: 12,
+    borderRadius: 10,
+    fontSize: 18,
+    backgroundColor: PatientTheme.colors.surfaceSoft,
+    color: PatientTheme.colors.text,
+  },
   buttonWrap: { marginTop: 8 }
   ,privacyWrap: { marginTop: 12, alignItems: 'center' },
-  privacyLink: { color: '#3b82f6', textDecorationLine: 'underline' }
+  privacyLink: { color: PatientTheme.colors.primary, textDecorationLine: 'underline' }
 });

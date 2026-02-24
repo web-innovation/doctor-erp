@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import auth from '@/services/auth';
+import { PatientTheme } from '@/constants/patientTheme';
 
 export default function OtpScreen(){
   const { mobile } = useLocalSearchParams();
@@ -16,16 +17,21 @@ export default function OtpScreen(){
         try{
           const res = await auth.verifyOtp(mobile, otp);
           if(res && res.token){
-            router.replace('/(tabs)');
+            const boot = await auth.bootstrapPatientProfiles();
+            if ((boot?.profiles || []).length > 1) {
+              router.replace('/select-profile' as any);
+            } else {
+              router.replace('/(tabs)');
+            }
           } else {
             Alert.alert('Invalid OTP');
           }
-        }catch(e){
+        }catch{
           Alert.alert('OTP verification failed');
         }finally{ setLoading(false); setOtp(''); }
       })();
     }
-  }, [otp]);
+  }, [otp, mobile, router]);
 
   return (
     <View style={styles.container}>
@@ -45,9 +51,21 @@ export default function OtpScreen(){
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, padding: 24, backgroundColor: '#fff', justifyContent: 'center' },
-  title: { fontSize: 20, textAlign: 'center', marginBottom: 8 },
-  info: { fontSize: 14, textAlign: 'center', color: '#444', marginBottom: 16 },
-  input: { alignSelf: 'center', fontSize: 28, letterSpacing: 8, borderWidth: 1, borderColor: '#ddd', padding: 12, width: 180, textAlign: 'center', borderRadius: 8, backgroundColor: '#fff' },
+  container: { flex:1, padding: 24, backgroundColor: PatientTheme.colors.bg, justifyContent: 'center' },
+  title: { fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 8, color: PatientTheme.colors.text },
+  info: { fontSize: 14, textAlign: 'center', color: PatientTheme.colors.textMuted, marginBottom: 16 },
+  input: {
+    alignSelf: 'center',
+    fontSize: 28,
+    letterSpacing: 8,
+    borderWidth: 1,
+    borderColor: PatientTheme.colors.border,
+    padding: 12,
+    width: 180,
+    textAlign: 'center',
+    borderRadius: 12,
+    backgroundColor: PatientTheme.colors.surface,
+    color: PatientTheme.colors.text,
+  },
   hint: { textAlign: 'center', marginTop: 12 }
 });

@@ -17,6 +17,46 @@ async function generateAppointmentNo(clinicId) {
   return `A-${(lastNum + 1).toString().padStart(4, '0')}`;
 }
 
+function isPatientUser(req) {
+  const role = (req.user?.effectiveRole || req.user?.role || '').toString().toUpperCase();
+  return role.split(/[^A-Z0-9]+/).includes('PATIENT');
+}
+
+function getPhoneCandidates(req) {
+  const userPhoneRaw = req.user?.phone || '';
+  const digits = String(userPhoneRaw).replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const candidates = new Set();
+  if (userPhoneRaw) candidates.add(userPhoneRaw);
+  if (digits) candidates.add(digits);
+  if (last10) candidates.add(last10);
+  if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
+  return Array.from(candidates);
+}
+
+function getClinicScope(req) {
+  if (!isPatientUser(req)) return req.user.clinicId;
+  const fromHeader = req.headers['x-clinic-id'];
+  const fromQuery = req.query?.clinicId;
+  return (fromHeader || fromQuery || req.user.clinicId || null);
+}
+
+async function resolveLinkedPatientForMobile(req, clinicId, preferredPatientId = null) {
+  const phoneCandidates = getPhoneCandidates(req);
+  const orClauses = [];
+  phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
+  if (req.user?.email) orClauses.push({ email: req.user.email });
+
+  if (preferredPatientId) {
+    const preferred = await prisma.patient.findFirst({
+      where: { id: String(preferredPatientId), clinicId, OR: orClauses }
+    });
+    if (preferred) return preferred;
+  }
+
+  return prisma.patient.findFirst({ where: { clinicId, OR: orClauses } });
+}
+
 function parseDateInputToDate(value) {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -41,7 +81,8 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
-    const clinicId = req.user.clinicId;
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
 
     const where = { clinicId };
     
@@ -70,26 +111,14 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     if (status) where.status = status;
     if (patientId === 'me') {
       // Resolve mobile 'me' to linked Patient using phone/email variants
-      const userPhoneRaw = req.user?.phone || '';
-      const digits = String(userPhoneRaw).replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const candidates = new Set();
-      if (userPhoneRaw) candidates.add(userPhoneRaw);
-      if (digits) candidates.add(digits);
-      if (last10) candidates.add(last10);
-      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
-      const phoneCandidates = Array.from(candidates);
-
-      const orClauses = [];
-      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
-      if (req.user?.email) orClauses.push({ email: req.user.email });
-
-      const linkedPatient = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, OR: orClauses } });
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      const phoneCandidates = getPhoneCandidates(req);
       try { console.log('[Appointments DEBUG] resolving patientId=me', { user: req.user.id, phoneCandidates, linkedPatient: linkedPatient ? { id: linkedPatient.id, patientId: linkedPatient.patientId } : null }); } catch (e) {}
       if (linkedPatient) where.patientId = linkedPatient.id; else return res.json({ success: true, data: [], pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 } });
     } else if (patientId) {
       if (typeof patientId === 'string' && patientId.startsWith('P-')) {
-        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId: req.user.clinicId } });
+        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId } });
         if (p) where.patientId = p.id; else where.patientId = patientId;
       } else {
         where.patientId = patientId;
@@ -149,7 +178,8 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
 // GET /doctors - List clinic doctors (accessible to authenticated users)
 router.get('/doctors', async (req, res, next) => {
   try {
-    const clinicId = req.user.clinicId;
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
     // Users with role DOCTOR
     const usersDoctors = await prisma.user.findMany({ where: { clinicId, role: 'DOCTOR' }, select: { id: true, name: true, email: true } });
 
@@ -215,8 +245,11 @@ router.get('/today', checkPermission('appointments', 'read'), async (req, res, n
 // GET /:id - Get appointment by ID
 router.get('/:id', checkPermission('appointments', 'read'), async (req, res, next) => {
   try {
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: req.params.id },
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: req.params.id, clinicId },
       include: {
         patient: true,
         doctor: { select: { id: true, name: true } },
@@ -224,6 +257,15 @@ router.get('/:id', checkPermission('appointments', 'read'), async (req, res, nex
       }
     });
     if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
+    // Enforce patient-only scope for mobile
+    if (isPatientUser(req)) {
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      if (!linkedPatient || appointment.patientId !== linkedPatient.id) {
+        return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
+    }
+
     // Enforce doctor-only access for appointment detail. Allow viewing when `viewUserId` is provided and authorized.
     if ((req.user.effectiveRole || '').toString().toUpperCase() === 'DOCTOR') {
       const viewUserId = req.query.viewUserId;
@@ -252,33 +294,25 @@ router.post('/', async (req, res, next) => {
   try {
     // Allow authenticated users to create appointments for themselves (patient mobile flows)
     // or staff/users with create permission.
-    const clinicId = req.user.clinicId;
+    const clinicIdFromBody = req.body?.clinicId || req.headers['x-clinic-id'] || req.query?.clinicId || null;
+    const clinicId = isPatientUser(req) ? (clinicIdFromBody || req.user.clinicId) : req.user.clinicId;
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
     const appointmentNo = await generateAppointmentNo(clinicId);
     let { patientId, date, timeSlot, type, symptoms, notes, consultationFee, bookedVia, doctorId } = req.body;
 
     // Support patient booking using 'me' — resolve linked patient by phone/email
     if (patientId === 'me') {
-      const userPhoneRaw = req.user?.phone || '';
-      const digits = String(userPhoneRaw).replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const candidates = new Set();
-      if (userPhoneRaw) candidates.add(userPhoneRaw);
-      if (digits) candidates.add(digits);
-      if (last10) candidates.add(last10);
-      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
-      const phoneCandidates = Array.from(candidates);
-      const orClauses = [];
-      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
-      if (req.user?.email) orClauses.push({ email: req.user.email });
-      const linkedPatient = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, OR: orClauses } });
+      const preferredPatientId = req.body?.patientProfileId || req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
       if (!linkedPatient) return res.status(400).json({ success: false, message: 'Could not resolve linked patient for booking' });
       patientId = linkedPatient.id;
     }
 
     // If user is a PATIENT and attempting to book for someone else, disallow
     if ((req.user.effectiveRole || '').toString().toUpperCase() === 'PATIENT') {
-      const linked = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, id: patientId } });
+      const linked = await resolveLinkedPatientForMobile(req, clinicId, patientId);
       if (!linked) return res.status(403).json({ success: false, message: 'Permission denied to book for this patient' });
+      patientId = linked.id;
     }
 
     // If doctorId omitted and user is a doctor, default to current user
@@ -385,23 +419,13 @@ router.put('/:id/status', async (req, res, next) => {
     // Allow patients to cancel their own appointments without broader update permission
     if ((req.user.effectiveRole || '').toString().toUpperCase() === 'PATIENT' && status === 'CANCELLED') {
       // Resolve linked patient for this user
-      const userPhoneRaw = req.user?.phone || '';
-      const digits = String(userPhoneRaw).replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const candidates = new Set();
-      if (userPhoneRaw) candidates.add(userPhoneRaw);
-      if (digits) candidates.add(digits);
-      if (last10) candidates.add(last10);
-      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
-      const phoneCandidates = Array.from(candidates);
-      const orClauses = [];
-      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
-      if (req.user?.email) orClauses.push({ email: req.user.email });
-
-      const linkedPatient = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, OR: orClauses } });
+      const clinicId = getClinicScope(req);
+      if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
       if (!linkedPatient) return res.status(403).json({ success: false, message: 'Linked patient not found' });
 
-      const appointment = await prisma.appointment.findUnique({ where: { id: req.params.id } });
+      const appointment = await prisma.appointment.findFirst({ where: { id: req.params.id, clinicId } });
       if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found' });
       if (appointment.patientId !== linkedPatient.id) return res.status(403).json({ success: false, message: 'Permission denied to cancel this appointment' });
 

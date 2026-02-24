@@ -3,7 +3,8 @@ const SERVER_URL = 'https://docsyerp.in'; // replace with your server URL
 
 async function fetchWithAuth(path, opts = {}){
   const token = await auth.getToken();
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  const contextHeaders = await auth.getContextHeaders();
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, contextHeaders, opts.headers || {});
   if(token) headers['Authorization'] = `Bearer ${token}`;
   const fullUrl = `${SERVER_URL}${path}`;
   try {
@@ -17,7 +18,8 @@ async function fetchWithAuth(path, opts = {}){
     try{
       await auth.refreshToken();
       const token2 = await auth.getToken();
-      const headers2 = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      const contextHeaders2 = await auth.getContextHeaders();
+      const headers2 = Object.assign({ 'Content-Type': 'application/json' }, contextHeaders2, opts.headers || {});
       if(token2) headers2['Authorization'] = `Bearer ${token2}`;
       const res2 = await fetch(`${SERVER_URL}${path}`, Object.assign({}, opts, { headers: headers2 }));
       if(!res2.ok) {
@@ -48,15 +50,64 @@ async function fetchWithAuth(path, opts = {}){
   return j;
 }
 
+async function withPatientContextQuery(basePath, page = 1, limit = 20) {
+  const active = await auth.getActiveProfile();
+  const params = new URLSearchParams();
+  params.set('patientId', 'me');
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+  if (active?.clinicId) params.set('clinicId', String(active.clinicId));
+  if (active?.id) params.set('patientProfileId', String(active.id));
+  return `${basePath}?${params.toString()}`;
+}
+
 export default {
-  getBills: (patientId, page = 1, limit = 20) => fetchWithAuth(`/api/billing?patientId=${patientId}&page=${page}&limit=${limit}`),
-  getPrescriptions: (patientId, page = 1, limit = 20) => fetchWithAuth(`/api/prescriptions?patientId=${patientId}&page=${page}&limit=${limit}`),
-  getPrescription: (id) => fetchWithAuth(`/api/prescriptions/${id}`),
-  getAppointments: (patientId, page = 1, limit = 20) => fetchWithAuth(`/api/appointments?patientId=${patientId}&page=${page}&limit=${limit}`),
-  getAppointment: (id) => fetchWithAuth(`/api/appointments/${id}`),
+  getBills: async (_patientId, page = 1, limit = 20) => fetchWithAuth(await withPatientContextQuery('/api/billing', page, limit)),
+  getPrescriptions: async (_patientId, page = 1, limit = 20) => fetchWithAuth(await withPatientContextQuery('/api/prescriptions', page, limit)),
+  getPrescription: async (id) => {
+    const active = await auth.getActiveProfile();
+    const q = new URLSearchParams();
+    if (active?.clinicId) q.set('clinicId', String(active.clinicId));
+    if (active?.id) q.set('patientProfileId', String(active.id));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return fetchWithAuth(`/api/prescriptions/${id}${suffix}`);
+  },
+  getAppointments: async (_patientId, page = 1, limit = 20) => fetchWithAuth(await withPatientContextQuery('/api/appointments', page, limit)),
+  getAppointment: async (id) => {
+    const active = await auth.getActiveProfile();
+    const q = new URLSearchParams();
+    if (active?.clinicId) q.set('clinicId', String(active.clinicId));
+    if (active?.id) q.set('patientProfileId', String(active.id));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return fetchWithAuth(`/api/appointments/${id}${suffix}`);
+  },
   updateAppointmentStatus: (id, status) => fetchWithAuth(`/api/appointments/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
-  getBill: (id) => fetchWithAuth(`/api/billing/${id}`),
-  getDoctors: () => fetchWithAuth(`/api/appointments/doctors`),
-  bookAppointment: (payload) => fetchWithAuth(`/api/appointments`, { method: 'POST', body: JSON.stringify(payload) }),
+  getBill: async (id) => {
+    const active = await auth.getActiveProfile();
+    const q = new URLSearchParams();
+    if (active?.clinicId) q.set('clinicId', String(active.clinicId));
+    if (active?.id) q.set('patientProfileId', String(active.id));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return fetchWithAuth(`/api/billing/${id}${suffix}`);
+  },
+  getDoctors: async () => {
+    const active = await auth.getActiveProfile();
+    const q = new URLSearchParams();
+    if (active?.clinicId) q.set('clinicId', String(active.clinicId));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return fetchWithAuth(`/api/appointments/doctors${suffix}`);
+  },
+  bookAppointment: async (payload) => {
+    const active = await auth.getActiveProfile();
+    const body = Object.assign({}, payload);
+    if (active?.clinicId) body.clinicId = active.clinicId;
+    if (active?.id) body.patientProfileId = active.id;
+    return fetchWithAuth(`/api/appointments`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  getPatientProfiles: () => fetchWithAuth('/api/auth/patient-profiles'),
+  switchProfile: async (profile) => {
+    await auth.setActiveProfile(profile);
+    return profile;
+  },
   login: (email, password) => auth.login(email, password)
 };

@@ -119,6 +119,57 @@ async function postBillPaymentEntries(tx, { clinicId, billId, billNo, amount, me
   });
 }
 
+async function postBillPaymentGstEntries(tx, {
+  clinicId,
+  billId,
+  billNo,
+  totalAmount,
+  taxAmount,
+  previousPaidAmount,
+  newPaidAmount,
+  userId
+}) {
+  const total = Number(totalAmount || 0);
+  const tax = Number(taxAmount || 0);
+  const prevPaid = Math.max(0, Number(previousPaidAmount || 0));
+  const nowPaid = Math.max(prevPaid, Number(newPaidAmount || 0));
+  if (total <= 0 || tax <= 0 || nowPaid <= prevPaid) return;
+
+  const previousRecognizedTax = (tax * Math.min(prevPaid, total)) / total;
+  const currentRecognizedTax = (tax * Math.min(nowPaid, total)) / total;
+  const payableTaxNow = Math.max(0, Number((currentRecognizedTax - previousRecognizedTax).toFixed(2)));
+  if (payableTaxNow <= 0) return;
+
+  const gstOutputAcct = await ensureAccount(tx, clinicId, 'GST Output', 'LIABILITY', userId);
+  const gstPayableAcct = await ensureAccount(tx, clinicId, 'GST Payable', 'LIABILITY', userId);
+
+  await tx.ledgerEntry.create({
+    data: {
+      clinicId,
+      account: gstOutputAcct.name,
+      accountId: gstOutputAcct.id,
+      type: 'DEBIT',
+      amount: payableTaxNow,
+      refType: 'BILL_PAYMENT_GST',
+      refId: billId,
+      note: `GST recognized on payment for ${billNo}`,
+    },
+  });
+
+  await tx.ledgerEntry.create({
+    data: {
+      clinicId,
+      account: gstPayableAcct.name,
+      accountId: gstPayableAcct.id,
+      type: 'CREDIT',
+      amount: payableTaxNow,
+      refType: 'BILL_PAYMENT_GST',
+      refId: billId,
+      note: `GST payable on payment for ${billNo}`,
+    },
+  });
+}
+
 // Helper: Calculate GST
 const calculateTax = (amount, taxConfig) => {
   // Default to 0% GST if not specified (user can select GST rate)
@@ -147,6 +198,44 @@ const calculateTax = (amount, taxConfig) => {
 function toNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function isPatientUser(req) {
+  const role = (req.user?.effectiveRole || req.user?.role || '').toString().toUpperCase();
+  return role.split(/[^A-Z0-9]+/).includes('PATIENT');
+}
+
+function getPhoneCandidates(req) {
+  const userPhoneRaw = req.user?.phone || '';
+  const digits = String(userPhoneRaw).replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const candidates = new Set();
+  if (userPhoneRaw) candidates.add(userPhoneRaw);
+  if (digits) candidates.add(digits);
+  if (last10) candidates.add(last10);
+  if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
+  return Array.from(candidates);
+}
+
+function getClinicScope(req) {
+  if (!isPatientUser(req)) return req.user.clinicId;
+  return req.headers['x-clinic-id'] || req.query?.clinicId || req.user.clinicId || null;
+}
+
+async function resolveLinkedPatientForMobile(req, clinicId, preferredPatientId = null) {
+  const phoneCandidates = getPhoneCandidates(req);
+  const orClauses = [];
+  phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
+  if (req.user?.email) orClauses.push({ email: req.user.email });
+
+  if (preferredPatientId) {
+    const preferred = await prisma.patient.findFirst({
+      where: { id: String(preferredPatientId), clinicId, OR: orClauses }
+    });
+    if (preferred) return preferred;
+  }
+
+  return prisma.patient.findFirst({ where: { clinicId, OR: orClauses } });
 }
 
 function normalizeItemModule(item, billType) {
@@ -408,26 +497,16 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const where = { clinicId: req.user.clinicId };
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+    const where = { clinicId };
     
     if (status) where.paymentStatus = status;
     if (type) where.type = type;
     if (patientId === 'me') {
-      const userPhoneRaw = req.user?.phone || '';
-      const digits = String(userPhoneRaw).replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-      const candidates = new Set();
-      if (userPhoneRaw) candidates.add(userPhoneRaw);
-      if (digits) candidates.add(digits);
-      if (last10) candidates.add(last10);
-      if (last10 && !last10.startsWith('91')) candidates.add('91' + last10);
-      const phoneCandidates = Array.from(candidates);
-
-      const orClauses = [];
-      phoneCandidates.forEach((p) => orClauses.push({ phone: p }));
-      if (req.user?.email) orClauses.push({ email: req.user.email });
-
-      const linkedPatient = await prisma.patient.findFirst({ where: { clinicId: req.user.clinicId, OR: orClauses } });
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      const phoneCandidates = getPhoneCandidates(req);
       logger.info(`[Billing] Resolving patientId=me for user=${req.user.id} phoneCandidates=${JSON.stringify(phoneCandidates)} foundPatient=${linkedPatient?.id || null}`);
       try {
         console.log('[Billing DEBUG] user:', { id: req.user.id, phone: req.user.phone, email: req.user.email });
@@ -442,7 +521,7 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
       }
     } else if (patientId) {
       if (typeof patientId === 'string' && patientId.startsWith('P-')) {
-        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId: req.user.clinicId } });
+        const p = await prisma.patient.findFirst({ where: { patientId: patientId, clinicId } });
         if (p) where.patientId = p.id;
         else where.patientId = patientId;
       } else {
@@ -884,6 +963,17 @@ router.post('/', authenticate, checkPermission('billing:create'), async (req, re
           userId: req.user.id,
         });
 
+        await postBillPaymentGstEntries(tx, {
+          clinicId: req.user.clinicId,
+          billId: createdBill.id,
+          billNo: createdBill.billNo,
+          totalAmount: createdBill.totalAmount,
+          taxAmount: createdBill.taxAmount,
+          previousPaidAmount: 0,
+          newPaidAmount: paymentAmount,
+          userId: req.user.id,
+        });
+
         const newPaidAmount = paymentAmount;
         const newDueAmount = createdBill.totalAmount - newPaidAmount;
         const newStatus = newDueAmount <= 0 ? 'PAID' : 'PARTIAL';
@@ -1015,8 +1105,11 @@ router.get('/:id', authenticate, checkPermission('billing:read'), async (req, re
   try {
     const { id } = req.params;
     
+    const clinicId = getClinicScope(req);
+    if (!clinicId) return res.status(400).json({ success: false, message: 'Clinic context is required' });
+
     const bill = await prisma.bill.findFirst({
-      where: { id, clinicId: req.user.clinicId },
+      where: { id, clinicId },
       include: {
         patient: { select: { id: true, name: true, phone: true, email: true, address: true } },
         doctor: { select: { id: true, name: true } },
@@ -1027,6 +1120,14 @@ router.get('/:id', authenticate, checkPermission('billing:read'), async (req, re
     
     if (!bill) {
       return res.status(404).json({ success: false, message: 'Bill not found' });
+    }
+
+    if (isPatientUser(req)) {
+      const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;
+      const linkedPatient = await resolveLinkedPatientForMobile(req, clinicId, preferredPatientId);
+      if (!linkedPatient || bill.patientId !== linkedPatient.id) {
+        return res.status(403).json({ success: false, message: 'Permission denied' });
+      }
     }
     
     // Parse taxBreakdown
@@ -1097,6 +1198,17 @@ router.post('/:id/payment', authenticate, checkPermission('billing:create'), asy
         billNo: bill.billNo,
         amount: paymentAmount,
         method,
+        userId: req.user.id,
+      });
+
+      await postBillPaymentGstEntries(tx, {
+        clinicId: req.user.clinicId,
+        billId: bill.id,
+        billNo: bill.billNo,
+        totalAmount: bill.totalAmount,
+        taxAmount: bill.taxAmount,
+        previousPaidAmount: bill.paidAmount,
+        newPaidAmount,
         userId: req.user.id,
       });
 

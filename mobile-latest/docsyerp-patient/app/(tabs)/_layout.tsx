@@ -46,6 +46,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="calendar.fill" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="book-appointment"
+        options={{
+          title: 'Book Appointment',
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
