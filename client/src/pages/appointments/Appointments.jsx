@@ -10,7 +10,6 @@ import {
   FaCheck,
   FaTimes,
   FaClock,
-  FaEllipsisV,
   FaUserInjured,
 } from 'react-icons/fa';
 import { appointmentService } from '../../services/appointmentService';
@@ -91,6 +90,7 @@ export default function Appointments() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [actionMenuId, setActionMenuId] = useState(null);
+  const [actionMenuPos, setActionMenuPos] = useState(null);
   const pageSize = 10;
 
   // Handle URL params changes
@@ -200,6 +200,7 @@ export default function Appointments() {
       toast.success('Status updated');
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
       setActionMenuId(null);
+      setActionMenuPos(null);
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to update status');
@@ -240,6 +241,81 @@ export default function Appointments() {
   const handleStatusChange = (id, newStatus) => {
     updateStatusMutation.mutate({ id, status: newStatus });
   };
+
+  const getActionItems = (appointment) => {
+    const items = [];
+    if (appointment.status !== 'COMPLETED') {
+      items.push({ key: 'complete', label: 'Mark Completed', status: 'COMPLETED', icon: FaCheck, iconClass: 'text-green-500' });
+    }
+    if (appointment.status === 'REVIEW') {
+      items.push({ key: 'approve', label: 'Approve (Schedule)', status: 'SCHEDULED', icon: FaCheck, iconClass: 'text-green-500' });
+      items.push({ key: 'reject', label: 'Reject', status: 'CANCELLED', icon: FaTimes, iconClass: 'text-red-500' });
+    }
+    if (appointment.status !== 'CANCELLED') {
+      items.push({ key: 'cancel', label: 'Cancel', status: 'CANCELLED', icon: FaTimes, iconClass: 'text-red-500' });
+    }
+    if (appointment.status === 'CANCELLED') {
+      items.push({ key: 'reschedule', label: 'Reschedule', status: 'SCHEDULED', icon: FaClock, iconClass: 'text-blue-500' });
+    }
+    return items;
+  };
+
+  const toggleActionMenu = (event, appointment) => {
+    if (actionMenuId === appointment.id) {
+      setActionMenuId(null);
+      setActionMenuPos(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 240;
+    const itemCount = getActionItems(appointment).length || 1;
+    const menuHeight = Math.max(56, itemCount * 42 + 12);
+    const gap = 8;
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > viewportW - 8) left = viewportW - menuWidth - 8;
+
+    let top = rect.bottom + gap;
+    if (top + menuHeight > viewportH - 8) {
+      top = rect.top - menuHeight - gap;
+    }
+    if (top < 8) top = 8;
+
+    setActionMenuPos({ top, left, width: menuWidth });
+    setActionMenuId(appointment.id);
+  };
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      const target = e.target;
+      if (
+        target.closest?.('[data-apt-action-trigger]') ||
+        target.closest?.('[data-apt-action-menu]')
+      ) {
+        return;
+      }
+      setActionMenuId(null);
+      setActionMenuPos(null);
+    };
+
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        setActionMenuId(null);
+        setActionMenuPos(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, []);
 
   const formatTime = (timeString) => {
     if (!timeString) return '-';
@@ -453,66 +529,13 @@ export default function Appointments() {
                       <td className="px-6 py-4 relative overflow-visible">
                         <div className="relative inline-block">
                           <button
-                            onClick={() =>
-                              setActionMenuId(actionMenuId === appointment.id ? null : appointment.id)
-                            }
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            data-apt-action-trigger
+                            onClick={(e) => toggleActionMenu(e, appointment)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium text-sm transition-colors"
                           >
-                            <FaEllipsisV className="text-gray-400" />
+                            <FaClock className="text-blue-600" />
+                            Quick Actions
                           </button>
-
-                          {/* Action Menu */}
-                          {actionMenuId === appointment.id && (
-                            <div className="absolute right-0 bottom-full mb-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
-                              {appointment.status !== 'COMPLETED' && (
-                                <button
-                                  onClick={() => handleStatusChange(appointment.id, 'COMPLETED')}
-                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                                >
-                                  <FaCheck className="text-green-500" />
-                                  Mark Completed
-                                </button>
-                              )}
-
-                              {/* Approve / Reject for patient-submitted requests */}
-                              {appointment.status === 'REVIEW' && (
-                                <>
-                                  <button
-                                    onClick={() => handleStatusChange(appointment.id, 'SCHEDULED')}
-                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <FaCheck className="text-green-500" />
-                                    Approve (Schedule)
-                                  </button>
-                                  <button
-                                    onClick={() => handleStatusChange(appointment.id, 'CANCELLED')}
-                                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <FaTimes className="text-red-500" />
-                                    Reject
-                                  </button>
-                                </>
-                              )}
-                              {appointment.status !== 'CANCELLED' && (
-                                <button
-                                  onClick={() => handleStatusChange(appointment.id, 'CANCELLED')}
-                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                                >
-                                  <FaTimes className="text-red-500" />
-                                  Cancel
-                                </button>
-                              )}
-                              {appointment.status === 'CANCELLED' && (
-                                <button
-                                  onClick={() => handleStatusChange(appointment.id, 'SCHEDULED')}
-                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                                >
-                                  <FaClock className="text-blue-500" />
-                                  Reschedule
-                                </button>
-                              )}
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -544,11 +567,42 @@ export default function Appointments() {
                   Next
                 </button>
               </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/* New Appointment Modal */}
+      {/* Floating Action Menu (fixed, non-clipping) */}
+      {actionMenuId && actionMenuPos && (() => {
+        const appointment = appointments.find((a) => a.id === actionMenuId);
+        if (!appointment) return null;
+        const items = getActionItems(appointment);
+        return (
+          <div
+            data-apt-action-menu
+            className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[9999]"
+            style={{ top: `${actionMenuPos.top}px`, left: `${actionMenuPos.left}px`, width: `${actionMenuPos.width}px` }}
+          >
+            <div className="px-3 pb-1 mb-1 border-b border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</p>
+            </div>
+            {items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleStatusChange(appointment.id, item.status)}
+                  className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                >
+                  <Icon className={item.iconClass} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* New Appointment Modal */}
         <Modal
           isOpen={showNewModal}
           onClose={() => {

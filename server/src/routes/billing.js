@@ -1269,11 +1269,67 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
       defaultLabTestGstPercent,
       defaultConsultationDiscountPercent,
       defaultPharmacyDiscountPercent,
-      defaultLabTestDiscountPercent
+      defaultLabTestDiscountPercent,
+      paidEditConfirmed,
+      paidEditReason
     } = req.body;
 
     const bill = await prisma.bill.findFirst({ where: { id, clinicId: req.user.clinicId } });
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found' });
+
+    const getClientIP = (request) =>
+      request.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      request.headers['x-real-ip'] ||
+      request.socket?.remoteAddress ||
+      request.ip ||
+      'unknown';
+
+    const createPaidEditAudit = async (action, details = {}) => {
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action,
+            entity: 'billing',
+            entityId: id,
+            oldData: JSON.stringify({
+              paymentStatus: bill.paymentStatus,
+              totalAmount: bill.totalAmount,
+              paidAmount: bill.paidAmount,
+              dueAmount: bill.dueAmount,
+            }),
+            newData: JSON.stringify(details),
+            ipAddress: getClientIP(req),
+            userAgent: req.headers['user-agent'] || 'unknown',
+            userId: req.user?.id || null,
+          }
+        });
+      } catch (auditError) {
+        logger.error('Failed to create paid bill edit audit log', auditError);
+      }
+    };
+
+    const isPaidBill = String(bill.paymentStatus || '').toUpperCase() === 'PAID';
+    if (isPaidBill) {
+      const isConfirmed = paidEditConfirmed === true || String(paidEditConfirmed).toLowerCase() === 'true';
+      const reason = String(paidEditReason || '').trim();
+
+      if (!isConfirmed || !reason) {
+        await createPaidEditAudit('PAID_BILL_EDIT_BLOCKED', {
+          message: 'Blocked paid bill edit attempt without required confirmation/reason',
+          isConfirmed,
+          hasReason: !!reason,
+        });
+        return res.status(403).json({
+          success: false,
+          message: 'Paid bill edit requires explicit confirmation and reason.'
+        });
+      }
+
+      await createPaidEditAudit('PAID_BILL_EDIT_CONFIRMED', {
+        reason,
+        message: 'Paid bill edit was explicitly confirmed by user',
+      });
+    }
 
     // If items provided, recalculate totals and replace items
     let updateData = {};
@@ -1355,6 +1411,13 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
         }
       });
 
+      if (isPaidBill) {
+        await createPaidEditAudit('PAID_BILL_EDIT_UPDATED', {
+          message: 'Paid bill updated successfully',
+          updatedFields: Object.keys(updateData || {}),
+        });
+      }
+
       return res.json({ success: true, data: updatedBill, message: 'Bill updated successfully' });
     }
 
@@ -1369,6 +1432,13 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
         payments: true
       }
     });
+
+    if (isPaidBill) {
+      await createPaidEditAudit('PAID_BILL_EDIT_UPDATED', {
+        message: 'Paid bill updated successfully',
+        updatedFields: Object.keys(updateData || {}),
+      });
+    }
 
     res.json({ success: true, data: finalUpdated, message: 'Bill updated successfully' });
   } catch (error) {

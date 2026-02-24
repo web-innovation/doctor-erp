@@ -10,6 +10,18 @@ const SERVER_URL = 'https://docsyerp.in';
 
 const MOCK_DEV = SERVER_URL === 'mock';
 
+function normalizeProfile(profile = {}) {
+  const clinicName = profile?.clinicName || profile?.clinic?.name || 'Unknown clinic';
+  return {
+    ...profile,
+    clinicName,
+  };
+}
+
+function normalizeProfiles(list = []) {
+  return (Array.isArray(list) ? list : []).map((p) => normalizeProfile(p));
+}
+
 async function secureSet(key, value) {
   return AsyncStorage.setItem(key, value);
 }
@@ -48,28 +60,28 @@ export default {
     return v ? JSON.parse(v) : null;
   },
   savePatientProfiles: async (profiles = []) => {
-    await AsyncStorage.setItem(PROFILES_KEY, JSON.stringify(profiles || []));
+    await AsyncStorage.setItem(PROFILES_KEY, JSON.stringify(normalizeProfiles(profiles || [])));
   },
   getPatientProfiles: async () => {
     const v = await AsyncStorage.getItem(PROFILES_KEY);
-    return v ? JSON.parse(v) : [];
+    return v ? normalizeProfiles(JSON.parse(v)) : [];
   },
   setActiveProfile: async (profile) => {
     if (!profile) {
       await AsyncStorage.removeItem(ACTIVE_PROFILE_KEY);
       return;
     }
-    await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, JSON.stringify(profile));
+    await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, JSON.stringify(normalizeProfile(profile)));
   },
   getActiveProfile: async () => {
     const v = await AsyncStorage.getItem(ACTIVE_PROFILE_KEY);
-    return v ? JSON.parse(v) : null;
+    return v ? normalizeProfile(JSON.parse(v)) : null;
   },
   getContextHeaders: async () => {
     const active = await AsyncStorage.getItem(ACTIVE_PROFILE_KEY);
     if (!active) return {};
     try {
-      const profile = JSON.parse(active);
+      const profile = normalizeProfile(JSON.parse(active));
       const headers = {};
       if (profile?.clinicId) headers['x-clinic-id'] = String(profile.clinicId);
       if (profile?.id) headers['x-patient-id'] = String(profile.id);
@@ -87,7 +99,7 @@ export default {
     });
     if (!res.ok) throw new Error('Failed to load patient profiles');
     const json = await res.json();
-    const profiles = json?.data?.profiles || [];
+    const profiles = normalizeProfiles(json?.data?.profiles || []);
     await AsyncStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
     const defaultProfileId = json?.data?.defaultProfileId || (profiles[0]?.id || null);
     const defaultProfile = profiles.find((p) => p.id === defaultProfileId) || profiles[0] || null;

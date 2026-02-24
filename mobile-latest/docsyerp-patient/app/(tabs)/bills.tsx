@@ -6,6 +6,7 @@ import Drawer from '@/components/Drawer';
 import Footer from '@/components/Footer';
 import { useRouter } from 'expo-router';
 import { PatientTheme } from '@/constants/patientTheme';
+import ProfileQuickSwitch from '@/components/ProfileQuickSwitch';
 
 function BillCard({ item, onPress }) {
   const amountText = typeof item.totalAmount === 'number'
@@ -68,6 +69,7 @@ export default function BillsScreen() {
       <Header title="My Bills" onMenu={() => setDrawerVisible(true)} rightIcon="arrow.clockwise" onRight={() => loadPage(1)} />
       <Drawer visible={drawerVisible} onClose={() => setDrawerVisible(false)} />
       <View style={styles.container}>
+        <ProfileQuickSwitch onChanged={() => loadPage(1)} />
         <FlatList
           data={bills}
           keyExtractor={(item) => String(item.id)}

@@ -130,6 +130,38 @@ export default function Billing() {
     setIsViewModalOpen(true);
   };
 
+  const isPaidBill = (bill) =>
+    String(bill?.paymentStatus || bill?.status || '').toUpperCase() === 'PAID';
+
+  const handleEditBill = (bill) => {
+    if (!bill?.id) return;
+
+    if (isPaidBill(bill)) {
+      const confirmEdit = window.confirm(
+        'This bill is already PAID. Editing paid bills is a sensitive action and will be audited. Do you want to continue?'
+      );
+      if (!confirmEdit) return;
+
+      const reason = window.prompt(
+        'Enter reason for editing this PAID bill (required for audit log):'
+      );
+      if (!reason || !reason.trim()) {
+        toast.error('Reason is required to edit a paid bill.');
+        return;
+      }
+
+      navigate(`/billing/${bill.id}/edit`, {
+        state: {
+          paidEditConfirmed: true,
+          paidEditReason: reason.trim(),
+        },
+      });
+      return;
+    }
+
+    navigate(`/billing/${bill.id}/edit`);
+  };
+
   const handlePrint = (bill) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -778,7 +810,7 @@ export default function Billing() {
                 <button
                   onClick={() => {
                     setIsViewModalOpen(false);
-                    navigate(`/billing/${selectedBill.id}/edit`);
+                    handleEditBill(selectedBill);
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                 >

@@ -1,5 +1,5 @@
 ﻿import { useState, useMemo, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -66,6 +66,7 @@ export default function NewBill() {
     );
   }
   const navigate = useNavigate();
+  const location = useLocation();
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -629,7 +630,7 @@ export default function NewBill() {
 
     const normalizedDiscountType = String(data.discountType || 'fixed').toLowerCase() === 'percentage' ? 'PERCENTAGE' : 'AMOUNT';
 
-    const billData = {
+    const payload = {
       patientId: selectedPatient.id,
       doctorId: selectedDoctor?.id,
       type: billTypeMap[billType] || 'MIXED',
@@ -660,7 +661,7 @@ export default function NewBill() {
 
     // If collecting payment immediately
     if (collectPayment && parseFloat(data.paymentAmount) > 0) {
-      billData.payment = {
+      payload.payment = {
         amount: parseFloat(data.paymentAmount),
         method: data.paymentMethod,
         reference: data.paymentReference,
@@ -668,9 +669,36 @@ export default function NewBill() {
     }
 
     if (billId) {
-      updateBillMutation.mutate({ id: billId, data: billData });
+      const editingBill = billData?.data || billData || null;
+      const isPaidEditing = String(editingBill?.paymentStatus || editingBill?.status || '').toUpperCase() === 'PAID';
+
+      if (isPaidEditing) {
+        const stateConfirmed = !!location?.state?.paidEditConfirmed;
+        let reason = String(location?.state?.paidEditReason || '').trim();
+
+        // Fallback prompt when user opens edit page directly (without coming from billing list)
+        if (!stateConfirmed || !reason) {
+          const confirmEdit = window.confirm(
+            'This bill is already PAID. Editing it will be logged as a sensitive activity. Continue?'
+          );
+          if (!confirmEdit) {
+            toast.error('Paid bill edit cancelled.');
+            return;
+          }
+          reason = window.prompt('Enter reason for editing this PAID bill (required):')?.trim() || '';
+          if (!reason) {
+            toast.error('Reason is required to edit a paid bill.');
+            return;
+          }
+        }
+
+        payload.paidEditConfirmed = true;
+        payload.paidEditReason = reason;
+      }
+
+      updateBillMutation.mutate({ id: billId, data: payload });
     } else {
-      createBillMutation.mutate(billData);
+      createBillMutation.mutate(payload);
     }
   };
 

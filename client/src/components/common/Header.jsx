@@ -6,6 +6,7 @@ import labsAgentsService from '../../services/labsAgentsService';
 import {
   MagnifyingGlassIcon,
   BellIcon,
+  Bars3Icon,
   ChevronDownIcon,
   UserCircleIcon,
   Cog6ToothIcon,
@@ -406,6 +407,15 @@ const Header = ({ onMenuClick }) => {
           </div>
         )}
         <div className="flex items-center justify-between h-16">
+          {/* Mobile menu button */}
+          <button
+            onClick={onMenuClick}
+            className="lg:hidden mr-3 p-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100"
+            aria-label="Open menu"
+          >
+            <Bars3Icon className="h-5 w-5" />
+          </button>
+
           {/* Left section - Breadcrumbs and Date */}
           <div className="flex-1 min-w-0 hidden md:block">
             {/* Breadcrumbs */}

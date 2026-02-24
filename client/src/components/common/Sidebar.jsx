@@ -222,12 +222,15 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     w-64
   `;
 
+  const isCompact = collapsed && !mobileOpen;
+  const showExpanded = !isCompact;
+
   return (
     <aside className={sidebarClasses}>
       <div className="flex flex-col h-full">
         {/* Logo section */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-          {!collapsed && (
+          {showExpanded && (
             <div className="flex items-center space-x-3">
               <div className={`w-10 h-10 ${isAdminRoute ? 'bg-purple-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center`}>
                 <svg
@@ -248,7 +251,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
             </div>
           )}
           
-          {collapsed && (
+          {isCompact && (
             <div className={`w-10 h-10 ${isAdminRoute ? 'bg-purple-600' : 'bg-blue-600'} rounded-lg flex items-center justify-center mx-auto`}>
               <svg
                 className="w-6 h-6 text-white"
@@ -297,12 +300,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                             ? 'bg-purple-50 text-purple-600 font-medium'
                             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                           }
-                          ${collapsed ? 'justify-center' : ''}
+                          ${isCompact ? 'justify-center' : ''}
                         `}
-                        title={collapsed ? item.name : ''}
+                        title={isCompact ? item.name : ''}
                       >
                         <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-purple-600' : 'text-gray-400'}`} />
-                        {!collapsed && (
+                        {showExpanded && (
                           <span className="ml-3">{item.name}</span>
                         )}
                       </NavLink>
@@ -311,14 +314,14 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                 })}
               </ul>
               {/* Link back to clinic dashboard */}
-              {!collapsed && (
+              {showExpanded && (
                 <div className="px-3 mt-4 mb-2">
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     Switch View
                   </p>
                 </div>
               )}
-              {collapsed && <div className="border-t border-gray-200 my-2 mx-3"></div>}
+              {isCompact && <div className="border-t border-gray-200 my-2 mx-3"></div>}
               <ul className="space-y-1 px-3">
                 <li>
                   <NavLink
@@ -327,12 +330,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                     className={`
                       flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
                       text-gray-600 hover:bg-gray-50 hover:text-gray-900
-                      ${collapsed ? 'justify-center' : ''}
+                      ${isCompact ? 'justify-center' : ''}
                     `}
-                    title={collapsed ? 'Clinic Dashboard' : ''}
+                    title={isCompact ? 'Clinic Dashboard' : ''}
                   >
                     <HomeIcon className="h-5 w-5 flex-shrink-0 text-gray-400" />
-                    {!collapsed && (
+                    {showExpanded && (
                       <span className="ml-3">Clinic Dashboard</span>
                     )}
                   </NavLink>
@@ -358,12 +361,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                             ? 'bg-blue-50 text-blue-600 font-medium'
                             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                           }
-                          ${collapsed ? 'justify-center' : ''}
+                          ${isCompact ? 'justify-center' : ''}
                         `}
-                        title={collapsed ? item.name : ''}
+                        title={isCompact ? item.name : ''}
                       >
                         <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                        {!collapsed && (
+                        {showExpanded && (
                           <span className="ml-3">{item.name}</span>
                         )}
                       </NavLink>
@@ -375,14 +378,14 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
               {/* Admin Menu Link - Only for Super Admin when NOT on admin routes */}
               {normalizedRole === 'SUPER_ADMIN' && (
                 <>
-                  {!collapsed && (
+                  {showExpanded && (
                     <div className="px-3 mt-4 mb-2">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                         Administration
                       </p>
                     </div>
                   )}
-                  {collapsed && <div className="border-t border-gray-200 my-2 mx-3"></div>}
+                  {isCompact && <div className="border-t border-gray-200 my-2 mx-3"></div>}
                   <ul className="space-y-1 px-3">
                     <li>
                       <NavLink
@@ -391,12 +394,12 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                         className={`
                           flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
                           text-gray-600 hover:bg-purple-50 hover:text-purple-600
-                          ${collapsed ? 'justify-center' : ''}
+                          ${isCompact ? 'justify-center' : ''}
                         `}
-                        title={collapsed ? 'Admin Panel' : ''}
+                        title={isCompact ? 'Admin Panel' : ''}
                       >
                         <BuildingOffice2Icon className="h-5 w-5 flex-shrink-0 text-gray-400" />
-                        {!collapsed && (
+                        {showExpanded && (
                           <span className="ml-3">Admin Panel</span>
                         )}
                       </NavLink>
@@ -409,7 +412,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
         </nav>
 
         {/* Quick stats - only show when not on admin routes */}
-        {!collapsed && !isAdminRoute && (
+        {showExpanded && !isAdminRoute && (
           <div className="p-4 border-t border-gray-200">
             <div className="bg-blue-50 rounded-lg p-3">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Today's OPD</p>

@@ -6,6 +6,7 @@ import Footer from '@/components/Footer';
 import api from '@/services/api';
 import { useRouter } from 'expo-router';
 import { PatientTheme } from '@/constants/patientTheme';
+import ProfileQuickSwitch from '@/components/ProfileQuickSwitch';
 
 function statusColor(status) {
   switch ((status || '').toString().toUpperCase()) {
@@ -107,6 +108,7 @@ export default function Appointments() {
       <Drawer visible={drawerVisible} onClose={() => setDrawerVisible(false)} />
 
       <View style={styles.container}>
+        <ProfileQuickSwitch onChanged={() => loadPage(1)} />
         <FlatList
           data={appointments}
           keyExtractor={(i) => String(i.id)}

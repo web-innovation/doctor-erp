@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
-import { Bars3Icon } from '@heroicons/react/24/outline';
+import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
 const DashboardLayout = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -50,19 +50,21 @@ const DashboardLayout = () => {
         {/* Header */}
         <Header onMenuClick={toggleMobileMenu} />
 
-        {/* Mobile hamburger button */}
-        <button
-          onClick={toggleMobileMenu}
-          className="fixed top-4 left-4 z-50 p-2 rounded-md bg-white shadow-md lg:hidden"
-        >
-          <Bars3Icon className="h-6 w-6 text-gray-600" />
-        </button>
-
         {/* Page content */}
         <main className="p-4 md:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>
+
+      {/* Failsafe mobile menu button (always visible on < lg screens) */}
+      <button
+        onClick={toggleMobileMenu}
+        className="lg:hidden fixed bottom-5 left-4 z-[70] inline-flex items-center gap-2 px-3 py-2 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 active:scale-[0.98]"
+        aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+      >
+        {mobileMenuOpen ? <XMarkIcon className="h-5 w-5" /> : <Bars3Icon className="h-5 w-5" />}
+        <span className="text-sm font-medium">Menu</span>
+      </button>
     </div>
   );
 };

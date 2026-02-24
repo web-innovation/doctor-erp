@@ -18,6 +18,7 @@ import Header from '@/components/Header';
 import Drawer from '@/components/Drawer';
 import Footer from '@/components/Footer';
 import { PatientTheme } from '@/constants/patientTheme';
+import ProfileQuickSwitch from '@/components/ProfileQuickSwitch';
 
 function DoctorCard({ item, onSelect }) {
   return (
@@ -90,6 +91,10 @@ export default function BookAppointmentScreen() {
       <Drawer visible={drawerVisible} onClose={() => setDrawerVisible(false)} />
 
       <View style={styles.container}>
+        <ProfileQuickSwitch onChanged={async () => {
+          setSelectedDoctor(null);
+          await loadDoctors();
+        }} />
         <View style={styles.contextStrip}>
           <Text style={styles.contextLabel}>Clinic</Text>
           <Text style={styles.contextValue}>{activeClinicLabel || 'Select from menu -> Switch Patient/Clinic'}</Text>

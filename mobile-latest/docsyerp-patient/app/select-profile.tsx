@@ -12,7 +12,7 @@ function ProfileCard({ item, active, onPress }) {
         {active ? <Text style={styles.activeTag}>Active</Text> : null}
       </View>
       <Text style={styles.cardMeta}>ID: {item.displayId || item.code || item.id}</Text>
-      <Text style={styles.cardMeta}>Clinic: {item.clinicName || 'Unknown clinic'}</Text>
+      <Text style={styles.cardMeta}>Clinic: {item.clinicName || item?.clinic?.name || 'Unknown clinic'}</Text>
     </TouchableOpacity>
   );
 }
