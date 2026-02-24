@@ -739,7 +739,9 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
       labCatalog.map((t) => [(t.name || '').trim().toLowerCase(), t])
     );
 
-    const medicineItems = (latestPrescription.medicines || []).map((m) => {
+    const medicineItems = (latestPrescription.medicines || [])
+      .filter((m) => !m.isExternal)
+      .map((m) => {
       const quantity = Number(m.quantity) || 1;
       const unitPrice = Number(m.pharmacyProduct?.sellingPrice ?? m.pharmacyProduct?.mrp ?? 0);
       return {
@@ -747,11 +749,14 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
         quantity,
         unitPrice,
         type: 'medicine',
-        productId: m.productId || null
+        productId: m.productId || null,
+        isExternal: false
       };
     });
 
-    const labItems = (latestPrescription.labTests || []).map((t) => {
+    const labItems = (latestPrescription.labTests || [])
+      .filter((t) => !t.isExternal)
+      .map((t) => {
       const testName = (t.testName || '').trim();
       const key = `${t.labId || ''}::${testName.toLowerCase()}`;
       const matched = catalogByLabAndName.get(key) || catalogByName.get(testName.toLowerCase()) || null;
@@ -761,9 +766,13 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
         unitPrice: Number(matched?.price || 0),
         type: 'lab',
         labId: t.labId || null,
-        labTestId: matched?.id || null
+        labTestId: matched?.id || null,
+        isExternal: false
       };
     });
+
+    const externalMedicineCount = (latestPrescription.medicines || []).filter((m) => !!m.isExternal).length;
+    const externalLabTestCount = (latestPrescription.labTests || []).filter((t) => !!t.isExternal).length;
 
     const consultationFeeMap = await getConsultationFeeMap(req.user.clinicId);
     const consultationFeeFromAppointment = Number(latestPrescription.appointment?.consultationFee || 0);
@@ -798,7 +807,11 @@ router.get('/prefill/:patientId', authenticate, checkPermission('billing:create'
         medicineAmount,
         labTestAmount,
         totalAmount,
-        hasPrefill: items.length > 0
+        hasPrefill: items.length > 0,
+        excludedExternal: {
+          medicines: externalMedicineCount,
+          labTests: externalLabTestCount
+        }
       }
     });
   } catch (error) {

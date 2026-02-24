@@ -69,6 +69,7 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
   try {
     const {
       patientId,
+      doctorId,
       startDate,
       endDate,
       search,
@@ -135,6 +136,12 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
       where.date = {};
       if (startDate) where.date.gte = new Date(startDate);
       if (endDate) where.date.lte = new Date(endDate);
+    }
+
+    // Doctor filter for admin/clinic-wide views.
+    // For effective-doctor users, own-doctor restriction below still applies.
+    if (doctorId && String(doctorId).trim() && String(doctorId).toLowerCase() !== 'all') {
+      where.doctorId = String(doctorId).trim();
     }
 
     // Restrict to doctor's own prescriptions by default. Support optional `viewUserId` to view a staff user's prescriptions.
@@ -249,10 +256,10 @@ router.get('/medicines/search', checkPermission('prescriptions', 'create'), asyn
   }
 });
 
-// GET /lab-tests/search - Search common lab tests
+// GET /lab-tests/search - Search clinic lab tests
 router.get('/lab-tests/search', checkPermission('prescriptions', 'create'), async (req, res, next) => {
   try {
-    const { q = '' } = req.query;
+    const { q = '', includeCommon = '0' } = req.query;
     const searchLower = q.toLowerCase();
     
     // Search server-side lab catalog for clinic and combine with common tests
@@ -271,15 +278,19 @@ router.get('/lab-tests/search', checkPermission('prescriptions', 'create'), asyn
       return name.includes(q.toLowerCase()) || category.includes(q.toLowerCase()) || code.includes(q.toLowerCase());
     }).slice(0, 20);
 
-    const results = commonLabTests.filter(test => 
-      test.name.toLowerCase().includes(searchLower) || 
+    // Map labTests to unified shape
+    const mappedLabTests = labTests.map(t => ({ id: t.id, name: t.name, category: t.category || '', labId: t.labId, labName: t.lab?.name, price: t.price, isCatalog: true }));
+    // Keep common tests optional; default behavior should only show configured lab tests.
+    if (String(includeCommon) !== '1') {
+      return res.json({ success: true, data: mappedLabTests.slice(0, 30) });
+    }
+
+    const results = commonLabTests.filter(test =>
+      test.name.toLowerCase().includes(searchLower) ||
       test.category.toLowerCase().includes(searchLower)
     ).slice(0, 10);
 
-    // Map labTests to unified shape and avoid duplicates by name
-    const mappedLabTests = labTests.map(t => ({ id: t.id, name: t.name, category: t.category || '', labId: t.labId, labName: t.lab?.name, price: t.price, isCatalog: true }));
     const combined = [...mappedLabTests];
-    // Add common tests that are not already present in catalog by name
     results.forEach(ct => {
       if (!combined.some(c => c.name.toLowerCase() === ct.name.toLowerCase())) {
         combined.push({ id: ct.id || null, name: ct.name, category: ct.category || '', labId: null, labName: null, price: null, isCatalog: false });
@@ -736,7 +747,7 @@ router.post('/:id/send', checkPermission('prescriptions', 'create'), async (req,
       const medicineList = prescription.medicines.map((m, idx) => 
         `<tr>
           <td style="padding: 8px; border: 1px solid #ddd;">${idx + 1}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${m.pharmacyProduct?.name || m.medicineName}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${m.pharmacyProduct?.name || m.medicineName}${m.isExternal ? ' (External Purchase)' : ''}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${m.dosage || '-'}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${m.duration || '-'}</td>
           <td style="padding: 8px; border: 1px solid #ddd;">${m.instructions || '-'}</td>
@@ -748,7 +759,7 @@ router.post('/:id/send', checkPermission('prescriptions', 'create'), async (req,
         ? prescription.labTests.map((test, idx) => 
             `<tr>
               <td style="padding: 8px; border: 1px solid #ddd;">${idx + 1}</td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${test.testName}</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${test.testName}${test.isExternal ? ' (External Lab)' : ''}</td>
               <td style="padding: 8px; border: 1px solid #ddd;">${test.instructions || '-'}</td>
             </tr>`
           ).join('')

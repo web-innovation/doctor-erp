@@ -104,7 +104,7 @@ function buildBillMap(bill, clinic = {}) {
 function buildPrescriptionMap(prescription, clinic = {}) {
   const medicines = Array.isArray(prescription?.medicines) ? prescription.medicines : [];
   const medicineRows = medicines.map((med, idx) => (
-    `<tr><td>${idx + 1}</td><td>${escapeHtml(med?.medicineName || '-')}</td><td>${escapeHtml(med?.dosage || '-')}</td><td>${escapeHtml(med?.frequency || '-')}</td><td>${escapeHtml(med?.duration || '-')}</td><td>${escapeHtml(med?.timing || '-')}</td></tr>`
+    `<tr><td>${idx + 1}</td><td>${escapeHtml(med?.medicineName || '-')}${med?.isExternal ? ' <span style="color:#b45309;font-size:11px;">(External Purchase)</span>' : ''}</td><td>${escapeHtml(med?.dosage || '-')}</td><td>${escapeHtml(med?.frequency || '-')}</td><td>${escapeHtml(med?.duration || '-')}</td><td>${escapeHtml(med?.timing || '-')}</td></tr>`
   )).join('');
 
   const diagnosis = Array.isArray(prescription?.diagnosis) ? prescription.diagnosis : [];
@@ -112,7 +112,7 @@ function buildPrescriptionMap(prescription, clinic = {}) {
 
   const labTests = Array.isArray(prescription?.labTests) ? prescription.labTests : [];
   const labTestsList = labTests.length
-    ? `<ul>${labTests.map((t) => `<li>${escapeHtml(t?.testName || '')}${t?.instructions ? ` - ${escapeHtml(t.instructions)}` : ''}</li>`).join('')}</ul>`
+    ? `<ul>${labTests.map((t) => `<li>${escapeHtml(t?.testName || '')}${t?.isExternal ? ' <span style="color:#b45309;font-size:11px;">(External Lab)</span>' : ''}${t?.instructions ? ` - ${escapeHtml(t.instructions)}` : ''}</li>`).join('')}</ul>`
     : '<div>-</div>';
 
   const vitals = prescription?.vitalsSnapshot || {};

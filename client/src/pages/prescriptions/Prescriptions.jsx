@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   FaSearch,
@@ -15,27 +15,41 @@ import {
   FaEnvelope,
 } from 'react-icons/fa';
 import { prescriptionService } from '../../services/prescriptionService';
+import appointmentService from '../../services/appointmentService';
 import { useHasPerm } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/common/Modal';
 import Button from '../../components/common/Button';
 
 export default function Prescriptions() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedDoctorId, setSelectedDoctorId] = useState('all');
   const [showSendModal, setShowSendModal] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   const pageSize = 10;
+  const normalizedRole = String(user?.role || '').toUpperCase();
+  const isAdminView = normalizedRole === 'ADMIN' || normalizedRole === 'SUPER_ADMIN' || user?.isClinicAdmin === true;
+
+  const { data: doctorsResp } = useQuery({
+    queryKey: ['prescription-doctors-filter'],
+    queryFn: () => appointmentService.getDoctors(),
+    enabled: isAdminView,
+    staleTime: 5 * 60 * 1000,
+  });
+  const doctors = doctorsResp?.data || [];
 
   // Fetch prescriptions
   const { data: prescriptionsData, isLoading } = useQuery({
-    queryKey: ['prescriptions', currentPage, pageSize, searchQuery],
+    queryKey: ['prescriptions', currentPage, pageSize, searchQuery, selectedDoctorId],
     queryFn: () =>
       prescriptionService.getPrescriptions({
         page: currentPage,
         limit: pageSize,
         search: searchQuery || undefined,
+        doctorId: selectedDoctorId !== 'all' ? selectedDoctorId : undefined,
       }),
     placeholderData: (previousData) => previousData,
     // Auto-refresh every 5 minutes
@@ -67,6 +81,11 @@ export default function Prescriptions() {
 
   const handleSearch = (e) => {
     setSearchQuery(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleDoctorFilter = (e) => {
+    setSelectedDoctorId(e.target.value);
     setCurrentPage(1);
   };
 
@@ -130,6 +149,22 @@ export default function Prescriptions() {
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
+            {isAdminView && (
+              <div className="w-full md:w-72">
+                <select
+                  value={selectedDoctorId}
+                  onChange={handleDoctorFilter}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition bg-white"
+                >
+                  <option value="all">All Doctors</option>
+                  {doctors.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -147,6 +182,9 @@ export default function Prescriptions() {
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                     Patient
+                  </th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
+                    Doctor
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                     Diagnosis
@@ -170,6 +208,9 @@ export default function Prescriptions() {
                         <div className="h-4 bg-gray-200 rounded w-32"></div>
                       </td>
                       <td className="px-6 py-4">
+                        <div className="h-4 bg-gray-200 rounded w-24"></div>
+                      </td>
+                      <td className="px-6 py-4">
                         <div className="h-4 bg-gray-200 rounded w-40"></div>
                       </td>
                       <td className="px-6 py-4">
@@ -179,7 +220,7 @@ export default function Prescriptions() {
                   ))
                 ) : prescriptions.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center">
+                    <td colSpan={6} className="px-6 py-12 text-center">
                       <FaFilePrescription className="text-4xl text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">No prescriptions found</p>
                       {searchQuery && (
@@ -220,6 +261,9 @@ export default function Prescriptions() {
                             </p>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-700">
+                        {prescription.doctor?.name || '-'}
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-gray-700 truncate max-w-xs">

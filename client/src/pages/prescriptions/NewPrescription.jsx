@@ -257,6 +257,7 @@ export default function NewPrescription() {
           }
           fallbackItems.push({ description: consultationLabel, quantity: 1, unitPrice: consultationFee, type: 'consultation' });
           (payloadSnapshot.medicines || []).forEach((m) => {
+            if (m?.isExternal) return;
             fallbackItems.push({
               description: m.medicineName || m.name || m.medicine || '',
               quantity: Number(m.quantity) || 1,
@@ -266,6 +267,7 @@ export default function NewPrescription() {
             });
           });
           (payloadSnapshot.labTests || []).forEach((lt) => {
+            if (lt?.isExternal) return;
             fallbackItems.push({
               description: lt.testName || lt.name || '',
               quantity: 1,

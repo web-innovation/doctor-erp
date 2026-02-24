@@ -356,6 +356,7 @@ export default function PrescriptionDetail() {
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Frequency</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Duration</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Timing</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Fulfillment</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -372,6 +373,17 @@ export default function PrescriptionDetail() {
                         <td className="py-3 px-4 text-gray-700">{med.frequency || '-'}</td>
                         <td className="py-3 px-4 text-gray-700">{med.duration || '-'}</td>
                         <td className="py-3 px-4 text-gray-700">{med.timing || '-'}</td>
+                        <td className="py-3 px-4">
+                          {med.isExternal ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                              External Purchase
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                              In-house
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -401,6 +413,17 @@ export default function PrescriptionDetail() {
                       {test.lab?.name && (
                         <p className="text-sm text-blue-600">Lab: {test.lab.name}</p>
                       )}
+                      <div className="mt-1">
+                        {test.isExternal ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                            External Lab
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                            In-house Lab
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

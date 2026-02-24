@@ -480,7 +480,14 @@ export default function NewBill() {
         if (prefill.doctor?.id) {
           setSelectedDoctor({ id: prefill.doctor.id, name: prefill.doctor.name });
         }
-        toast.success('Medicine and lab test amounts prefilled from latest prescription');
+        const excludedMeds = Number(prefill?.excludedExternal?.medicines || 0);
+        const excludedLabs = Number(prefill?.excludedExternal?.labTests || 0);
+        const excludedTotal = excludedMeds + excludedLabs;
+        if (excludedTotal > 0) {
+          toast.success(`Prefilled from prescription. Excluded external items: ${excludedMeds} medicine(s), ${excludedLabs} lab test(s).`);
+        } else {
+          toast.success('Medicine and lab test amounts prefilled from latest prescription');
+        }
       }
     } catch (e) {
       // Keep manual billing flow working even if prefill fails
