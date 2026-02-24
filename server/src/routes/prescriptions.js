@@ -46,6 +46,21 @@ function getClinicScope(req) {
   return req.headers['x-clinic-id'] || req.query?.clinicId || req.user.clinicId || null;
 }
 
+function getRoleTokens(req) {
+  const raw = `${req.user?.role || ''} ${req.user?.effectiveRole || ''}`.toUpperCase();
+  return new Set(
+    raw
+      .split(/[^A-Z0-9]+/i)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
+
+function isClinicAdminUser(req) {
+  const tokens = getRoleTokens(req);
+  return tokens.has('SUPER_ADMIN') || tokens.has('ADMIN') || req.user?.isClinicAdmin === true;
+}
+
 async function resolveLinkedPatientForMobile(req, clinicId, preferredPatientId = null) {
   const phoneCandidates = getPhoneCandidates(req);
   const orClauses = [];
@@ -148,7 +163,7 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
     const viewUserId = req.query.viewUserId;
     const { isEffectiveDoctor, canDoctorViewStaff } = await import('../middleware/auth.js');
     const doctorCheck = isEffectiveDoctor(req);
-    if (doctorCheck) {
+    if (doctorCheck && !isClinicAdminUser(req)) {
       const viewCheck = await canDoctorViewStaff(req, viewUserId);
       if (viewCheck.notStaff) return res.status(404).json({ success: false, message: 'Requested user is not a staff member' });
       if (!viewCheck.allowed) return res.status(403).json({ success: false, message: 'Permission denied for requested view' });
@@ -350,7 +365,7 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
 
     // Enforce doctor-only access: allow only own prescriptions or explicit `viewUserId` when authorized
     const { isEffectiveDoctor } = await import('../middleware/auth.js');
-    if (isEffectiveDoctor(req)) {
+    if (isEffectiveDoctor(req) && !isClinicAdminUser(req)) {
       const viewUserId = req.query.viewUserId;
       if (viewUserId) {
         if (viewUserId === req.user.id) {
@@ -698,7 +713,10 @@ router.get('/patient/:patientId', checkPermission('prescriptions', 'read'), asyn
     const { limit = 10 } = req.query;
 
     const prescriptions = await prisma.prescription.findMany({
-        where: Object.assign({ patientId, clinicId: req.user.clinicId }, isEffectiveDoctor(req) ? { doctorId: req.user.id } : {}),
+        where: Object.assign(
+          { patientId, clinicId: req.user.clinicId },
+          isEffectiveDoctor(req) && !isClinicAdminUser(req) ? { doctorId: req.user.id } : {}
+        ),
       take: parseInt(limit),
       orderBy: { date: 'desc' },
       include: {
