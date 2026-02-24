@@ -140,10 +140,13 @@ router.get('/', checkPermission('prescriptions', 'read'), async (req, res, next)
     }
 
     if (search) {
+      const searchText = String(search).trim();
       where.OR = [
-        { patient: { name: { contains: search, mode: 'insensitive' } } },
-        { patient: { phone: { contains: search, mode: 'insensitive' } } },
-        { patientId: { contains: search, mode: 'insensitive' } }
+        { prescriptionNo: { contains: searchText, mode: 'insensitive' } },
+        { patient: { patientId: { contains: searchText, mode: 'insensitive' } } },
+        { patient: { name: { contains: searchText, mode: 'insensitive' } } },
+        { patient: { phone: { contains: searchText, mode: 'insensitive' } } },
+        { doctor: { name: { contains: searchText, mode: 'insensitive' } } }
       ];
     }
 
