@@ -62,10 +62,10 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
     const where = { clinicId };
     if (search) {
       where.OR = [
-        { patientId: { contains: search } },
-        { name: { contains: search } },
-        { phone: { contains: search } },
-        { email: { contains: search } }
+        { patientId: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } }
       ];
     }
 

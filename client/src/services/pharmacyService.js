@@ -79,7 +79,9 @@ const pharmacyService = {
     };
     if (payload.expiryDate) body.expiryDate = payload.expiryDate;
     if (payload.batchNumber) body.batchNumber = payload.batchNumber;
-    if (payload.costPrice) body.costPrice = payload.costPrice;
+    if (payload.costPrice !== undefined && payload.costPrice !== null && payload.costPrice !== '') body.costPrice = payload.costPrice;
+    if (payload.reference) body.reference = payload.reference;
+    if (payload.creditAccountName) body.creditAccountName = payload.creditAccountName;
     const response = await api.post(`/pharmacy/products/${id}/stock`, body);
     return response.data;
   },

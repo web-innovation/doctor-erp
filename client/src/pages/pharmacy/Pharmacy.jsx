@@ -43,6 +43,7 @@ export default function Pharmacy() {
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
@@ -54,6 +55,7 @@ export default function Pharmacy() {
       price: '',
       costPrice: '',
       stock: '0',
+      creditAccountName: 'Inventory Adjustment',
       minStock: '10',
       expiryDate: '',
     },
@@ -63,10 +65,14 @@ export default function Pharmacy() {
     register: registerStock,
     handleSubmit: handleStockSubmit,
     reset: resetStock,
+    watch: watchStock,
+    formState: { errors: stockErrors },
   } = useForm({
     defaultValues: {
-      type: 'addition',
       quantity: '',
+      costPrice: '',
+      creditAccountName: 'Inventory Adjustment',
+      reference: '',
       notes: '',
       expiryDate: '',
       batchNumber: '',
@@ -175,6 +181,7 @@ export default function Pharmacy() {
       sellingPrice: parseFloat(data.price),
       purchasePrice: data.costPrice ? parseFloat(data.costPrice) : undefined,
       quantity: parseInt(data.stock) || 0,
+      creditAccountName: data.creditAccountName || 'Inventory Adjustment',
       minStock: data.minStock ? parseInt(data.minStock) : 10,
       unit: data.unit || 'pcs',
       expiryDate: data.expiryDate || undefined,
@@ -215,19 +222,15 @@ export default function Pharmacy() {
 
   const onUpdateStock = (data) => {
     if (!selectedProduct) return;
-    
-    // Map frontend type to backend type
-    const typeMap = {
-      'addition': 'PURCHASE',
-      'subtraction': 'SALE',
-      'adjustment': 'ADJUSTMENT',
-    };
-    
+
     updateStockMutation.mutate({
       id: selectedProduct.id,
       quantity: parseInt(data.quantity),
-      type: typeMap[data.type] || 'ADJUSTMENT',
+      type: 'PURCHASE',
       notes: data.notes,
+      reference: data.reference || undefined,
+      costPrice: Number(data.costPrice),
+      creditAccountName: data.creditAccountName || 'Inventory Adjustment',
       expiryDate: data.expiryDate || undefined,
       batchNumber: data.batchNumber || undefined,
     });
@@ -235,7 +238,15 @@ export default function Pharmacy() {
 
   const openStockModal = (product) => {
     setSelectedProduct(product);
-    resetStock({ type: 'addition', quantity: '', notes: '' });
+    resetStock({
+      quantity: '',
+      costPrice: product.purchasePrice ? String(product.purchasePrice) : '',
+      creditAccountName: 'Inventory Adjustment',
+      reference: '',
+      notes: '',
+      expiryDate: '',
+      batchNumber: '',
+    });
     setIsStockModalOpen(true);
   };
 
@@ -345,6 +356,10 @@ export default function Pharmacy() {
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return expiryDate <= thirtyDaysFromNow;
   };
+
+  const addStockQty = Number(watch('stock') || 0);
+  const addStockUnitCost = Number(watch('costPrice') || 0);
+  const addStockLedgerAmount = addStockQty > 0 && addStockUnitCost > 0 ? addStockQty * addStockUnitCost : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -642,6 +657,12 @@ export default function Pharmacy() {
         size="lg"
       >
         <form onSubmit={handleSubmit(onAddProduct)} className="space-y-4">
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <p className="text-sm font-semibold text-blue-900">Product Master + Opening Stock</p>
+            <p className="text-xs text-blue-800 mt-1">
+              If opening stock is entered, ledger will auto-post: Dr Inventory / Cr selected account.
+            </p>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -725,7 +746,10 @@ export default function Pharmacy() {
               <input
                 type="number"
                 step="0.01"
-                {...register('price', { required: 'MRP is required' })}
+                {...register('price', {
+                  required: 'MRP is required',
+                  min: { value: 0.01, message: 'MRP must be greater than 0' },
+                })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0.00"
               />
@@ -741,10 +765,21 @@ export default function Pharmacy() {
               <input
                 type="number"
                 step="0.01"
-                {...register('costPrice')}
+                {...register('costPrice', {
+                  validate: (value) => {
+                    const qty = Number(watch('stock') || 0);
+                    if (qty > 0 && (!value || Number(value) <= 0)) {
+                      return 'Cost price is required when opening stock is entered';
+                    }
+                    return true;
+                  },
+                })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0.00"
               />
+              {errors.costPrice && (
+                <p className="text-red-500 text-sm mt-1">{errors.costPrice.message}</p>
+              )}
             </div>
 
             <div>
@@ -753,11 +788,36 @@ export default function Pharmacy() {
               </label>
               <input
                 type="number"
-                {...register('stock')}
+                {...register('stock', { min: { value: 0, message: 'Initial stock cannot be negative' } })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="0"
                 defaultValue={0}
               />
+              {errors.stock && (
+                <p className="text-red-500 text-sm mt-1">{errors.stock.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Opening Stock Credit Account
+              </label>
+              <input
+                {...register('creditAccountName', {
+                  validate: (value) => {
+                    const qty = Number(watch('stock') || 0);
+                    if (qty > 0 && !String(value || '').trim()) {
+                      return 'Credit account is required when opening stock is entered';
+                    }
+                    return true;
+                  },
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Inventory Adjustment"
+              />
+              {errors.creditAccountName && (
+                <p className="text-red-500 text-sm mt-1">{errors.creditAccountName.message}</p>
+              )}
             </div>
 
             <div>
@@ -793,6 +853,16 @@ export default function Pharmacy() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+            <p className="font-medium text-gray-800 mb-1">Opening Stock Ledger Preview</p>
+            <p className="text-gray-600">Quantity: {addStockQty || 0}</p>
+            <p className="text-gray-600">Unit Cost: {formatCurrency(addStockUnitCost || 0)}</p>
+            <p className="text-gray-600">Amount: {formatCurrency(addStockLedgerAmount || 0)}</p>
+            <p className="text-gray-600">
+              Posting: Dr Inventory / Cr {watch('creditAccountName') || 'Inventory Adjustment'}
+            </p>
           </div>
 
           <div>
@@ -838,67 +908,93 @@ export default function Pharmacy() {
           setSelectedProduct(null);
           resetStock();
         }}
-        title="Update Stock"
-        size="md"
+        title="Add Stock (Auto Ledger Entry)"
+        size="lg"
       >
         {selectedProduct && (
           <form onSubmit={handleStockSubmit(onUpdateStock)} className="space-y-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="font-medium text-gray-900">{selectedProduct.name}</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Current Stock:{' '}
-                <span className="font-medium">
-                  {selectedProduct.quantity} {selectedProduct.unit || 'units'}
-                </span>
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <p className="font-semibold text-blue-900">{selectedProduct.name}</p>
+              <p className="text-sm text-blue-800 mt-1">
+                Current Stock: {selectedProduct.quantity} {selectedProduct.unit || 'units'}
+              </p>
+              <p className="text-xs text-blue-700 mt-2">
+                Saving this form will always create ledger entry: Dr Inventory / Cr selected account.
               </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Transaction Type <span className="text-red-500">*</span>
-              </label>
-              <select
-                {...registerStock('type', { required: true })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="addition">Add Stock</option>
-                <option value="subtraction">Remove Stock</option>
-                <option value="adjustment">Adjustment</option>
-              </select>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity to Add <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  {...registerStock('quantity', { required: 'Quantity is required', min: { value: 1, message: 'Quantity must be at least 1' } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={`Enter quantity in ${selectedProduct.unit || 'units'}`}
+                />
+                {stockErrors.quantity && <p className="text-red-500 text-sm mt-1">{stockErrors.quantity.message}</p>}
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                {...registerStock('quantity', { required: true, min: 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter quantity"
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Unit Cost (INR) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...registerStock('costPrice', { required: 'Unit cost is required', min: { value: 0.01, message: 'Unit cost must be greater than 0' } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0.00"
+                />
+                {stockErrors.costPrice && <p className="text-red-500 text-sm mt-1">{stockErrors.costPrice.message}</p>}
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Batch Number
-              </label>
-              <input
-                {...registerStock('batchNumber')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Optional batch number"
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Credit Account <span className="text-red-500">*</span>
+                </label>
+                <input
+                  {...registerStock('creditAccountName', { required: 'Credit account is required' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Inventory Adjustment"
+                />
+                {stockErrors.creditAccountName && <p className="text-red-500 text-sm mt-1">{stockErrors.creditAccountName.message}</p>}
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Expiry Date
-              </label>
-              <input
-                type="date" lang="en-GB" placeholder="dd/mm/yyyy"
-                {...registerStock('expiryDate')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reference (Invoice/Purchase ID)
+                </label>
+                <input
+                  {...registerStock('reference')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional reference"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Batch Number
+                </label>
+                <input
+                  {...registerStock('batchNumber')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional batch number"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expiry Date
+                </label>
+                <input
+                  type="date" lang="en-GB" placeholder="dd/mm/yyyy"
+                  {...registerStock('expiryDate')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
 
             <div>
@@ -909,33 +1005,24 @@ export default function Pharmacy() {
                 {...registerStock('notes')}
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                placeholder="Optional notes for this transaction"
+                placeholder="Reason or remarks for stock addition"
               />
             </div>
 
-            <div className="flex justify-between items-center gap-3 pt-4 border-t border-gray-100">
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // navigate to manual entry with prefilled data
-                    const qty = (document.querySelector('input[name="quantity"]') || {}).value || '';
-                    const batch = (document.querySelector('input[name="batchNumber"]') || {}).value || '';
-                    const expiry = (document.querySelector('input[name="expiryDate"]') || {}).value || '';
-                    const typeMap = { 'addition': 'PURCHASE', 'subtraction': 'RETURN', 'adjustment': 'JOURNAL' };
-                    const typeEl = document.querySelector('select[name="type"]');
-                    const mode = typeEl ? (typeMap[typeEl.value] || 'JOURNAL') : 'JOURNAL';
-                    const items = [{ productId: selectedProduct.id, name: selectedProduct.name, quantity: Number(qty) || 0, unitPrice: selectedProduct.purchasePrice || selectedProduct.mrp || 0, gstPercent: selectedProduct.gstPercent || 0, batchNumber: batch || undefined, expiryDate: expiry || undefined }];
-                    // use localStorage as a fallback to pass complex state
-                    localStorage.setItem('manualPrefill', JSON.stringify({ mode, items }));
-                    navigate('/ledger/manual');
-                  }}
-                  className="px-3 py-2 text-sm border rounded text-gray-700 bg-yellow-50 hover:bg-yellow-100"
-                >
-                  Create Manual Entry
-                </button>
-              </div>
-              <div className="flex items-center gap-3">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+              <p className="font-medium text-gray-800 mb-1">Ledger Preview</p>
+              <p className="text-gray-600">
+                New Stock: {(Number(selectedProduct.quantity || 0) + Number(watchStock('quantity') || 0))} {selectedProduct.unit || 'units'}
+              </p>
+              <p className="text-gray-600">
+                Amount: {formatCurrency((Number(watchStock('quantity') || 0) * Number(watchStock('costPrice') || 0)) || 0)}
+              </p>
+              <p className="text-gray-600">
+                Dr Inventory / Cr {watchStock('creditAccountName') || 'Inventory Adjustment'}
+              </p>
+            </div>
+
+            <div className="flex justify-end items-center gap-3 pt-4 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => {
@@ -952,9 +1039,8 @@ export default function Pharmacy() {
                 disabled={updateStockMutation.isPending}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
               >
-                {updateStockMutation.isPending ? 'Updating...' : 'Update Stock'}
+                {updateStockMutation.isPending ? 'Posting...' : 'Add Stock + Post Ledger'}
               </button>
-              </div>
             </div>
           </form>
         )}

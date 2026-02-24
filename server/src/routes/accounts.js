@@ -13,8 +13,7 @@ router.get('/', async (req, res, next) => {
     const where = { clinicId };
     if (q) {
       // Some Prisma versions/providers don't support `mode: 'insensitive'` on SQLite.
-      // Use a simple contains search (case-sensitive) to ensure compatibility.
-      where.name = { contains: q };
+      where.name = { contains: q, mode: 'insensitive' };
     }
     const items = await prisma.account.findMany({ where, orderBy: { name: 'asc' }, take: 50 });
     res.json({ success: true, data: items });

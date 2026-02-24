@@ -360,9 +360,9 @@ router.get('/products', checkPermission('pharmacy', 'read'), async (req, res, ne
     const where = { clinicId };
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { code: { contains: search } },
-        { genericName: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
+        { genericName: { contains: search, mode: 'insensitive' } }
       ];
     }
     if (category) where.category = category;
@@ -444,44 +444,155 @@ router.get('/products/:id/batches', checkPermission('pharmacy', 'read'), async (
 // POST /products - Create product
 router.post('/products', checkPermission('pharmacy', 'create'), async (req, res, next) => {
   try {
-    const { code, name, genericName, manufacturer, category, mrp, purchasePrice, sellingPrice, gstPercent, quantity, minStock, unit, batchNumber, expiryDate, rackNumber } = req.body;
-    
-    const product = await prisma.pharmacyProduct.create({
-      data: {
-        code, name, genericName, manufacturer, category,
-        mrp, purchasePrice, sellingPrice, gstPercent: gstPercent || 12,
-        quantity: quantity || 0, minStock: minStock || 10, unit: unit || 'pcs',
-        batchNumber, expiryDate: expiryDate ? new Date(expiryDate) : null, rackNumber,
-        clinicId: req.user.clinicId
-      }
-    });
-    // If an initial quantity or batch info is provided, create an initial stock batch and stock history
-    if (quantity && parseInt(quantity, 10) > 0) {
-      const qty = parseInt(quantity, 10);
-      const batch = await prisma.stockBatch.create({
-        data: {
-          productId: product.id,
-          batchNumber: batchNumber || null,
-          quantity: qty,
-          expiryDate: expiryDate ? new Date(expiryDate) : null,
-          costPrice: purchasePrice || undefined
-        }
+    const {
+      code,
+      name,
+      genericName,
+      manufacturer,
+      category,
+      mrp,
+      purchasePrice,
+      sellingPrice,
+      gstPercent,
+      quantity,
+      minStock,
+      unit,
+      batchNumber,
+      expiryDate,
+      rackNumber,
+      creditAccountName,
+    } = req.body;
+
+    const qty = Math.max(0, parseInt(quantity, 10) || 0);
+    const parsedMrp = Number(mrp) || 0;
+    const parsedPurchasePrice = purchasePrice !== undefined && purchasePrice !== null && purchasePrice !== ''
+      ? Number(purchasePrice)
+      : null;
+    const parsedSellingPrice = sellingPrice !== undefined && sellingPrice !== null && sellingPrice !== ''
+      ? Number(sellingPrice)
+      : parsedMrp;
+    const unitCost = Number(parsedPurchasePrice || 0);
+    const openingLedgerAmount = qty * unitCost;
+    const normalizedCreditName = (creditAccountName || 'Inventory Adjustment').toString().trim() || 'Inventory Adjustment';
+
+    if (qty > 0 && openingLedgerAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'When initial stock is added, cost price must be greater than 0 for ledger posting'
       });
-      await prisma.stockHistory.create({
-        data: {
-          productId: product.id,
-          batchId: batch.id,
-          type: 'PURCHASE',
-          quantity: qty,
-          previousQty: 0,
-          newQty: qty,
-          notes: 'Initial stock',
-          createdBy: req.user.id
-        }
-      });
-      // Update product aggregate fields
-      await prisma.pharmacyProduct.update({ where: { id: product.id }, data: { quantity: qty, expiryDate: batch.expiryDate || null } });
     }
+
+    const product = await prisma.$transaction(async (tx) => {
+      async function ensureAccount(nameToUse, type = null) {
+        let account = await tx.account.findFirst({ where: { clinicId: req.user.clinicId, name: nameToUse } });
+        if (!account) {
+          account = await tx.account.create({
+            data: {
+              clinicId: req.user.clinicId,
+              name: nameToUse,
+              type: type || undefined,
+              createdById: req.user.id
+            }
+          });
+        }
+        return account;
+      }
+
+      const created = await tx.pharmacyProduct.create({
+        data: {
+          code,
+          name,
+          genericName,
+          manufacturer,
+          category,
+          mrp: parsedMrp,
+          purchasePrice: parsedPurchasePrice,
+          sellingPrice: parsedSellingPrice,
+          gstPercent: gstPercent || 12,
+          quantity: 0,
+          minStock: minStock || 10,
+          unit: unit || 'pcs',
+          batchNumber,
+          expiryDate: expiryDate ? new Date(expiryDate) : null,
+          rackNumber,
+          clinicId: req.user.clinicId
+        }
+      });
+
+      if (qty > 0) {
+        const batch = await tx.stockBatch.create({
+          data: {
+            productId: created.id,
+            batchNumber: batchNumber || null,
+            quantity: qty,
+            expiryDate: expiryDate ? new Date(expiryDate) : null,
+            costPrice: unitCost
+          }
+        });
+
+        await tx.stockHistory.create({
+          data: {
+            productId: created.id,
+            batchId: batch.id,
+            type: 'PURCHASE',
+            quantity: qty,
+            previousQty: 0,
+            newQty: qty,
+            notes: 'Initial stock on product creation',
+            createdBy: req.user.id
+          }
+        });
+
+        await tx.stockTransaction.create({
+          data: {
+            clinicId: req.user.clinicId,
+            productId: created.id,
+            changeQty: qty,
+            type: 'PURCHASE',
+            refType: 'STOCK',
+            refId: batch.id,
+            note: 'Initial stock on product creation'
+          }
+        });
+
+        const inventoryAcct = await ensureAccount('Inventory', 'ASSET');
+        const creditAcct = await ensureAccount(normalizedCreditName, 'EXPENSE');
+
+        await tx.ledgerEntry.create({
+          data: {
+            clinicId: req.user.clinicId,
+            account: inventoryAcct.name,
+            accountId: inventoryAcct.id,
+            type: 'DEBIT',
+            amount: openingLedgerAmount,
+            note: `Initial stock for ${created.name}`,
+            refType: 'STOCK',
+            refId: batch.id
+          }
+        });
+
+        await tx.ledgerEntry.create({
+          data: {
+            clinicId: req.user.clinicId,
+            account: creditAcct.name,
+            accountId: creditAcct.id,
+            type: 'CREDIT',
+            amount: openingLedgerAmount,
+            note: `Opening stock balancing entry for ${created.name}`,
+            refType: 'STOCK',
+            refId: batch.id
+          }
+        });
+
+        await tx.pharmacyProduct.update({
+          where: { id: created.id },
+          data: { quantity: qty, expiryDate: batch.expiryDate || null }
+        });
+      }
+
+      return tx.pharmacyProduct.findUnique({ where: { id: created.id } });
+    });
+
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     if (error.code === 'P2002') return res.status(400).json({ success: false, message: 'Product code already exists' });
@@ -511,7 +622,7 @@ router.put('/products/:id', checkPermission('pharmacy', 'update'), async (req, r
 // POST /products/:id/stock - Update stock
 router.post('/products/:id/stock', checkPermission('pharmacy', 'update'), async (req, res, next) => {
   try {
-    const { type, quantity, reference, notes, expiryDate, batchNumber, costPrice } = req.body;
+    const { type, quantity, reference, notes, expiryDate, batchNumber, costPrice, creditAccountName } = req.body;
     const product = await prisma.pharmacyProduct.findUnique({ where: { id: req.params.id } });
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
     const qty = parseInt(quantity, 10);
@@ -542,11 +653,18 @@ router.post('/products/:id/stock', checkPermission('pharmacy', 'update'), async 
 
       // Ensure ledger accounts exist for Inventory and an adjustment account
       const inventoryAcct = await ensureAccount('Inventory', 'ASSET');
-      const adjAcct = await ensureAccount('Inventory Adjustment', 'EXPENSE');
+      const normalizedCreditName = (creditAccountName || 'Inventory Adjustment').toString().trim() || 'Inventory Adjustment';
+      const adjAcct = await ensureAccount(normalizedCreditName, 'EXPENSE');
 
       // compute ledger amount from provided costPrice or product purchasePrice as fallback
       const unitCost = Number(costPrice || product.purchasePrice || 0);
       const ledgerAmount = Number((unitCost * qty) || 0);
+      if (ledgerAmount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Unit cost must be greater than 0 for stock addition so ledger entry can be posted'
+        });
+      }
 
       // perform product update, stock history and ledger writes in one transaction
       const ops = [
@@ -554,21 +672,19 @@ router.post('/products/:id/stock', checkPermission('pharmacy', 'update'), async 
         prisma.stockHistory.create({ data: { productId: req.params.id, batchId: batch.id, type, quantity: qty, previousQty, newQty, reference, notes, createdBy: req.user.id } })
       ];
 
-      if (ledgerAmount > 0) {
-        // determine credit account: if a purchase reference is provided and has supplier, use payable for that supplier
-        let creditAcct = adjAcct;
-        if (reference) {
-          const pur = await prisma.purchase.findUnique({ where: { id: reference }, include: { supplier: true } }).catch(() => null);
-          if (pur && pur.supplier) {
-            const payableName = `Payable - ${pur.supplier.name}`;
-            const payableAcct = await ensureAccount(payableName, 'LIABILITY');
-            creditAcct = payableAcct;
-          }
+      // determine credit account: if a purchase reference is provided and has supplier, use payable for that supplier
+      let creditAcct = adjAcct;
+      if (reference) {
+        const pur = await prisma.purchase.findUnique({ where: { id: reference }, include: { supplier: true } }).catch(() => null);
+        if (pur && pur.supplier) {
+          const payableName = `Payable - ${pur.supplier.name}`;
+          const payableAcct = await ensureAccount(payableName, 'LIABILITY');
+          creditAcct = payableAcct;
         }
-
-        ops.push(prisma.ledgerEntry.create({ data: { clinicId: req.user.clinicId, account: inventoryAcct.name, accountId: inventoryAcct.id, type: 'DEBIT', amount: ledgerAmount, note: `${type} via stock update`, refType: 'STOCK', refId: batch.id } }));
-        ops.push(prisma.ledgerEntry.create({ data: { clinicId: req.user.clinicId, account: creditAcct.name, accountId: creditAcct.id, type: 'CREDIT', amount: ledgerAmount, note: `${type} via stock update`, refType: 'STOCK', refId: batch.id } }));
       }
+
+      ops.push(prisma.ledgerEntry.create({ data: { clinicId: req.user.clinicId, account: inventoryAcct.name, accountId: inventoryAcct.id, type: 'DEBIT', amount: ledgerAmount, note: `${type} via stock update`, refType: 'STOCK', refId: batch.id } }));
+      ops.push(prisma.ledgerEntry.create({ data: { clinicId: req.user.clinicId, account: creditAcct.name, accountId: creditAcct.id, type: 'CREDIT', amount: ledgerAmount, note: `${type} via stock update`, refType: 'STOCK', refId: batch.id } }));
 
       const results = await prisma.$transaction(ops);
       const updatedProduct = results[0];

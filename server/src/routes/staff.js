@@ -70,9 +70,9 @@ router.get('/', checkPermission('staff', 'read'), async (req, res, next) => {
     if (department) where.department = department;
     if (search) {
       where.OR = [
-        { employeeId: { contains: search } },
-        { user: { name: { contains: search } } },
-        { designation: { contains: search } }
+        { employeeId: { contains: search, mode: 'insensitive' } },
+        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { designation: { contains: search, mode: 'insensitive' } }
       ];
     }
 

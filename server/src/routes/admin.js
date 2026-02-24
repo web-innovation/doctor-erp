@@ -275,9 +275,9 @@ router.get('/clinics', async (req, res, next) => {
     const where = {};
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { city: { contains: search } },
-        { phone: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -952,9 +952,9 @@ router.get('/users', async (req, res, next) => {
     const where = { role: { not: 'SUPER_ADMIN' } }; // Don't list super admins
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { email: { contains: search } },
-        { phone: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } }
       ];
     }
     if (role) where.role = role;

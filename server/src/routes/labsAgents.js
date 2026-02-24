@@ -20,8 +20,8 @@ router.get('/labs', checkPermission('labs', 'read'), async (req, res, next) => {
     if (isActive !== undefined) where.isActive = isActive === 'true';
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { contactPerson: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { contactPerson: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -107,8 +107,8 @@ router.get('/agents', checkPermission('agents', 'read'), async (req, res, next) 
     if (isActive !== undefined) where.isActive = isActive === 'true';
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { phone: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } }
       ];
     }
 

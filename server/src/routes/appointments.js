@@ -98,9 +98,9 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
 
     if (search) {
       where.OR = [
-        { patient: { name: { contains: search } } },
-        { patient: { phone: { contains: search } } },
-        { patientId: { contains: search } }
+        { patient: { name: { contains: search, mode: 'insensitive' } } },
+        { patient: { phone: { contains: search, mode: 'insensitive' } } },
+        { patientId: { contains: search, mode: 'insensitive' } }
       ];
     }
 

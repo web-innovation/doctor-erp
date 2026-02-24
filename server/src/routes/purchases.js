@@ -15,7 +15,7 @@ router.get('/suppliers', checkPermission('purchases', 'read'), async (req, res, 
     const q = (req.query.q || '').toString();
     const clinicId = req.user.clinicId;
     const where = { clinicId };
-    if (q) where['name'] = { contains: q };
+    if (q) where['name'] = { contains: q, mode: 'insensitive' };
     const list = await prisma.supplier.findMany({ where, take: 20, orderBy: { name: 'asc' } });
     res.json({ success: true, data: list });
   } catch (err) { next(err); }

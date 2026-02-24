@@ -26,6 +26,7 @@ const Header = ({ onMenuClick }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [customNotifications, setCustomNotifications] = useState([]);
+  const [seenNotificationKeys, setSeenNotificationKeys] = useState(() => new Set());
   
   const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -34,6 +35,15 @@ const Header = ({ onMenuClick }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, activeViewUser, setActiveViewUser, clearActiveViewUser } = useAuth();
+
+  const getNotificationKey = (notification) => {
+    const source = notification?.source || 'unknown';
+    const idPart = notification?.id ? String(notification.id) : '';
+    const titlePart = notification?.title || '';
+    const messagePart = notification?.message || '';
+    const pathPart = notification?.path || '';
+    return `${source}|${idPart}|${titlePart}|${messagePart}|${pathPart}`;
+  };
 
   // Dev debug: log active view changes to help debug role/permission issues
   useEffect(() => {
@@ -54,7 +64,8 @@ const Header = ({ onMenuClick }) => {
     message: alert.message,
     time: 'Just now',
     unread: true,
-    type: alert.type
+    type: alert.type,
+    source: 'dashboard'
   }));
   
   // Add upcoming appointments as notifications
@@ -65,7 +76,8 @@ const Header = ({ onMenuClick }) => {
       title: 'Upcoming Appointment',
       message: `${apt.patient?.name} at ${apt.timeSlot || 'scheduled'}`,
       time: 'Today',
-      unread: true
+      unread: true,
+      source: 'dashboard'
     });
   });
 
@@ -74,7 +86,13 @@ const Header = ({ onMenuClick }) => {
     time: n?.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now'
   }));
 
-  const notifications = [...localNotifications, ...dashboardNotifications];
+  const notifications = [...localNotifications, ...dashboardNotifications].map((notification) => {
+    const seen = seenNotificationKeys.has(getNotificationKey(notification));
+    return {
+      ...notification,
+      unread: !seen && !!notification.unread
+    };
+  });
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
@@ -349,6 +367,12 @@ const Header = ({ onMenuClick }) => {
 
   const handleNotificationClick = (notification) => {
     if (!notification) return;
+    const notificationKey = getNotificationKey(notification);
+    setSeenNotificationKeys((prev) => {
+      const next = new Set(prev);
+      next.add(notificationKey);
+      return next;
+    });
     if (notification.source === 'local' && notification.id) {
       appNotificationService.remove(notification.id);
     }
@@ -356,6 +380,17 @@ const Header = ({ onMenuClick }) => {
       navigate(notification.path);
     }
     setShowNotifications(false);
+  };
+
+  const handleBellClick = () => {
+    if (!showNotifications) {
+      setSeenNotificationKeys((prev) => {
+        const next = new Set(prev);
+        notifications.forEach((notification) => next.add(getNotificationKey(notification)));
+        return next;
+      });
+    }
+    setShowNotifications((prev) => !prev);
   };
 
   return (
@@ -465,7 +500,7 @@ const Header = ({ onMenuClick }) => {
             {/* Notifications */}
             <div ref={notificationRef} className="relative">
               <button
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={handleBellClick}
                 className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <BellIcon className="h-6 w-6" />

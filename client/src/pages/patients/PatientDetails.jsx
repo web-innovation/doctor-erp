@@ -298,6 +298,37 @@ export default function PatientDetails() {
   const pulseBadge = getVitalBadge('pulse', latestPulse?.pulse);
   const spO2Badge = getVitalBadge('spO2', latestSpO2?.spO2);
   const tempBadge = getVitalBadge('temperature', latestTemp?.temperature);
+  const prescriptionsList = Array.isArray(prescriptions)
+    ? prescriptions
+    : (Array.isArray(prescriptions?.data) ? prescriptions.data : []);
+
+  const getPrescriptionTitle = (prescription) => {
+    const diagnosis = prescription?.diagnosis;
+    if (Array.isArray(diagnosis)) return diagnosis.filter(Boolean).join(', ') || 'Prescription';
+    if (typeof diagnosis === 'string') {
+      const trimmed = diagnosis.trim();
+      if (!trimmed) return 'Prescription';
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.filter(Boolean).join(', ') || 'Prescription';
+          if (typeof parsed === 'string') return parsed || 'Prescription';
+        } catch (e) {
+          // Use original diagnosis when JSON parsing fails.
+        }
+      }
+      return trimmed;
+    }
+    return 'Prescription';
+  };
+
+  const getPrescriptionDoctorName = (prescription) => {
+    const doctor = prescription?.doctor;
+    if (!doctor) return 'N/A';
+    if (typeof doctor === 'string') return doctor;
+    if (typeof doctor === 'object') return doctor.name || doctor.fullName || 'N/A';
+    return 'N/A';
+  };
 
   if (isLoading) {
     return (
@@ -518,10 +549,9 @@ export default function PatientDetails() {
                   {history?.appointments?.length > 0 ? (
                     <div className="space-y-4">
                       {history.appointments.map((visit, index) => (
-                        <Link
+                        <div
                           key={visit.id || index}
-                          to={`/appointments/${visit.id}`}
-                          className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                          className="block p-4 border border-gray-100 rounded-lg bg-white"
                         >
                           <div className="flex justify-between items-start mb-2">
                             <p className="font-medium text-gray-900">{visit.reason || 'General Checkup'}</p>
@@ -539,7 +569,7 @@ export default function PatientDetails() {
                           </div>
                           <p className="text-gray-600 text-sm">{formatDate(visit.date)}</p>
                           <p className="text-gray-600 text-sm mt-1">{visit.notes || 'No notes'}</p>
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -561,9 +591,9 @@ export default function PatientDetails() {
                       New Prescription
                     </Link>
                   </div>
-                  {prescriptions?.length > 0 ? (
+                  {prescriptionsList.length > 0 ? (
                     <div className="space-y-4">
-                      {prescriptions.map((prescription) => (
+                      {prescriptionsList.map((prescription) => (
                         <Link
                           key={prescription.id}
                           to={`/prescriptions/${prescription.id}`}
@@ -571,17 +601,17 @@ export default function PatientDetails() {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <p className="font-medium text-gray-900">
-                              {prescription.diagnosis || 'Prescription'}
+                              {getPrescriptionTitle(prescription)}
                             </p>
                             <span className="text-sm text-gray-500">
-                              {formatDate(prescription.date)}
+                              {formatDate(prescription.date || prescription.createdAt)}
                             </span>
                           </div>
                           <p className="text-gray-600 text-sm">
                             {prescription.medicines?.length || 0} medicines prescribed
                           </p>
                           <p className="text-sm text-blue-600 mt-2">
-                            Dr. {prescription.doctor || 'N/A'}
+                            Dr. {getPrescriptionDoctorName(prescription)}
                           </p>
                         </Link>
                       ))}

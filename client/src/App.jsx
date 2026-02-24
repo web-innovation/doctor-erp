@@ -9,35 +9,34 @@ import AuthLayout from './layouts/AuthLayout';
 
 // Landing Page (keep eagerly loaded for best first paint / SEO crawlability)
 import Landing from './pages/Landing';
+import Dashboard from './pages/Dashboard';
+import Patients from './pages/patients/Patients';
+import PatientDetails from './pages/patients/PatientDetails';
+import Appointments from './pages/appointments/Appointments';
+import AppointmentCalendar from './pages/appointments/AppointmentCalendar';
+import Prescriptions from './pages/prescriptions/Prescriptions';
+import PrescriptionDetail from './pages/prescriptions/PrescriptionDetail';
+import NewPrescription from './pages/prescriptions/NewPrescription';
+import Pharmacy from './pages/pharmacy/Pharmacy';
+import UploadPurchase from './pages/pharmacy/UploadPurchase';
+import Ledger from './pages/pharmacy/Ledger';
+import ManualEntry from './pages/pharmacy/ManualEntry';
+import Suppliers from './pages/pharmacy/Suppliers';
+import Purchases from './pages/pharmacy/Purchases';
+import Billing from './pages/billing/Billing';
+import NewBill from './pages/billing/NewBill';
+import Staff from './pages/staff/Staff';
+import Attendance from './pages/staff/Attendance';
+import Leave from './pages/staff/Leave';
+import Reports from './pages/reports/Reports';
+import LabsAgents from './pages/labs-agents/LabsAgents';
+import LabTests from './pages/labs-agents/LabTests';
+import Settings from './pages/settings/Settings';
 
 // Route-level code splitting to reduce homepage JS payload
 const Login = lazy(() => import('./pages/auth/Login'));
 const Register = lazy(() => import('./pages/auth/Register'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
-
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Patients = lazy(() => import('./pages/patients/Patients'));
-const PatientDetails = lazy(() => import('./pages/patients/PatientDetails'));
-const Appointments = lazy(() => import('./pages/appointments/Appointments'));
-const AppointmentCalendar = lazy(() => import('./pages/appointments/AppointmentCalendar'));
-const Prescriptions = lazy(() => import('./pages/prescriptions/Prescriptions'));
-const PrescriptionDetail = lazy(() => import('./pages/prescriptions/PrescriptionDetail'));
-const NewPrescription = lazy(() => import('./pages/prescriptions/NewPrescription'));
-const Pharmacy = lazy(() => import('./pages/pharmacy/Pharmacy'));
-const UploadPurchase = lazy(() => import('./pages/pharmacy/UploadPurchase'));
-const Ledger = lazy(() => import('./pages/pharmacy/Ledger'));
-const ManualEntry = lazy(() => import('./pages/pharmacy/ManualEntry'));
-const Suppliers = lazy(() => import('./pages/pharmacy/Suppliers'));
-const Purchases = lazy(() => import('./pages/pharmacy/Purchases'));
-const Billing = lazy(() => import('./pages/billing/Billing'));
-const NewBill = lazy(() => import('./pages/billing/NewBill'));
-const Staff = lazy(() => import('./pages/staff/Staff'));
-const Attendance = lazy(() => import('./pages/staff/Attendance'));
-const Leave = lazy(() => import('./pages/staff/Leave'));
-const Reports = lazy(() => import('./pages/reports/Reports'));
-const LabsAgents = lazy(() => import('./pages/labs-agents/LabsAgents'));
-const LabTests = lazy(() => import('./pages/labs-agents/LabTests'));
-const Settings = lazy(() => import('./pages/settings/Settings'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const Clinics = lazy(() => import('./pages/admin/Clinics'));
@@ -97,6 +96,79 @@ function App() {
     return () => window.removeEventListener('keydown', preventNumberArrowChange, true);
   }, []);
 
+  // Warm route chunks after login so first menu click does not show full-page suspense loader.
+  useEffect(() => {
+    if (!user) return;
+
+    const preloadCommonRoutes = async () => {
+      try {
+        await Promise.allSettled([
+          import('./pages/Dashboard'),
+          import('./pages/patients/Patients'),
+          import('./pages/patients/PatientDetails'),
+          import('./pages/appointments/Appointments'),
+          import('./pages/appointments/AppointmentCalendar'),
+          import('./pages/prescriptions/Prescriptions'),
+          import('./pages/prescriptions/NewPrescription'),
+          import('./pages/prescriptions/PrescriptionDetail'),
+          import('./pages/pharmacy/Pharmacy'),
+          import('./pages/pharmacy/Purchases'),
+          import('./pages/pharmacy/Suppliers'),
+          import('./pages/pharmacy/Ledger'),
+          import('./pages/pharmacy/ManualEntry'),
+          import('./pages/billing/Billing'),
+          import('./pages/billing/NewBill'),
+          import('./pages/staff/Staff'),
+          import('./pages/staff/Attendance'),
+          import('./pages/staff/Leave'),
+          import('./pages/reports/Reports'),
+          import('./pages/settings/Settings'),
+          import('./pages/labs-agents/LabsAgents'),
+          import('./pages/labs-agents/LabTests'),
+        ]);
+      } catch (e) {
+        // Non-blocking optimization only.
+      }
+    };
+
+    const preloadAdminRoutes = async () => {
+      const role = (user?.role || '').toString().toUpperCase();
+      if (role !== 'SUPER_ADMIN') return;
+      try {
+        await Promise.allSettled([
+          import('./pages/admin/AdminDashboard'),
+          import('./pages/admin/Clinics'),
+          import('./pages/admin/ClinicDetail'),
+          import('./pages/admin/Users'),
+        ]);
+      } catch (e) {
+        // Non-blocking optimization only.
+      }
+    };
+
+    let idleHandle;
+    let timeoutHandle;
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(() => {
+        preloadCommonRoutes();
+        preloadAdminRoutes();
+      });
+    } else {
+      timeoutHandle = window.setTimeout(() => {
+        preloadCommonRoutes();
+        preloadAdminRoutes();
+      }, 400);
+    }
+
+    return () => {
+      if (idleHandle && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timeoutHandle) window.clearTimeout(timeoutHandle);
+    };
+  }, [user]);
+
   return (
     <>
       {/* HIPAA: Session timeout warning for authenticated users */}
@@ -138,6 +210,7 @@ function App() {
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/appointments/new" element={<Appointments />} />
         <Route path="/appointments/calendar" element={<AppointmentCalendar />} />
+        <Route path="/appointments/:id" element={<Appointments />} />
         
         {/* Prescriptions */}
         <Route path="/prescriptions" element={<Prescriptions />} />
@@ -162,6 +235,7 @@ function App() {
         <Route path="/billing" element={<Billing />} />
         <Route path="/billing/new" element={<NewBill />} />
         <Route path="/billing/:id/edit" element={<NewBill />} />
+        <Route path="/billing/:id" element={<Billing />} />
         
         {/* Staff Management */}
         <Route path="/staff" element={<Staff />} />

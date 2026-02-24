@@ -37,8 +37,6 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-const GST_OPTIONS = [0, 5, 10, 12, 18, 20, 30];
-
 export default function Billing() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -53,8 +51,6 @@ export default function Billing() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [updatingGstBillId, setUpdatingGstBillId] = useState(null);
-  const [gstSelections, setGstSelections] = useState({});
   const pageSize = 10;
 
   const {
@@ -107,21 +103,6 @@ export default function Billing() {
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to record payment');
     },
-  });
-
-  const updateGstMutation = useMutation({
-    mutationFn: ({ id, payload }) => billingService.updateBill(id, payload),
-    onSuccess: () => {
-      toast.success('GST updated');
-      queryClient.invalidateQueries(['bills']);
-      if (selectedBill?.id) {
-        queryClient.invalidateQueries(['bill', selectedBill.id]);
-      }
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.message || 'Failed to update GST');
-    },
-    onSettled: () => setUpdatingGstBillId(null),
   });
 
   const handleSearch = (e) => {
@@ -200,43 +181,60 @@ export default function Billing() {
     const taxableBase = Number(bill?.subtotal || 0) - Number(bill?.discountAmount || 0);
     const taxAmount = Number(bill?.taxAmount || 0);
     if (taxableBase <= 0 || taxAmount <= 0) return 0;
-    const computed = Math.round(((taxAmount / taxableBase) * 100) * 100) / 100;
-    const exact = GST_OPTIONS.find((rate) => Number(rate) === Number(computed));
-    return exact !== undefined ? exact : 0;
+    return Math.round(((taxAmount / taxableBase) * 100) * 100) / 100;
   };
 
-  const handleApplyGst = (bill, gstRate) => {
-    const normalizedRate = Number(gstRate || 0);
-    const hasPercentDiscount = Number(bill?.discountPercent || 0) > 0;
-    const payload = {
-      notes: bill?.notes || '',
-      doctorId: bill?.doctorId || undefined,
-      type: bill?.type || undefined,
-      discountType: hasPercentDiscount ? 'PERCENTAGE' : 'AMOUNT',
-      discount: hasPercentDiscount
-        ? Number(bill?.discountPercent || 0)
-        : Number(bill?.discountAmount || 0),
-      taxConfig: { gstRate: normalizedRate },
-      items: (bill?.items || []).map((item) => ({
-        description: item.description,
-        quantity: Number(item.quantity) || 1,
-        unitPrice: Number(item.unitPrice) || 0,
-        gstPercent: Number(item.gstPercent) || 0,
-        productId: item.productId || null,
-        labId: item.labId || null,
-        labTestId: item.labTestId || null,
-        doctorId: item.doctorId || null,
-      })),
+  const getItemModule = (item, billType) => {
+    const type = String(item?.type || '').trim().toLowerCase();
+    if (type === 'consultation') return 'consultation';
+    if (type === 'medicine' || type === 'pharmacy') return 'pharmacy';
+    if (type === 'lab' || type === 'lab_test' || type === 'labtest') return 'lab_test';
+    if (item?.productId) return 'pharmacy';
+    if (item?.labId || item?.labTestId) return 'lab_test';
+    if (item?.doctorId) return 'consultation';
+    const billTypeNorm = String(billType || '').toUpperCase();
+    if (billTypeNorm === 'CONSULTATION') return 'consultation';
+    if (billTypeNorm === 'PHARMACY') return 'pharmacy';
+    if (billTypeNorm === 'LAB_TEST') return 'lab_test';
+    return 'other';
+  };
+
+  const getModuleGstSummary = (bill) => {
+    const buckets = {
+      consultation: { label: 'Consultation', taxable: 0, gstAmount: 0, rates: new Set() },
+      pharmacy: { label: 'Pharmacy', taxable: 0, gstAmount: 0, rates: new Set() },
+      lab_test: { label: 'Lab Test', taxable: 0, gstAmount: 0, rates: new Set() },
     };
+    const items = Array.isArray(bill?.items) ? bill.items : [];
+    items.forEach((item) => {
+      const moduleType = getItemModule(item, bill?.type);
+      if (!buckets[moduleType]) return;
 
-    setUpdatingGstBillId(bill.id);
-    updateGstMutation.mutate({ id: bill.id, payload });
-  };
+      const qty = Math.max(1, Number(item?.quantity) || 1);
+      const unitPrice = Math.max(0, Number(item?.unitPrice) || 0);
+      const subtotal = qty * unitPrice;
+      const itemDiscount = Number.isFinite(Number(item?.discountAmount))
+        ? Math.max(0, Number(item.discountAmount))
+        : 0;
+      const taxable = Number.isFinite(Number(item?.amount))
+        ? Math.max(0, Number(item.amount))
+        : Math.max(0, subtotal - itemDiscount);
 
-  const handleGstSelectionChange = (bill, value) => {
-    const normalizedRate = Number(value || 0);
-    setGstSelections((prev) => ({ ...prev, [bill.id]: normalizedRate }));
-    handleApplyGst(bill, normalizedRate);
+      let gstPercent = Number(item?.gstPercent);
+      if (!Number.isFinite(gstPercent)) {
+        if (moduleType === 'consultation') gstPercent = Number(bill?.defaultConsultationGstPercent) || 0;
+        if (moduleType === 'pharmacy') gstPercent = Number(bill?.defaultPharmacyGstPercent) || 0;
+        if (moduleType === 'lab_test') gstPercent = Number(bill?.defaultLabTestGstPercent) || 0;
+      }
+      gstPercent = Math.max(0, gstPercent || 0);
+      const gstAmount = (taxable * gstPercent) / 100;
+
+      buckets[moduleType].taxable += taxable;
+      buckets[moduleType].gstAmount += gstAmount;
+      buckets[moduleType].rates.add(gstPercent);
+    });
+
+    return Object.values(buckets).filter((module) => module.taxable > 0 || module.gstAmount > 0);
   };
 
   const hasActiveFilters = filters.status || filters.startDate || filters.endDate;
@@ -384,10 +382,7 @@ export default function Billing() {
                         Patient
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Apply Fix GST
+                        Amount + GST
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Status
@@ -436,24 +431,6 @@ export default function Billing() {
                               </p>
                             )}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {canEditBilling ? (
-                            <select
-                              value={Number(gstSelections[bill.id] ?? 0)}
-                              onChange={(e) => handleGstSelectionChange(bill, e.target.value)}
-                              disabled={updatingGstBillId === bill.id}
-                              className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white disabled:opacity-60"
-                            >
-                              {GST_OPTIONS.map((rate) => (
-                                <option key={rate} value={rate}>
-                                  {rate === 0 ? 'Apply Fix GST (0%)' : `${rate}%`}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="text-sm text-gray-600">{getBillGstRate(bill)}%</span>
-                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span
@@ -739,6 +716,21 @@ export default function Billing() {
 
             {/* Totals */}
             <div className="border-t border-gray-100 pt-4 space-y-2">
+              {getModuleGstSummary(selectedBill).length > 0 && (
+                <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-sm font-medium text-gray-700 mb-2">GST Breakdown by Module</p>
+                  <div className="space-y-1">
+                    {getModuleGstSummary(selectedBill).map((module) => (
+                      <div key={module.label} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">
+                          {module.label} ({Array.from(module.rates).sort((a, b) => a - b).join(', ')}%)
+                        </span>
+                        <span className="text-gray-900 font-medium">{formatCurrency(module.gstAmount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selectedBill.discount > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Discount</span>

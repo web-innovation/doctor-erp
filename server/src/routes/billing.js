@@ -464,8 +464,8 @@ router.get('/', authenticate, checkPermission('billing:read'), async (req, res) 
     
     if (search) {
       where.OR = [
-        { billNo: { contains: search } },
-        { patient: { name: { contains: search } } }
+        { billNo: { contains: search, mode: 'insensitive' } },
+        { patient: { name: { contains: search, mode: 'insensitive' } } }
       ];
     }
     
@@ -533,9 +533,9 @@ router.get('/patients', authenticate, checkPermission('billing:create'), async (
     const where = { clinicId: req.user.clinicId };
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { phone: { contains: search } },
-        { patientId: { contains: search } }
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { patientId: { contains: search, mode: 'insensitive' } }
       ];
     }
 
