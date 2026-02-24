@@ -223,6 +223,11 @@ const Header = ({ onMenuClick }) => {
 
   // Determine clinic admin flag
   const isClinicAdmin = user?.isClinicAdmin === true || user?.role === 'SUPER_ADMIN' || user?.clinicRole === 'ADMIN' || user?.isOwner === true;
+  const userRoleSubtitle = (() => {
+    if (user?.role === 'SUPER_ADMIN') return 'Super Admin';
+    if (isClinicAdmin) return 'Admin-Doctor';
+    return user?.role || 'Staff';
+  })();
 
   // Helper to normalize role strings to canonical uppercase roles used across UI
   const normalizeRole = (role) => {
@@ -588,7 +593,7 @@ const Header = ({ onMenuClick }) => {
                 )}
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
-                  <p className="text-xs text-gray-500">{user?.role || 'Staff'}</p>
+                  <p className="text-xs text-gray-500">{userRoleSubtitle}</p>
                 </div>
                 <ChevronDownIcon className="h-4 w-4 text-gray-500 hidden md:block" />
               </button>
@@ -597,7 +602,7 @@ const Header = ({ onMenuClick }) => {
                 <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 md:hidden">
                     <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
-                    <p className="text-xs text-gray-500">{user?.role || 'Staff'}</p>
+                    <p className="text-xs text-gray-500">{userRoleSubtitle}</p>
                   </div>
                   <Link
                     to="/profile"
