@@ -51,6 +51,30 @@ function getPhoneCandidates(phone) {
   return Array.from(out);
 }
 
+function buildEffectiveRole(user) {
+  return String(user?.role || '').toUpperCase();
+}
+
+function buildUserPayload(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    effectiveRole: buildEffectiveRole(user),
+    avatar: user.avatar,
+    preferences: user.preferences,
+    clinic: user.clinic,
+    staffProfile: user.staffProfile
+      ? {
+          designation: user.staffProfile.designation || null,
+          department: user.staffProfile.department || null,
+        }
+      : null,
+  };
+}
+
 // ===========================================
 // PASSWORD REQUIREMENTS (for UI)
 // ===========================================
@@ -429,7 +453,7 @@ router.post('/login', [
           { phone: email }
         ]
       },
-      include: { clinic: true }
+      include: { clinic: true, staffProfile: true }
     });
 
     if (!user) {
@@ -495,19 +519,7 @@ router.post('/login', [
 
     logger.info(`User logged in: ${user.email}`);
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        avatar: user.avatar,
-        preferences: user.preferences,
-        clinic: user.clinic
-      }
-    });
+    res.json({ token, user: buildUserPayload(user) });
   } catch (error) {
     next(error);
   }
@@ -517,18 +529,7 @@ router.post('/login', [
 // GET CURRENT USER
 // ===========================================
 router.get('/me', authenticate, async (req, res) => {
-  res.json({
-    user: {
-      id: req.user.id,
-      name: req.user.name,
-      email: req.user.email,
-      phone: req.user.phone,
-      role: req.user.role,
-      avatar: req.user.avatar,
-      preferences: req.user.preferences,
-      clinic: req.user.clinic
-    }
-  });
+  res.json({ user: buildUserPayload(req.user) });
 });
 
 // ===========================================
@@ -545,20 +546,10 @@ router.patch('/profile', authenticate, async (req, res, next) => {
         ...(phone && { phone }),
         ...(avatar && { avatar })
       },
-      include: { clinic: true }
+      include: { clinic: true, staffProfile: true }
     });
 
-    res.json({
-      user: {
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        phone: updated.phone,
-        role: updated.role,
-        avatar: updated.avatar,
-        clinic: updated.clinic
-      }
-    });
+    res.json({ user: buildUserPayload(updated) });
   } catch (error) {
     next(error);
   }
@@ -640,7 +631,7 @@ router.post('/impersonate', authenticate, async (req, res, next) => {
     const { targetUserId } = req.body;
     if (!targetUserId) return res.status(400).json({ message: 'targetUserId is required' });
 
-    const target = await prisma.user.findUnique({ where: { id: targetUserId }, include: { clinic: true } });
+    const target = await prisma.user.findUnique({ where: { id: targetUserId }, include: { clinic: true, staffProfile: true } });
     if (!target) return res.status(404).json({ message: 'Target user not found' });
     if (!target.isActive) return res.status(400).json({ message: 'Target user is not active' });
 
@@ -663,7 +654,7 @@ router.post('/impersonate', authenticate, async (req, res, next) => {
     // Audit log
     await logImpersonation(req.user.id, target.id, { path: req.originalUrl, ipAddress: clientIP, userAgent: req.headers['user-agent'] });
 
-    res.json({ token, user: { id: target.id, name: target.name, email: target.email, role: target.role, clinic: target.clinic } });
+    res.json({ token, user: buildUserPayload(target) });
   } catch (error) {
     next(error);
   }

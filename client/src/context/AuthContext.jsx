@@ -171,7 +171,7 @@ const useAuthStore = create(
         const role = get().normalizeRole(viewUser.role);
         // persist the id so api layer can forward viewUserId on requests
         try { localStorage.setItem('activeViewUserId', viewUser.id); } catch (e) { /* ignore */ }
-        set({ activeViewUser: { ...viewUser, role } });
+        set({ activeViewUser: { ...viewUser, role, effectiveRole: viewUser.role } });
       },
       clearActiveViewUser: () => {
         try { localStorage.removeItem('activeViewUserId'); } catch (e) { /* ignore */ }
@@ -232,7 +232,10 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
   });
   const accessControls = accessResp?.data?.data || accessResp?.data || accessResp || null;
 
-  const effectiveRole = (activeViewUser && activeViewUser.role) || (user && normalizeRole(user.role)) || 'STAFF';
+  const rawRole = (activeViewUser && activeViewUser.role)
+    || (user && user.role)
+    || 'STAFF';
+  const effectiveRole = normalizeRole(rawRole);
 
   const normalizeDisabled = (value) => {
     const raw = String(value || '').trim().toLowerCase();
@@ -258,10 +261,6 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
     return fallbackRoles.includes((effectiveRole || '').toString().toUpperCase());
   }
 
-  // Determine which role key to use when looking up clinic overrides. If the
-  // clinic has an explicit override for the effective role, use it. Otherwise
-  // attempt sensible fallbacks (e.g., treat `STAFF` as `DOCTOR` when only
-  // `DOCTOR` is defined in clinic overrides).
   const effRoleKey = (effectiveRole || '').toString().toUpperCase();
   let roleKeyForLookup = effRoleKey;
   if (rolePermissions) {
@@ -269,10 +268,6 @@ export const useHasPerm = (permKey, fallbackRoles = []) => {
       // fallback: nurse/lab technician should inherit STAFF permissions unless explicitly overridden
       if (['NURSE', 'LAB_TECHNICIAN'].includes(roleKeyForLookup) && rolePermissions['STAFF']) {
         roleKeyForLookup = 'STAFF';
-      }
-      // fallback: treat STAFF as DOCTOR when DOCTOR override exists
-      else if (roleKeyForLookup === 'STAFF' && rolePermissions['DOCTOR']) {
-        roleKeyForLookup = 'DOCTOR';
       }
     }
   }

@@ -851,19 +851,19 @@ async function main() {
     update: {}
   });
 
-  // Create a second doctor user who is a staff member assigned to the primary doctor
+  // Create a second doctor user
   const doctorBUser = await ensure('user', { email: 'doctorb@demo.com' }, {
-    email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Demo B', role: 'STAFF', password: await bcrypt.hash('D0ct0rB@Demo!2024', 10), clinicId: clinic.id
+    email: 'doctorb@demo.com', phone: '9001000110', name: 'Dr. Demo B', role: 'DOCTOR', password: await bcrypt.hash('D0ct0rB@Demo!2024', 10), clinicId: clinic.id
   });
 
-  // Enforce staff role for doctorB if it already existed with a different role
+  // Enforce doctor role for doctorB if it already existed with a different role
   try {
-    if (doctorBUser.role !== 'STAFF') {
-      await prisma.user.update({ where: { id: doctorBUser.id }, data: { role: 'STAFF' } });
-      console.log('   • Updated doctorb@demo.com role -> STAFF');
+    if (doctorBUser.role !== 'DOCTOR') {
+      await prisma.user.update({ where: { id: doctorBUser.id }, data: { role: 'DOCTOR' } });
+      console.log('   • Updated doctorb@demo.com role -> DOCTOR');
     }
   } catch (e) {
-    console.warn('Failed to enforce doctorb@demo.com role -> STAFF', e?.message || e);
+    console.warn('Failed to enforce doctorb@demo.com role -> DOCTOR', e?.message || e);
   }
 
   const staffDoctorB = await ensure('staff', { userId: doctorBUser.id }, {
@@ -885,14 +885,46 @@ async function main() {
 
   await prisma.appointment.updateMany({ where: { appointmentNo: { in: ['A-0001','A-0003'] }, clinicId: clinic.id }, data: { doctorId: doctorUser.id } });
 
-  // Ensure clinic rolePermissions has sensible defaults (doctors can manage clinical features, receptionist can bill)
+  // Reconcile user.role from staff designation to keep seeded/demo users consistent
+  const designationRoleMap = [
+    { like: 'doctor', role: 'DOCTOR' },
+    { like: 'reception', role: 'RECEPTIONIST' },
+    { like: 'pharmac', role: 'PHARMACIST' },
+    { like: 'account', role: 'ACCOUNTANT' },
+    { like: 'lab', role: 'STAFF' },
+    { like: 'nurse', role: 'STAFF' }
+  ];
+  const clinicStaffUsers = await prisma.staff.findMany({
+    where: { clinicId: clinic.id },
+    include: { user: true }
+  });
+  for (const staff of clinicStaffUsers) {
+    const designation = String(staff.designation || '').toLowerCase();
+    const mapped = designationRoleMap.find((d) => designation.includes(d.like));
+    if (!mapped) continue;
+    if (staff.user?.role !== mapped.role) {
+      await prisma.user.update({
+        where: { id: staff.user.id },
+        data: { role: mapped.role }
+      });
+    }
+  }
+
+  // Seed default rolePermissions only when clinic has none configured.
   const defaultRolePerms = {
     DOCTOR: ['patients:read','patients:create','patients:update','prescriptions:create','prescriptions:read','appointments:read','appointments:create'],
+    STAFF: ['patients:read','appointments:read'],
     RECEPTIONIST: ['patients:read','patients:create','appointments:create','billing:create'],
     PHARMACIST: ['pharmacy:read','pharmacy:create','billing:create'],
     ACCOUNTANT: ['billing:read','reports:opd','reports:collections']
   };
-  await prisma.clinic.update({ where: { id: clinic.id }, data: { rolePermissions: JSON.stringify(defaultRolePerms) } });
+  const freshClinic = await prisma.clinic.findUnique({ where: { id: clinic.id }, select: { rolePermissions: true } });
+  if (!freshClinic?.rolePermissions) {
+    await prisma.clinic.update({
+      where: { id: clinic.id },
+      data: { rolePermissions: JSON.stringify(defaultRolePerms) }
+    });
+  }
 
   console.log('   ✅ Created demo users, staff and assignments.');
 

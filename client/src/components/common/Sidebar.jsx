@@ -83,18 +83,11 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     if (isStaffVariant && rolePermissions && !rolePermissions[role] && rolePermissions.STAFF) {
       return 'STAFF';
     }
-    if (role !== 'STAFF') return role;
-    if (!rolePermissions) return 'DOCTOR';
-    const hasStaffOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'STAFF');
-    const hasDoctorOverride = Object.prototype.hasOwnProperty.call(rolePermissions, 'DOCTOR');
-    return !hasStaffOverride && hasDoctorOverride ? 'DOCTOR' : 'STAFF';
+    return role;
   })();
 
   // Determine if current real user is a clinic admin (some doctor users act as clinic admin)
   const isClinicAdmin = user?.role === 'SUPER_ADMIN' || user?.isClinicAdmin === true || user?.clinicRole === 'ADMIN' || user?.isOwner === true;
-  // If viewing as another user, check if that viewed user should be treated as clinic admin
-  const viewingAsClinicAdmin = activeViewUser && (activeViewUser.role === 'SUPER_ADMIN' || activeViewUser.isClinicAdmin === true || activeViewUser.clinicRole === 'ADMIN' || activeViewUser.isOwner === true);
-
   // Determine if admin is actively viewing as another staff user
   const isViewingAsAnother = !!(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id);
   // Fetch clinic name from settings (only if not on admin routes)
@@ -145,15 +138,6 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
   // Filter menu items based on user role and clinic-level rolePermissions (if present)
   const filteredMenuItems = menuItems.filter((item) => {
-      // Debug: Log role and permissions for Accountant, after all variables are initialized
-      if (normalizedRole === 'ACCOUNTANT' && item.path === '/reports') {
-        console.log('[Sidebar] Accountant debug:', {
-          normalizedRole,
-          effectiveRoleForMatch,
-          rolePermissions,
-          item,
-        });
-      }
     const normalizeDisabled = (value) => {
       const raw = String(value || '').trim().toLowerCase();
       if (!raw) return '';
@@ -184,8 +168,6 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
       ? (rolePermissions[roleKey] ? roleKey : (rolePermissions[effectiveRoleForMatch] ? effectiveRoleForMatch : roleKey))
       : roleKey;
     const permsForRole = rolePermissions && rolePermissions[roleKeyForPerms];
-    console.log("permsForRole>>>>", permsForRole)
-    console.log("requiredPermKeys>>>>", requiredPermKeys)
 
     // Special handling for Reports menu: only show if user has any report permission
     if (item.path === '/reports') {
@@ -206,10 +188,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
       return roleMatch;
     }
 
-    // If there are NO clinic-level overrides, hide any menu item that has a mapped permission
-    // (require explicit Access Management entry). If no mapped permission exists, fall back
-    // to static role membership.
-    if (requiredPermKeys.length > 0) return false;
+    // If there are NO clinic-level overrides, fall back to static role membership.
     return roleMatch;
   });
 
