@@ -117,6 +117,26 @@ router.get('/sales', checkPermission('reports', 'sales'), async (req, res, next)
       })
     ]);
 
+    const topPatientIds = topPatients.map((p) => p.patientId).filter(Boolean);
+    const topPatientRows = topPatientIds.length
+      ? await prisma.patient.findMany({
+          where: { id: { in: topPatientIds }, clinicId },
+          select: { id: true, patientId: true, name: true, phone: true }
+        })
+      : [];
+    const topPatientMap = new Map(topPatientRows.map((p) => [p.id, p]));
+    const topPatientsDetailed = topPatients.map((row) => {
+      const p = topPatientMap.get(row.patientId);
+      return {
+        patientId: row.patientId,
+        patientCode: p?.patientId || null,
+        patientName: p?.name || 'Unknown Patient',
+        phone: p?.phone || null,
+        totalAmount: row._sum?.totalAmount || 0,
+        count: row._count || 0
+      };
+    });
+
     const totalRevenue = billsSummary._sum.totalAmount || 0;
     const totalBills = billsSummary._count || 0;
     const avgBill = totalBills > 0 ? Math.round(totalRevenue / totalBills) : 0;
@@ -141,7 +161,7 @@ router.get('/sales', checkPermission('reports', 'sales'), async (req, res, next)
         // Breakdown data
         byType: billsByType,
         byPaymentMethod: paymentsByMethod,
-        topPatients
+        topPatients: topPatientsDetailed
       }
     });
   } catch (error) {
@@ -405,10 +425,24 @@ router.get('/collections', checkPermission('reports', 'collections'), async (req
 // GET /commissions - Commission report
 router.get('/commissions', checkPermission('reports', 'commissions'), async (req, res, next) => {
   try {
-    const { period = 'month', startDate, endDate, type } = req.query;
+    const { period = 'month', startDate, endDate } = req.query;
+    const clinicId = req.user.clinicId;
     const dateRange = getDateRange(period, startDate, endDate);
 
-    const where = { createdAt: dateRange };
+    const [labs, agents] = await Promise.all([
+      prisma.lab.findMany({ where: { clinicId }, select: { id: true, name: true } }),
+      prisma.agent.findMany({ where: { clinicId }, select: { id: true, name: true } }),
+    ]);
+    const labIds = labs.map((l) => l.id);
+    const agentIds = agents.map((a) => a.id);
+    const noId = '__none__';
+    const where = {
+      createdAt: dateRange,
+      OR: [
+        { labId: { in: labIds.length ? labIds : [noId] } },
+        { agentId: { in: agentIds.length ? agentIds : [noId] } }
+      ]
+    };
 
     const [summary, byLab, byAgent, pending] = await Promise.all([
       prisma.commissionRecord.aggregate({
@@ -429,11 +463,26 @@ router.get('/commissions', checkPermission('reports', 'commissions'), async (req
         _count: true
       }),
       prisma.commissionRecord.aggregate({
-        where: { status: 'PENDING' },
+        where: { ...where, status: 'PENDING' },
         _sum: { amount: true },
         _count: true
       })
     ]);
+
+    const labMap = new Map(labs.map((l) => [l.id, l.name]));
+    const agentMap = new Map(agents.map((a) => [a.id, a.name]));
+    const byLabDetailed = byLab.map((row) => ({
+      labId: row.labId,
+      name: labMap.get(row.labId) || 'Unknown Lab',
+      amount: row._sum?.amount || 0,
+      count: row._count || 0
+    }));
+    const byAgentDetailed = byAgent.map((row) => ({
+      agentId: row.agentId,
+      name: agentMap.get(row.agentId) || 'Unknown Agent',
+      amount: row._sum?.amount || 0,
+      count: row._count || 0
+    }));
 
     res.json({
       success: true,
@@ -447,8 +496,8 @@ router.get('/commissions', checkPermission('reports', 'commissions'), async (req
           pendingAmount: pending._sum.amount || 0,
           pendingCount: pending._count
         },
-        byLab,
-        byAgent
+        byLab: byLabDetailed,
+        byAgent: byAgentDetailed
       }
     });
   } catch (error) {
