@@ -782,26 +782,6 @@ export default function Landing() {
                     <FaYoutube className="h-5 w-5" />
                   </a>
                 </div>
-                <div
-                  className="mt-4 inline-flex items-center gap-3 rounded-lg border border-gray-700 bg-white/95 px-3 py-2 cursor-default"
-                  title="Udyam Registration Number: UDYAM-PB-20-0122464"
-                  aria-label="Udyam Registration Number: UDYAM-PB-20-0122464"
-                >
-                  <img
-                    src="https://www.presentations.gov.in/wp-content/uploads/2020/06/Preview-11.png"
-                    alt="Official MSME Logo"
-                    className="h-9 w-9 rounded-full object-contain bg-white"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                  <img
-                    src="https://www.uxdt.nic.in/wp-content/uploads/2020/06/Digital-india-black.jpg"
-                    alt="Official Digital India Logo"
-                    className="h-9 w-auto object-contain"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
             </div>
             <div>
               <h4 className="text-white font-semibold mb-4">Product</h4>
