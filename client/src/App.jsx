@@ -35,7 +35,6 @@ import Settings from './pages/settings/Settings';
 
 // Route-level code splitting to reduce homepage JS payload
 const Login = lazy(() => import('./pages/auth/Login'));
-const Register = lazy(() => import('./pages/auth/Register'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -194,7 +193,6 @@ function App() {
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
       </Route>
 
@@ -284,16 +282,8 @@ function App() {
         <Route path="/admin/users" element={<Users />} />
       </Route>
 
-      {/* 404 */}
-      <Route path="*" element={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-6xl font-bold text-gray-300">404</h1>
-            <p className="text-gray-600 mt-4">Page not found</p>
-            <a href="/" className="btn-primary mt-6 inline-block">Go Home</a>
-          </div>
-        </div>
-      } />
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} replace />} />
     </Routes>
     </Suspense>
     </>
