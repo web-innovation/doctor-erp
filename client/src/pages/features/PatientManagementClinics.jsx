@@ -7,6 +7,14 @@ export default function PatientManagementClinics() {
       title="Patient Management System for Clinics"
       subtitle="Clinic patient management software with appointments, EMR, e-prescription and billing in one cloud workflow."
       description="Docsy ERP helps clinics manage complete patient records, appointment history, e-prescriptions, and billing in one secure cloud workflow. Front desk teams and doctors can access one patient timeline and reduce manual follow-up calls."
+      seoTitle="Patient Management System for Clinics | Docsy ERP"
+      seoDescription="Advanced patient health analytics software with clinic patient management and OPD management software for smart reporting, billing and workflow automation."
+      seoKeywords={[
+        'Patient Health Analytics Software',
+        'Patient Management System for Clinics',
+        'Clinic patient management software',
+        'OPD management software'
+      ]}
       primaryKeyword="Patient management system for clinics"
       secondaryKeywords={[
         'Clinic EMR software',

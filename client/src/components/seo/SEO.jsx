@@ -22,10 +22,15 @@ function upsertCanonical(url) {
   tag.setAttribute('href', url);
 }
 
-export default function SEO({ title, description, path = '/', schema = null, image = null }) {
+export default function SEO({ title, description, keywords = null, path = '/', schema = null, image = null }) {
   useEffect(() => {
     if (title) document.title = title;
     upsertMeta('name', 'description', description);
+    if (keywords && Array.isArray(keywords) && keywords.length > 0) {
+      upsertMeta('name', 'keywords', keywords.join(', '));
+    } else if (keywords && typeof keywords === 'string') {
+      upsertMeta('name', 'keywords', keywords);
+    }
     upsertMeta('property', 'og:title', title);
     upsertMeta('property', 'og:description', description);
     upsertMeta('property', 'og:type', 'website');
@@ -60,7 +65,7 @@ export default function SEO({ title, description, path = '/', schema = null, ima
       const el = document.getElementById(schemaId);
       if (el) el.remove();
     };
-  }, [title, description, path, schema, image]);
+  }, [title, description, keywords, path, schema, image]);
 
   return null;
 }

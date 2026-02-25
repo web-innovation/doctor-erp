@@ -7,6 +7,9 @@ export default function FeaturePageTemplate({
   title,
   subtitle,
   description,
+  seoTitle = null,
+  seoDescription = null,
+  seoKeywords = null,
   points = [],
   modules = [],
   industries = [],
@@ -52,8 +55,9 @@ export default function FeaturePageTemplate({
   return (
     <div className="min-h-screen bg-white">
       <SEO
-        title={`${title} | Docsy ERP`}
-        description={description}
+        title={seoTitle || `${title} | Docsy ERP`}
+        description={seoDescription || description}
+        keywords={seoKeywords}
         path={path}
         image="/favicon.ico"
         schema={schema}

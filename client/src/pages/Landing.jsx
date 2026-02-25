@@ -196,8 +196,20 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-white">
       <SEO
-        title="Docsy ERP | Clinic Management Software for Doctors, Pharmacy, Billing & Reports"
-        description="Docsy ERP is a cloud clinic management software for doctors and healthcare teams. Manage patient records, smart prescriptions, pharmacy, billing, and live performance reports in one secure platform."
+        title="Best Clinic Management Software & System in India | Docsy ERP"
+        description="Clinic management software India for doctors and small clinics. Manage billing, EMR, appointments, pharmacy and smart reporting system."
+        keywords={[
+          'Clinic Management Software India',
+          'Small Clinic Software',
+          'Best Clinic Management Software & System in India',
+          'Top clinic management software in India',
+          'Clinic management software for clinics',
+          'Clinic Management Software for General Practitioners in India',
+          'Best Medical Software for Doctors',
+          'Best Clinic Management Software Solutions in India',
+          'Healthcare Management Software for Clinics',
+          'Clinic management'
+        ]}
         path="/"
         image="/favicon.ico"
         schema={[
