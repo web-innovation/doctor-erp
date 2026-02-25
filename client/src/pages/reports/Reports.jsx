@@ -43,10 +43,10 @@ ChartJS.register(
 );
 
 const TABS = [
-  { id: 'sales', label: 'Sales', icon: FaRupeeSign },
-  { id: 'opd', label: 'OPD', icon: FaUserMd },
-  { id: 'pharmacy', label: 'Pharmacy', icon: FaPills },
-  { id: 'commissions', label: 'Commissions', icon: FaHandHoldingUsd },
+  { id: 'sales', label: 'Billing & Collections', icon: FaRupeeSign },
+  { id: 'opd', label: 'Appointments & OPD', icon: FaUserMd },
+  { id: 'pharmacy', label: 'Pharmacy Performance', icon: FaPills },
+  { id: 'commissions', label: 'Referral Commissions', icon: FaHandHoldingUsd },
 ];
 
 const SummaryCard = ({ title, value, change, changeType, icon: Icon, color }) => (
@@ -66,6 +66,40 @@ const SummaryCard = ({ title, value, change, changeType, icon: Icon, color }) =>
         <Icon className="text-xl text-white" />
       </div>
     </div>
+  </div>
+);
+
+const DetailTable = ({ title, columns = [], rows = [], emptyText = 'No data available' }) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+    {rows.length === 0 ? (
+      <p className="text-sm text-gray-500">{emptyText}</p>
+    ) : (
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-100">
+              {columns.map((c) => (
+                <th key={c.key} className="text-left py-2.5 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr key={idx} className="border-b border-gray-50 last:border-b-0">
+                {columns.map((c) => (
+                  <td key={c.key} className="py-2.5 px-2 text-sm text-gray-700">
+                    {c.render ? c.render(r) : (r[c.key] ?? '-')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
   </div>
 );
 
@@ -280,16 +314,22 @@ export default function Reports() {
   };
 
   // Commission breakdown chart
+  const byLabAmount = (report.byLab || []).reduce((sum, l) => sum + (Number(l.amount) || Number(l._sum?.amount) || 0), 0);
+  const byAgentAmount = (report.byAgent || []).reduce((sum, a) => sum + (Number(a.amount) || Number(a._sum?.amount) || 0), 0);
+  const pendingCommissionAmount = Number(report.summary?.pendingAmount || 0);
+  const totalCommissionAmount = Number(report.summary?.totalCommission || 0);
+  const paidCommissionAmount = Math.max(0, totalCommissionAmount - pendingCommissionAmount);
+
   const commissionBreakdownData = {
-    labels: ['Doctors', 'Agents', 'Labs', 'Others'],
+    labels: ['Labs', 'Agents', 'Pending', 'Paid'],
     datasets: [
       {
-        data: report.breakdown || [45, 25, 20, 10],
+        data: [byLabAmount, byAgentAmount, pendingCommissionAmount, paidCommissionAmount],
         backgroundColor: [
           'rgba(59, 130, 246, 0.8)',
+          'rgba(139, 92, 246, 0.8)',
+          'rgba(245, 158, 11, 0.8)',
           'rgba(16, 185, 129, 0.8)',
-          'rgba(251, 146, 60, 0.8)',
-          'rgba(168, 85, 247, 0.8)',
         ],
         borderWidth: 0,
       },
@@ -385,6 +425,42 @@ export default function Reports() {
                 <Line data={salesChartData} options={lineChartOptions} />
               </div>
             </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <DetailTable
+                title="Billing Type Breakdown"
+                columns={[
+                  { key: 'type', label: 'Type' },
+                  { key: 'count', label: 'Bills', render: (r) => r._count || 0 },
+                  { key: 'amount', label: 'Amount', render: (r) => formatCurrency(r._sum?.totalAmount || 0) },
+                ]}
+                rows={report.byType || []}
+                emptyText="No billing data in selected period"
+              />
+              <DetailTable
+                title="Collection by Payment Method"
+                columns={[
+                  { key: 'method', label: 'Method' },
+                  { key: 'count', label: 'Transactions', render: (r) => r._count || 0 },
+                  { key: 'amount', label: 'Collected', render: (r) => formatCurrency(r._sum?.amount || 0) },
+                ]}
+                rows={report.byPaymentMethod || []}
+                emptyText="No payment collections in selected period"
+              />
+              <div className="xl:col-span-2">
+                <DetailTable
+                  title="Top Patients by Billing"
+                  columns={[
+                    { key: 'patientCode', label: 'Patient ID', render: (r) => r.patientCode || '-' },
+                    { key: 'patientName', label: 'Patient Name' },
+                    { key: 'count', label: 'Bills' },
+                    { key: 'totalAmount', label: 'Total Amount', render: (r) => formatCurrency(r.totalAmount || 0) },
+                  ]}
+                  rows={report.topPatients || []}
+                  emptyText="No patient billing records in selected period"
+                />
+              </div>
+            </div>
           </>
         );
 
@@ -434,6 +510,27 @@ export default function Reports() {
                 <Bar data={opdChartData} options={barChartOptions} />
               </div>
             </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <DetailTable
+                title="Appointments by Status"
+                columns={[
+                  { key: 'status', label: 'Status' },
+                  { key: 'count', label: 'Count', render: (r) => r._count || 0 },
+                ]}
+                rows={report.byStatus || []}
+                emptyText="No appointment status data in selected period"
+              />
+              <DetailTable
+                title="Appointments by Type"
+                columns={[
+                  { key: 'type', label: 'Type' },
+                  { key: 'count', label: 'Count', render: (r) => r._count || 0 },
+                ]}
+                rows={report.byType || []}
+                emptyText="No appointment type data in selected period"
+              />
+            </div>
           </>
         );
 
@@ -482,6 +579,30 @@ export default function Reports() {
               <div className="h-80">
                 <Line data={pharmacyChartData} options={lineChartOptions} />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <DetailTable
+                title="Low Stock Items"
+                columns={[
+                  { key: 'code', label: 'Code' },
+                  { key: 'name', label: 'Product' },
+                  { key: 'quantity', label: 'Current Qty' },
+                  { key: 'minStock', label: 'Min Stock' },
+                ]}
+                rows={report.lowStock || []}
+                emptyText="No low-stock products in selected scope"
+              />
+              <DetailTable
+                title="Stock Movement Summary"
+                columns={[
+                  { key: 'type', label: 'Movement Type' },
+                  { key: 'count', label: 'Entries', render: (r) => r._count || 0 },
+                  { key: 'qty', label: 'Total Qty', render: (r) => Number(r._sum?.quantity || 0).toFixed(0) },
+                ]}
+                rows={report.stockMovement || []}
+                emptyText="No stock movement data in selected period"
+              />
             </div>
           </>
         );
@@ -553,7 +674,7 @@ export default function Reports() {
                       </div>
                     </div>
                     <span className="font-semibold text-green-600">
-                      {formatCurrency(report.byLab?.reduce((sum, l) => sum + (l._sum?.amount || 0), 0) || 0)}
+                      {formatCurrency((report.byLab || []).reduce((sum, l) => sum + (Number(l.amount) || Number(l._sum?.amount) || 0), 0))}
                     </span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -567,7 +688,7 @@ export default function Reports() {
                       </div>
                     </div>
                     <span className="font-semibold text-green-600">
-                      {formatCurrency(report.byAgent?.reduce((sum, a) => sum + (a._sum?.amount || 0), 0) || 0)}
+                      {formatCurrency((report.byAgent || []).reduce((sum, a) => sum + (Number(a.amount) || Number(a._sum?.amount) || 0), 0))}
                     </span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
@@ -587,6 +708,29 @@ export default function Reports() {
                 </div>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <DetailTable
+                title="Lab Commission Details"
+                columns={[
+                  { key: 'name', label: 'Lab Name' },
+                  { key: 'count', label: 'Records' },
+                  { key: 'amount', label: 'Commission', render: (r) => formatCurrency(Number(r.amount || r._sum?.amount || 0)) },
+                ]}
+                rows={report.byLab || []}
+                emptyText="No lab commission records in selected period"
+              />
+              <DetailTable
+                title="Agent Commission Details"
+                columns={[
+                  { key: 'name', label: 'Agent Name' },
+                  { key: 'count', label: 'Records' },
+                  { key: 'amount', label: 'Commission', render: (r) => formatCurrency(Number(r.amount || r._sum?.amount || 0)) },
+                ]}
+                rows={report.byAgent || []}
+                emptyText="No agent commission records in selected period"
+              />
+            </div>
           </>
         );
 
@@ -601,8 +745,8 @@ export default function Reports() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
-            <p className="text-gray-500 mt-1">View detailed reports and insights</p>
+            <h1 className="text-2xl font-bold text-gray-900">Clinic Reports</h1>
+            <p className="text-gray-500 mt-1">Connected financial, OPD, pharmacy, and commission reports for daily monitoring.</p>
           </div>
           <button
             onClick={handleExport}
