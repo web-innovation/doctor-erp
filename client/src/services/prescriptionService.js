@@ -122,6 +122,23 @@ const prescriptionService = {
     const response = await api.get('/prescriptions', { params: { patientId, ...params } });
     return response.data?.data || response.data;
   },
+
+  getDocuments: async (id) => {
+    const response = await api.get(`/prescriptions/${id}/documents`);
+    return response.data?.data || response.data;
+  },
+
+  uploadDocument: async (id, payload) => {
+    const formData = new FormData();
+    formData.append('file', payload.file);
+    if (payload.title) formData.append('title', payload.title);
+    if (payload.category) formData.append('category', payload.category);
+    if (payload.notes) formData.append('notes', payload.notes);
+    const response = await api.post(`/prescriptions/${id}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
 };
 
 export { prescriptionService };

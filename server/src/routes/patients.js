@@ -1,9 +1,16 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import multer from 'multer';
+import { persistPatientDocumentUpload } from '../services/patientDocumentStorageService.js';
 
 const router = express.Router();
 router.use(authenticate);
+
+const patientDocUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // Generate patient ID
 async function generatePatientId(clinicId) {
@@ -53,7 +60,18 @@ function parsePatientDate(value) {
 // GET / - List patients
 router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
   try {
-    const { search, page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+    const {
+      search,
+      gender,
+      fromDate,
+      toDate,
+      minAge,
+      maxAge,
+      page = 1,
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
@@ -67,6 +85,45 @@ router.get('/', checkPermission('patients', 'read'), async (req, res, next) => {
         { phone: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } }
       ];
+    }
+
+    if (gender) {
+      const normalizedGender = String(gender).trim().toUpperCase();
+      if (['MALE', 'FEMALE', 'OTHER'].includes(normalizedGender)) {
+        where.gender = normalizedGender;
+      }
+    }
+
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) {
+        const start = parsePatientDate(String(fromDate));
+        if (start) {
+          start.setHours(0, 0, 0, 0);
+          where.createdAt.gte = start;
+        }
+      }
+      if (toDate) {
+        const end = parsePatientDate(String(toDate));
+        if (end) {
+          end.setHours(0, 0, 0, 0);
+          end.setDate(end.getDate() + 1);
+          where.createdAt.lt = end;
+        }
+      }
+      if (!where.createdAt.gte && !where.createdAt.lt) {
+        delete where.createdAt;
+      }
+    }
+
+    if (minAge !== undefined || maxAge !== undefined) {
+      const parsedMinAge = minAge !== undefined && minAge !== '' ? parseInt(minAge, 10) : undefined;
+      const parsedMaxAge = maxAge !== undefined && maxAge !== '' ? parseInt(maxAge, 10) : undefined;
+      if ((parsedMinAge !== undefined && !Number.isNaN(parsedMinAge)) || (parsedMaxAge !== undefined && !Number.isNaN(parsedMaxAge))) {
+        where.age = {};
+        if (parsedMinAge !== undefined && !Number.isNaN(parsedMinAge)) where.age.gte = parsedMinAge;
+        if (parsedMaxAge !== undefined && !Number.isNaN(parsedMaxAge)) where.age.lte = parsedMaxAge;
+      }
     }
 
     const [patientsRaw, total] = await Promise.all([
@@ -257,6 +314,74 @@ router.get('/:id/vitals', checkPermission('patients', 'read'), async (req, res, 
       orderBy: { recordedAt: 'desc' }
     });
     res.json({ success: true, data: vitals });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /:id/documents - list patient documents
+router.get('/:id/documents', checkPermission('patients', 'read'), async (req, res, next) => {
+  try {
+    const patient = await prisma.patient.findFirst({
+      where: { id: req.params.id, clinicId: req.user.clinicId },
+      select: { id: true }
+    });
+    if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+
+    const documents = await prisma.patientDocument.findMany({
+      where: { patientId: req.params.id, clinicId: req.user.clinicId },
+      orderBy: { uploadedAt: 'desc' },
+      include: {
+        uploadedBy: { select: { id: true, name: true } },
+        prescription: { select: { id: true, prescriptionNo: true } }
+      }
+    });
+
+    res.json({ success: true, data: documents });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /:id/documents - upload patient document
+router.post('/:id/documents', checkPermission('patients', 'update'), patientDocUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
+
+    const patient = await prisma.patient.findFirst({
+      where: { id: req.params.id, clinicId: req.user.clinicId },
+      select: { id: true }
+    });
+    if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+
+    const stored = await persistPatientDocumentUpload({
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname || req.file.filename,
+      clinicId: req.user.clinicId,
+      patientId: req.params.id,
+      category: req.body?.category || 'document',
+    });
+
+    const created = await prisma.patientDocument.create({
+      data: {
+        title: req.body?.title || null,
+        category: req.body?.category || null,
+        notes: req.body?.notes || null,
+        fileName: req.file.originalname || req.file.filename,
+        filePath: stored.path,
+        mimeType: req.file.mimetype || null,
+        size: Number(req.file.size || 0),
+        clinicId: req.user.clinicId,
+        patientId: req.params.id,
+        uploadedById: req.user.id || null
+      },
+      include: {
+        uploadedBy: { select: { id: true, name: true } }
+      }
+    });
+
+    res.status(201).json({ success: true, data: created });
   } catch (error) {
     next(error);
   }

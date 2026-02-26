@@ -1,6 +1,6 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   FaArrowLeft,
@@ -15,6 +15,8 @@ import {
   FaStethoscope,
   FaNotesMedical,
   FaHeartbeat,
+  FaUpload,
+  FaSpinner,
 } from 'react-icons/fa';
 import { prescriptionService } from '../../services/prescriptionService';
 import settingsService from '../../services/settingsService';
@@ -24,7 +26,12 @@ import { renderPrescriptionPrintHtml } from '../../utils/printTemplates';
 export default function PrescriptionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [showSendModal, setShowSendModal] = useState(false);
+  const [docFile, setDocFile] = useState(null);
+  const [docTitle, setDocTitle] = useState('');
+  const [docCategory, setDocCategory] = useState('OTHER');
+  const [docNotes, setDocNotes] = useState('');
 
   // Fetch prescription details
   const { data: prescriptionData, isLoading, error } = useQuery({
@@ -42,6 +49,22 @@ export default function PrescriptionDetail() {
   });
 
   const prescription = prescriptionData?.data;
+  const prescriptionDocuments = Array.isArray(prescription?.documents) ? prescription.documents : [];
+
+  const uploadDocumentMutation = useMutation({
+    mutationFn: (payload) => prescriptionService.uploadDocument(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prescription', id] });
+      toast.success('Document uploaded');
+      setDocFile(null);
+      setDocTitle('');
+      setDocCategory('OTHER');
+      setDocNotes('');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to upload document');
+    },
+  });
 
   // Helper function to build vitals HTML
   const buildVitalsHtml = (vitals) => {
@@ -50,7 +73,7 @@ export default function PrescriptionDetail() {
     let vitalsItems = '';
     if (vitals.bp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.bp}</div><div class="label">BP (mmHg)</div></div>`;
     if (vitals.pulse) vitalsItems += `<div class="vital-item"><div class="value">${vitals.pulse}</div><div class="label">Pulse (bpm)</div></div>`;
-    if (vitals.temp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.temp}</div><div class="label">Temp (Â°F)</div></div>`;
+    if (vitals.temp) vitalsItems += `<div class="vital-item"><div class="value">${vitals.temp}</div><div class="label">Temp (°F)</div></div>`;
     if (vitals.spo2) vitalsItems += `<div class="vital-item"><div class="value">${vitals.spo2}%</div><div class="label">SpO2</div></div>`;
     if (vitals.weight) vitalsItems += `<div class="vital-item"><div class="value">${vitals.weight}</div><div class="label">Weight (kg)</div></div>`;
 
@@ -93,7 +116,7 @@ export default function PrescriptionDetail() {
 
     return `
       <div class="section">
-        <div class="section-title">â„ž Medicines</div>
+        <div class="section-title">℞ Medicines</div>
         <table>
           <thead>
             <tr>
@@ -171,6 +194,19 @@ export default function PrescriptionDetail() {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
+    });
+  };
+
+  const submitDocument = () => {
+    if (!docFile) {
+      toast.error('Please select a file');
+      return;
+    }
+    uploadDocumentMutation.mutate({
+      file: docFile,
+      title: docTitle,
+      category: docCategory,
+      notes: docNotes,
     });
   };
 
@@ -289,7 +325,7 @@ export default function PrescriptionDetail() {
                 {vitals.temp && (
                   <div className="bg-gray-50 p-3 rounded-lg">
                     <p className="text-xs text-gray-500">Temperature</p>
-                    <p className="text-lg font-semibold text-gray-900">{vitals.temp}Â°F</p>
+                    <p className="text-lg font-semibold text-gray-900">{vitals.temp}°F</p>
                   </div>
                 )}
                 {vitals.spo2 && (
@@ -431,6 +467,72 @@ export default function PrescriptionDetail() {
             </div>
           )}
 
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-2 text-indigo-600 mb-4">
+              <FaNotesMedical />
+              <h2 className="text-lg font-semibold">Supporting Documents</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <input
+                type="file"
+                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+              />
+              <input
+                type="text"
+                value={docTitle}
+                onChange={(e) => setDocTitle(e.target.value)}
+                placeholder="Title (optional)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+              <select
+                value={docCategory}
+                onChange={(e) => setDocCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="LAB_REPORT">Lab Report</option>
+                <option value="ULTRASOUND">Ultrasound</option>
+                <option value="PRESCRIPTION">Prescription</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <input
+                type="text"
+                value={docNotes}
+                onChange={(e) => setDocNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="flex justify-end mb-4">
+              <button
+                type="button"
+                onClick={submitDocument}
+                disabled={uploadDocumentMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {uploadDocumentMutation.isPending ? <FaSpinner className="animate-spin" /> : <FaUpload />}
+                Upload
+              </button>
+            </div>
+            {prescriptionDocuments.length > 0 ? (
+              <div className="space-y-2">
+                {prescriptionDocuments.map((doc) => (
+                  <a
+                    key={doc.id}
+                    href={doc.filePath}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"
+                  >
+                    <p className="font-medium text-gray-900">{doc.title || doc.fileName}</p>
+                    <p className="text-sm text-gray-500">{doc.category || 'OTHER'} � {formatDate(doc.uploadedAt)}</p>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500">No documents uploaded for this prescription.</p>
+            )}
+          </div>
           {/* Advice Card */}
           {prescription.advice && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -505,3 +607,5 @@ export default function PrescriptionDetail() {
     </div>
   );
 }
+
+

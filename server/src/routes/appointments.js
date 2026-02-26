@@ -77,7 +77,7 @@ function parseDateInputToDate(value) {
 // GET / - List appointments
 router.get('/', checkPermission('appointments', 'read'), async (req, res, next) => {
   try {
-    const { date, startDate, endDate, status, patientId, search, page = 1, limit = 20, sortBy = 'date', sortOrder = 'desc' } = req.query;
+    const { date, startDate, endDate, status, type, patientId, search, page = 1, limit = 20, sortBy = 'date', sortOrder = 'desc' } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skip = (pageNum - 1) * limitNum;
@@ -109,6 +109,7 @@ router.get('/', checkPermission('appointments', 'read'), async (req, res, next) 
     }
     
     if (status) where.status = status;
+    if (type) where.type = String(type).toUpperCase();
     if (patientId === 'me') {
       // Resolve mobile 'me' to linked Patient using phone/email variants
       const preferredPatientId = req.headers['x-patient-id'] || req.query?.patientProfileId || null;

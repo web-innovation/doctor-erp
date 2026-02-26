@@ -4,9 +4,16 @@ import { authenticate, checkPermission } from '../middleware/auth.js';
 import emailService from '../services/emailService.js';
 import whatsappService from '../services/whatsappService.js';
 import { logger } from '../config/logger.js';
+import multer from 'multer';
+import { persistPatientDocumentUpload } from '../services/patientDocumentStorageService.js';
 
 const router = express.Router();
 router.use(authenticate);
+
+const prescriptionDocUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // Generate prescription number
 async function generatePrescriptionNo() {
@@ -350,7 +357,13 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
             lab: { select: { id: true, name: true } }
           }
         },
-        appointment: true
+        appointment: true,
+        documents: {
+          include: {
+            uploadedBy: { select: { id: true, name: true } }
+          },
+          orderBy: { uploadedAt: 'desc' }
+        }
       }
     });
 
@@ -393,6 +406,80 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
     };
 
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /:id/documents - list prescription documents
+router.get('/:id/documents', checkPermission('prescriptions', 'read'), async (req, res, next) => {
+  try {
+    const prescription = await prisma.prescription.findFirst({
+      where: { id: req.params.id, clinicId: req.user.clinicId },
+      select: { id: true }
+    });
+    if (!prescription) return res.status(404).json({ success: false, message: 'Prescription not found' });
+
+    const documents = await prisma.patientDocument.findMany({
+      where: {
+        clinicId: req.user.clinicId,
+        prescriptionId: req.params.id
+      },
+      include: {
+        uploadedBy: { select: { id: true, name: true } },
+        patient: { select: { id: true, patientId: true, name: true } }
+      },
+      orderBy: { uploadedAt: 'desc' }
+    });
+
+    res.json({ success: true, data: documents });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /:id/documents - upload prescription support document
+router.post('/:id/documents', checkPermission('prescriptions', 'update'), prescriptionDocUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
+
+    const prescription = await prisma.prescription.findFirst({
+      where: { id: req.params.id, clinicId: req.user.clinicId },
+      select: { id: true, patientId: true }
+    });
+    if (!prescription) return res.status(404).json({ success: false, message: 'Prescription not found' });
+
+    const stored = await persistPatientDocumentUpload({
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname || req.file.filename,
+      clinicId: req.user.clinicId,
+      patientId: prescription.patientId,
+      prescriptionId: prescription.id,
+      category: req.body?.category || 'document',
+    });
+
+    const created = await prisma.patientDocument.create({
+      data: {
+        title: req.body?.title || null,
+        category: req.body?.category || null,
+        notes: req.body?.notes || null,
+        fileName: req.file.originalname || req.file.filename,
+        filePath: stored.path,
+        mimeType: req.file.mimetype || null,
+        size: Number(req.file.size || 0),
+        clinicId: req.user.clinicId,
+        patientId: prescription.patientId,
+        prescriptionId: prescription.id,
+        uploadedById: req.user.id || null
+      },
+      include: {
+        uploadedBy: { select: { id: true, name: true } },
+        patient: { select: { id: true, patientId: true, name: true } }
+      }
+    });
+
+    res.status(201).json({ success: true, data: created });
   } catch (error) {
     next(error);
   }

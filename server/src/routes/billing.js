@@ -170,6 +170,123 @@ async function postBillPaymentGstEntries(tx, {
   });
 }
 
+function postSignedLedgerEntry(tx, { clinicId, account, accountId, signedAmount, refType, refId, note }) {
+  const amt = Number(signedAmount || 0);
+  if (!Number.isFinite(amt) || Math.abs(amt) < 0.0001) return null;
+  return tx.ledgerEntry.create({
+    data: {
+      clinicId,
+      account,
+      accountId,
+      type: amt >= 0 ? 'DEBIT' : 'CREDIT',
+      amount: Math.abs(amt),
+      refType,
+      refId,
+      note
+    }
+  });
+}
+
+async function postBillRecalculationAdjustmentEntries(tx, {
+  clinicId,
+  billId,
+  billNo,
+  oldTotalAmount,
+  oldTaxAmount,
+  oldPaidAmount,
+  newTotalAmount,
+  newTaxAmount,
+  newPaidAmount,
+  userId
+}) {
+  const oldTotal = Number(oldTotalAmount || 0);
+  const newTotal = Number(newTotalAmount || 0);
+  const oldTax = Number(oldTaxAmount || 0);
+  const newTax = Number(newTaxAmount || 0);
+  const oldPaid = Number(oldPaidAmount || 0);
+  const newPaid = Number(newPaidAmount || 0);
+
+  const oldTaxable = Math.max(0, oldTotal - oldTax);
+  const newTaxable = Math.max(0, newTotal - newTax);
+
+  const deltaAr = Number((newTotal - oldTotal).toFixed(2));
+  const deltaRevenue = Number((newTaxable - oldTaxable).toFixed(2));
+  const deltaTax = Number((newTax - oldTax).toFixed(2));
+
+  if (deltaAr !== 0 || deltaRevenue !== 0 || deltaTax !== 0) {
+    const arAcct = await ensureAccount(tx, clinicId, 'Accounts Receivable', 'ASSET', userId);
+    const revenueAcct = await ensureAccount(tx, clinicId, 'Billing Revenue', 'REVENUE', userId);
+    const gstOutputAcct = await ensureAccount(tx, clinicId, 'GST Output', 'LIABILITY', userId);
+
+    if (deltaAr !== 0) {
+      await postSignedLedgerEntry(tx, {
+        clinicId,
+        account: arAcct.name,
+        accountId: arAcct.id,
+        signedAmount: deltaAr,
+        refType: 'BILL_ADJUSTMENT',
+        refId: billId,
+        note: `Bill ${billNo} receivable adjustment`
+      });
+    }
+    if (deltaRevenue !== 0) {
+      await postSignedLedgerEntry(tx, {
+        clinicId,
+        account: revenueAcct.name,
+        accountId: revenueAcct.id,
+        // Revenue normally increases on credit, so reverse sign for signed debit helper.
+        signedAmount: -deltaRevenue,
+        refType: 'BILL_ADJUSTMENT',
+        refId: billId,
+        note: `Bill ${billNo} revenue adjustment`
+      });
+    }
+    if (deltaTax !== 0) {
+      await postSignedLedgerEntry(tx, {
+        clinicId,
+        account: gstOutputAcct.name,
+        accountId: gstOutputAcct.id,
+        // GST output increases on credit.
+        signedAmount: -deltaTax,
+        refType: 'BILL_GST_ADJUSTMENT',
+        refId: billId,
+        note: `Bill ${billNo} GST output adjustment`
+      });
+    }
+  }
+
+  // If payment already exists, adjust recognized GST payable proportionately.
+  const oldRecognizedTax = oldTotal > 0 ? (oldTax * Math.min(oldPaid, oldTotal)) / oldTotal : 0;
+  const newRecognizedTax = newTotal > 0 ? (newTax * Math.min(newPaid, newTotal)) / newTotal : 0;
+  const recognizedTaxDelta = Number((newRecognizedTax - oldRecognizedTax).toFixed(2));
+
+  if (recognizedTaxDelta !== 0) {
+    const gstOutputAcct = await ensureAccount(tx, clinicId, 'GST Output', 'LIABILITY', userId);
+    const gstPayableAcct = await ensureAccount(tx, clinicId, 'GST Payable', 'LIABILITY', userId);
+
+    await postSignedLedgerEntry(tx, {
+      clinicId,
+      account: gstOutputAcct.name,
+      accountId: gstOutputAcct.id,
+      signedAmount: recognizedTaxDelta,
+      refType: 'BILL_PAYMENT_GST_ADJUSTMENT',
+      refId: billId,
+      note: `GST recognized adjustment for ${billNo}`
+    });
+
+    await postSignedLedgerEntry(tx, {
+      clinicId,
+      account: gstPayableAcct.name,
+      accountId: gstPayableAcct.id,
+      // GST payable increases on credit.
+      signedAmount: -recognizedTaxDelta,
+      refType: 'BILL_PAYMENT_GST_ADJUSTMENT',
+      refId: billId,
+      note: `GST payable adjustment for ${billNo}`
+    });
+  }
+}
+
 // Helper: Calculate GST
 const calculateTax = (amount, taxConfig) => {
   // Default to 0% GST if not specified (user can select GST rate)
@@ -421,6 +538,7 @@ async function deductPharmacyStockForBill(tx, { bill, clinicId, userId }) {
     qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + qty);
   });
   if (qtyByProduct.size === 0) return;
+  let totalInventoryValueReduced = 0;
 
   for (const [productId, qtyToDeduct] of qtyByProduct.entries()) {
     const product = await tx.pharmacyProduct.findUnique({ where: { id: productId } });
@@ -449,6 +567,9 @@ async function deductPharmacyStockForBill(tx, { bill, clinicId, userId }) {
     }
 
     const newQty = currentQty - qtyToDeduct;
+    const unitCost = Number(product.purchasePrice || 0);
+    const stockValueReduction = Number((unitCost * qtyToDeduct).toFixed(2));
+    if (stockValueReduction > 0) totalInventoryValueReduced += stockValueReduction;
     await tx.pharmacyProduct.update({
       where: { id: productId },
       data: { quantity: newQty }
@@ -476,6 +597,38 @@ async function deductPharmacyStockForBill(tx, { bill, clinicId, userId }) {
         refType: 'BILL_SALE',
         refId: bill.id,
         note: `Stock deducted for bill ${bill.billNo || bill.id}`
+      }
+    });
+  }
+
+  if (totalInventoryValueReduced > 0) {
+    const inventoryAcct = await ensureAccount(tx, clinicId, 'Inventory', 'ASSET', userId);
+    const cogsAcct = await ensureAccount(tx, clinicId, 'COGS - Pharmacy Sales', 'EXPENSE', userId);
+    const roundedValue = Number(totalInventoryValueReduced.toFixed(2));
+
+    await tx.ledgerEntry.create({
+      data: {
+        clinicId,
+        account: cogsAcct.name,
+        accountId: cogsAcct.id,
+        type: 'DEBIT',
+        amount: roundedValue,
+        refType: 'BILL_STOCK',
+        refId: bill.id,
+        note: `COGS recognized for bill ${bill.billNo || bill.id}`
+      }
+    });
+
+    await tx.ledgerEntry.create({
+      data: {
+        clinicId,
+        account: inventoryAcct.name,
+        accountId: inventoryAcct.id,
+        type: 'CREDIT',
+        amount: roundedValue,
+        refType: 'BILL_STOCK',
+        refId: bill.id,
+        note: `Inventory reduced for bill ${bill.billNo || bill.id}`
       }
     });
   }
@@ -1395,33 +1548,50 @@ router.put('/:id', authenticate, checkPermission('billing:edit'), async (req, re
         paymentStatus: newStatus,
       };
 
-      const updatedBill = await prisma.bill.update({
-        where: { id },
-        data: {
-          ...updateData,
-          items: {
-            deleteMany: {},
-            create: computed.processedItems.map(it => ({
-              description: it.description,
-              quantity: it.quantity,
-              unitPrice: it.unitPrice,
-              gstPercent: it.gstPercent,
-              amount: it.amount,
-              product: it.productId ? { connect: { id: it.productId } } : undefined,
-              lab: it.labId ? { connect: { id: it.labId } } : undefined,
-              labTest: it.labTestId ? { connect: { id: it.labTestId } } : undefined,
-              doctor: it.doctorId ? { connect: { id: it.doctorId } } : undefined,
-              discountPercent: it.discountPercent || 0,
-              discountAmount: it.discountAmount || 0,
-            }))
+      const updatedBill = await prisma.$transaction(async (tx) => {
+        const nextBill = await tx.bill.update({
+          where: { id },
+          data: {
+            ...updateData,
+            items: {
+              deleteMany: {},
+              create: computed.processedItems.map(it => ({
+                description: it.description,
+                quantity: it.quantity,
+                unitPrice: it.unitPrice,
+                gstPercent: it.gstPercent,
+                amount: it.amount,
+                product: it.productId ? { connect: { id: it.productId } } : undefined,
+                lab: it.labId ? { connect: { id: it.labId } } : undefined,
+                labTest: it.labTestId ? { connect: { id: it.labTestId } } : undefined,
+                doctor: it.doctorId ? { connect: { id: it.doctorId } } : undefined,
+                discountPercent: it.discountPercent || 0,
+                discountAmount: it.discountAmount || 0,
+              }))
+            }
+          },
+          include: {
+            patient: { select: { id: true, name: true, phone: true } },
+            doctor: { select: { id: true, name: true } },
+            items: true,
+            payments: true
           }
-        },
-        include: {
-          patient: { select: { id: true, name: true, phone: true } },
-          doctor: { select: { id: true, name: true } },
-          items: true,
-          payments: true
-        }
+        });
+
+        await postBillRecalculationAdjustmentEntries(tx, {
+          clinicId: req.user.clinicId,
+          billId: nextBill.id,
+          billNo: nextBill.billNo,
+          oldTotalAmount: bill.totalAmount,
+          oldTaxAmount: bill.taxAmount,
+          oldPaidAmount: bill.paidAmount,
+          newTotalAmount: nextBill.totalAmount,
+          newTaxAmount: nextBill.taxAmount,
+          newPaidAmount: nextBill.paidAmount,
+          userId: req.user.id
+        });
+
+        return nextBill;
       });
 
       if (isPaidBill) {

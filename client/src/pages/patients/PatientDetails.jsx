@@ -19,6 +19,8 @@ import {
   FaAllergies,
   FaNotesMedical,
   FaSpinner,
+  FaFileMedical,
+  FaUpload,
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
 import { prescriptionService } from '../../services/prescriptionService';
@@ -51,6 +53,7 @@ const tabs = [
   { id: 'overview', label: 'Overview', icon: FaUser },
   { id: 'history', label: 'History', icon: FaNotesMedical },
   { id: 'prescriptions', label: 'Prescriptions', icon: FaPrescriptionBottleAlt },
+  { id: 'documents', label: 'Documents', icon: FaFileMedical },
   { id: 'bills', label: 'Bills', icon: FaFileInvoice },
   { id: 'vitals', label: 'Vitals', icon: FaChartLine },
 ];
@@ -63,6 +66,10 @@ export default function PatientDetails() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [showVitalsForm, setShowVitalsForm] = useState(false);
+  const [documentFile, setDocumentFile] = useState(null);
+  const [documentTitle, setDocumentTitle] = useState('');
+  const [documentCategory, setDocumentCategory] = useState('OTHER');
+  const [documentNotes, setDocumentNotes] = useState('');
   const [vitalsForm, setVitalsForm] = useState({
     bloodPressure: '',
     pulse: '',
@@ -154,6 +161,12 @@ export default function PatientDetails() {
     enabled: !!id && activeTab === 'history',
   });
 
+  const { data: documents } = useQuery({
+    queryKey: ['patientDocuments', id],
+    queryFn: () => patientService.getDocuments(id),
+    enabled: !!id && activeTab === 'documents',
+  });
+
   // Permission checks (call hooks unconditionally)
   const canCreatePrescription = useHasPerm('prescriptions:create', ['DOCTOR', 'ADMIN', 'SUPER_ADMIN']);
   const canCreateAppointment = useHasPerm('appointments:create', ['DOCTOR', 'SUPER_ADMIN', 'RECEPTIONIST']);
@@ -182,6 +195,21 @@ export default function PatientDetails() {
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Failed to update patient');
+    },
+  });
+
+  const uploadDocumentMutation = useMutation({
+    mutationFn: (payload) => patientService.uploadDocument(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patientDocuments', id] });
+      toast.success('Document uploaded');
+      setDocumentFile(null);
+      setDocumentTitle('');
+      setDocumentCategory('OTHER');
+      setDocumentNotes('');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to upload document');
     },
   });
 
@@ -301,6 +329,7 @@ export default function PatientDetails() {
   const prescriptionsList = Array.isArray(prescriptions)
     ? prescriptions
     : (Array.isArray(prescriptions?.data) ? prescriptions.data : []);
+  const documentsList = Array.isArray(documents) ? documents : (Array.isArray(documents?.data) ? documents.data : []);
 
   const getPrescriptionTitle = (prescription) => {
     const diagnosis = prescription?.diagnosis;
@@ -353,6 +382,19 @@ export default function PatientDetails() {
       </div>
     );
   }
+
+  const submitDocument = () => {
+    if (!documentFile) {
+      toast.error('Please select a file');
+      return;
+    }
+    uploadDocumentMutation.mutate({
+      file: documentFile,
+      title: documentTitle,
+      category: documentCategory,
+      notes: documentNotes,
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -618,6 +660,88 @@ export default function PatientDetails() {
                     </div>
                   ) : (
                     <p className="text-gray-500 text-center py-8">No prescriptions yet</p>
+                  )}
+                </div>
+              )}
+
+              {/* Bills Tab */}
+              {activeTab === 'documents' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Patient Documents</h3>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 mb-4">
+                    <p className="text-sm font-medium text-gray-700 mb-3">Upload supporting documents (lab report, ultrasound, referral, etc.)</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        type="file"
+                        onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                      />
+                      <input
+                        type="text"
+                        value={documentTitle}
+                        onChange={(e) => setDocumentTitle(e.target.value)}
+                        placeholder="Document title (optional)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                      <select
+                        value={documentCategory}
+                        onChange={(e) => setDocumentCategory(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                      >
+                        <option value="LAB_REPORT">Lab Report</option>
+                        <option value="ULTRASOUND">Ultrasound</option>
+                        <option value="PRESCRIPTION">Prescription</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={documentNotes}
+                        onChange={(e) => setDocumentNotes(e.target.value)}
+                        placeholder="Notes (optional)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div className="flex justify-end mt-3">
+                      <button
+                        type="button"
+                        onClick={submitDocument}
+                        disabled={uploadDocumentMutation.isPending}
+                        className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                      >
+                        {uploadDocumentMutation.isPending ? <FaSpinner className="animate-spin" /> : <FaUpload />}
+                        Upload
+                      </button>
+                    </div>
+                  </div>
+
+                  {documentsList.length > 0 ? (
+                    <div className="space-y-3">
+                      {documentsList.map((doc) => (
+                        <a
+                          key={doc.id}
+                          href={doc.filePath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-gray-900">{doc.title || doc.fileName}</p>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {doc.category || 'OTHER'} • {formatDate(doc.uploadedAt)}
+                              </p>
+                              {doc.notes ? <p className="text-sm text-gray-500 mt-1">{doc.notes}</p> : null}
+                            </div>
+                            <span className="text-sm text-blue-600">Open</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">No documents uploaded yet</p>
                   )}
                 </div>
               )}

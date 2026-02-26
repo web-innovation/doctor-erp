@@ -15,6 +15,7 @@ import {
   FaTrash,
   FaSearch,
   FaArrowLeft,
+  FaFileMedical,
 } from 'react-icons/fa';
 import { patientService } from '../../services/patientService';
 import { appointmentService } from '../../services/appointmentService';
@@ -459,6 +460,16 @@ export default function NewPrescription() {
   };
 
   const selectedPatient = watch('patient')?.patient;
+  const selectedPatientId = watch('patient')?.value;
+
+  const { data: patientDocumentsData } = useQuery({
+    queryKey: ['patient-documents-for-prescription', selectedPatientId],
+    queryFn: () => patientService.getDocuments(selectedPatientId),
+    enabled: !!selectedPatientId,
+  });
+  const patientDocuments = Array.isArray(patientDocumentsData)
+    ? patientDocumentsData
+    : (Array.isArray(patientDocumentsData?.data) ? patientDocumentsData.data : []);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -567,6 +578,33 @@ export default function NewPrescription() {
                     />
                   )}
                 />
+              </div>
+            )}
+
+            {selectedPatientId && (
+              <div className="mt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FaFileMedical className="text-blue-600" />
+                  <p className="text-sm font-semibold text-gray-800">Existing Patient Documents</p>
+                </div>
+                {patientDocuments.length > 0 ? (
+                  <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                    {patientDocuments.slice(0, 8).map((doc) => (
+                      <a
+                        key={doc.id}
+                        href={doc.filePath}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block text-sm border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"
+                      >
+                        <p className="font-medium text-gray-900">{doc.title || doc.fileName}</p>
+                        <p className="text-xs text-gray-500">{doc.category || 'OTHER'} • {new Date(doc.uploadedAt).toLocaleDateString('en-GB')}</p>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No previous documents uploaded for this patient.</p>
+                )}
               </div>
             )}
           </div>

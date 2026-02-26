@@ -44,6 +44,8 @@ export default function Patients() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(searchParams.get('action') === 'new');
   const [filters, setFilters] = useState({
     gender: '',
+    minAge: '',
+    maxAge: '',
     fromDate: '',
     toDate: '',
   });
@@ -133,7 +135,7 @@ export default function Patients() {
   };
 
   const clearFilters = () => {
-    setFilters({ gender: '', fromDate: '', toDate: '' });
+    setFilters({ gender: '', minAge: '', maxAge: '', fromDate: '', toDate: '' });
     setCurrentPage(1);
   };
 
@@ -213,16 +215,16 @@ export default function Patients() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`inline-flex items-center gap-2 px-4 py-2.5 border rounded-lg font-medium transition ${
-                showFilters || filters.gender || filters.fromDate || filters.toDate
+                showFilters || filters.gender || filters.minAge || filters.maxAge || filters.fromDate || filters.toDate
                   ? 'border-blue-500 text-blue-600 bg-blue-50'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
               <FaFilter />
               Filters
-              {(filters.gender || filters.fromDate || filters.toDate) && (
+              {(filters.gender || filters.minAge || filters.maxAge || filters.fromDate || filters.toDate) && (
                 <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-                  {[filters.gender, filters.fromDate, filters.toDate].filter(Boolean).length}
+                  {[filters.gender, filters.minAge, filters.maxAge, filters.fromDate, filters.toDate].filter(Boolean).length}
                 </span>
               )}
             </button>
@@ -231,7 +233,7 @@ export default function Patients() {
           {/* Expanded Filters */}
           {showFilters && (
             <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Gender
@@ -242,10 +244,37 @@ export default function Patients() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">All</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
+                    <option value="MALE">Male</option>
+                    <option value="FEMALE">Female</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Min Age
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={filters.minAge}
+                    onChange={(e) => handleFilterChange('minAge', e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder="e.g. 18"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Age
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={filters.maxAge}
+                    onChange={(e) => handleFilterChange('maxAge', e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder="e.g. 60"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
 
                 <div>

@@ -165,6 +165,7 @@ if (getPurchaseUploadMode() === 'local') {
   app.use('/uploads/purchases', express.static(localUploadRoot));
   logger.info(`Serving purchase uploads from: ${localUploadRoot}`);
 }
+app.use('/uploads/patient-documents', express.static(path.join(__dirname, '../uploads/patient-documents')));
 
 // Request logging (for HIPAA audit trail)
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));

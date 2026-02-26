@@ -34,6 +34,7 @@ model User {
   sessions         Session[]
   auditLogs        AuditLog[]
   purchaseUploads  PurchaseUpload[]
+  patientDocuments PatientDocument[] @relation("PatientDocumentUploader")
   purchasesCreated Purchase[]
   // Accounts created by this user
   createdAccounts  Account[]
@@ -214,6 +215,7 @@ model Patient {
   prescriptions Prescription[]
   bills         Bill[]
   vitals        PatientVital[]
+  documents     PatientDocument[]
 
   @@index([clinicId])
   @@index([phone])
@@ -304,6 +306,7 @@ model Prescription {
   labTests      PrescriptionLabTest[]
   doctor        User?                  @relation("PrescriptionDoctor", fields: [doctorId], references: [id])
   doctorId      String?
+  documents     PatientDocument[]
 
   @@index([clinicId])
   @@index([patientId])
@@ -711,6 +714,31 @@ model Payment {
 
   @@index([clinicId])
   @@index([receivedAt])
+}
+
+model PatientDocument {
+  id             String   @id @default(uuid())
+  title          String?
+  category       String? // LAB_REPORT, ULTRASOUND, PRESCRIPTION, OTHER
+  notes          String?
+  fileName       String
+  filePath       String
+  mimeType       String?
+  size           Int?
+  uploadedAt     DateTime @default(now())
+
+  clinic         Clinic        @relation(fields: [clinicId], references: [id])
+  clinicId       String
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId      String
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: SetNull)
+  prescriptionId String?
+  uploadedBy     User?         @relation("PatientDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById   String?
+
+  @@index([clinicId, patientId])
+  @@index([prescriptionId])
+  @@index([uploadedAt])
 }
 
 // ==========================================

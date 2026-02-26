@@ -136,6 +136,23 @@ const patientService = {
     return response.data?.data || response.data;
   },
 
+  getDocuments: async (id) => {
+    const response = await api.get(`/patients/${id}/documents`);
+    return response.data?.data || response.data;
+  },
+
+  uploadDocument: async (id, payload) => {
+    const formData = new FormData();
+    formData.append('file', payload.file);
+    if (payload.title) formData.append('title', payload.title);
+    if (payload.category) formData.append('category', payload.category);
+    if (payload.notes) formData.append('notes', payload.notes);
+    const response = await api.post(`/patients/${id}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
   /**
    * Get recent patients
    * @param {number} [limit=5] - Number of patients to fetch

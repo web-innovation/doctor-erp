@@ -35,6 +35,12 @@ const statusTabs = [
   { key: 'CANCELLED', label: 'Cancelled' },
 ];
 
+const typeTabs = [
+  { key: 'all', label: 'All Types' },
+  { key: 'CONSULTATION', label: 'Consultation' },
+  { key: 'FOLLOW_UP', label: 'Follow-up' },
+];
+
 const appointmentTypes = [
   { value: 'CONSULTATION', label: 'Consultation' },
   { value: 'FOLLOW_UP', label: 'Follow-up' },
@@ -85,6 +91,7 @@ export default function Appointments() {
     searchParams.get('action') === 'new' || location.pathname.endsWith('/new')
   );
   const [activeStatus, setActiveStatus] = useState('all');
+  const [activeType, setActiveType] = useState('all');
   const [dateFilter, setDateFilter] = useState('today');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' }); // dd/mm/yyyy
   const [searchQuery, setSearchQuery] = useState('');
@@ -141,12 +148,13 @@ export default function Appointments() {
 
   // Fetch appointments
   const { data: appointmentsData, isLoading } = useQuery({
-    queryKey: ['appointments', currentPage, pageSize, activeStatus, dateFilter, customDateRange, searchQuery],
+    queryKey: ['appointments', currentPage, pageSize, activeStatus, activeType, dateFilter, customDateRange, searchQuery],
     queryFn: () =>
       appointmentService.getAppointments({
         page: currentPage,
         limit: pageSize,
         status: activeStatus === 'all' ? undefined : activeStatus,
+        type: activeType === 'all' ? undefined : activeType,
         search: searchQuery || undefined,
         ...getDateRange(),
       }),
@@ -428,6 +436,26 @@ export default function Appointments() {
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   activeStatus === tab.key
                     ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Appointment Type Tabs */}
+          <div className="flex gap-2 mt-3">
+            {typeTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setActiveType(tab.key);
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeType === tab.key
+                    ? 'bg-emerald-600 text-white'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
