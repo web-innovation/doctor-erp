@@ -110,7 +110,7 @@ export default function PrescriptionDetail() {
         <td>${med.dosage || '-'}</td>
         <td>${med.frequency || '-'}</td>
         <td>${med.duration || '-'}</td>
-        <td>${med.timing || '-'}</td>
+        <td>${formatMealTiming(med.timing)}</td>
       </tr>
     `).join('');
 
@@ -195,6 +195,16 @@ export default function PrescriptionDetail() {
       month: '2-digit',
       year: 'numeric',
     });
+  };
+
+  const formatMealTiming = (timing) => {
+    if (!timing) return '-';
+    const normalized = String(timing).trim().toLowerCase();
+    if (!normalized) return '-';
+    if (normalized === 'before' || normalized === 'before food' || normalized === 'before_food') return 'Before Food';
+    if (normalized === 'after' || normalized === 'after food' || normalized === 'after_food') return 'After Food';
+    if (normalized === 'with' || normalized === 'with food' || normalized === 'with_food') return 'With Food';
+    return String(timing);
   };
 
   const submitDocument = () => {
@@ -408,7 +418,7 @@ export default function PrescriptionDetail() {
                         <td className="py-3 px-4 text-gray-700">{med.dosage || '-'}</td>
                         <td className="py-3 px-4 text-gray-700">{med.frequency || '-'}</td>
                         <td className="py-3 px-4 text-gray-700">{med.duration || '-'}</td>
-                        <td className="py-3 px-4 text-gray-700">{med.timing || '-'}</td>
+                        <td className="py-3 px-4 text-gray-700">{formatMealTiming(med.timing)}</td>
                         <td className="py-3 px-4">
                           {med.isExternal ? (
                             <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">

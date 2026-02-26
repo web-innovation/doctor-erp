@@ -58,6 +58,15 @@ const tabs = [
   { id: 'vitals', label: 'Vitals', icon: FaChartLine },
 ];
 
+const tabDescriptions = {
+  overview: 'Profile and medical summary',
+  history: 'Visits and timeline',
+  prescriptions: 'Issued medicines',
+  documents: 'Reports and uploads',
+  bills: 'Invoices and payments',
+  vitals: 'Trends and records',
+};
+
 export default function PatientDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -495,21 +504,32 @@ export default function PatientDetails() {
           <div className="lg:col-span-2">
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-              <div className="flex overflow-x-auto">
+              <div className="p-3">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-6 py-4 font-medium whitespace-nowrap transition border-b-2 ${
+                    className={`text-left rounded-xl border px-3 py-3 transition min-h-[88px] ${
                       activeTab === tab.id
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                        ? 'border-blue-300 bg-blue-50 text-blue-700 shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50/40'
                     }`}
                   >
-                    <tab.icon />
-                    {tab.label}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${
+                          activeTab === tab.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        <tab.icon className="text-sm" />
+                      </span>
+                      <span className="font-semibold text-sm leading-5 break-words">{tab.label}</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-4 text-gray-500">{tabDescriptions[tab.id]}</p>
                   </button>
                 ))}
+                </div>
               </div>
             </div>
 

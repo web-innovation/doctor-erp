@@ -50,6 +50,16 @@ function formatCurrency(value) {
   return `INR ${n.toFixed(2)}`;
 }
 
+function formatMealTiming(value) {
+  if (!value) return '-';
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return '-';
+  if (normalized === 'before' || normalized === 'before food' || normalized === 'before_food') return 'Before Food';
+  if (normalized === 'after' || normalized === 'after food' || normalized === 'after_food') return 'After Food';
+  if (normalized === 'with' || normalized === 'with food' || normalized === 'with_food') return 'With Food';
+  return String(value);
+}
+
 function sanitizeCustomTemplate(html) {
   if (!html) return '';
   return String(html)
@@ -104,7 +114,7 @@ function buildBillMap(bill, clinic = {}) {
 function buildPrescriptionMap(prescription, clinic = {}) {
   const medicines = Array.isArray(prescription?.medicines) ? prescription.medicines : [];
   const medicineRows = medicines.map((med, idx) => (
-    `<tr><td>${idx + 1}</td><td>${escapeHtml(med?.medicineName || '-')}${med?.isExternal ? ' <span style="color:#b45309;font-size:11px;">(External Purchase)</span>' : ''}</td><td>${escapeHtml(med?.dosage || '-')}</td><td>${escapeHtml(med?.frequency || '-')}</td><td>${escapeHtml(med?.duration || '-')}</td><td>${escapeHtml(med?.timing || '-')}</td></tr>`
+    `<tr><td>${idx + 1}</td><td>${escapeHtml(med?.medicineName || '-')}${med?.isExternal ? ' <span style="color:#b45309;font-size:11px;">(External Purchase)</span>' : ''}</td><td>${escapeHtml(med?.dosage || '-')}</td><td>${escapeHtml(med?.frequency || '-')}</td><td>${escapeHtml(med?.duration || '-')}</td><td>${escapeHtml(formatMealTiming(med?.timing))}</td></tr>`
   )).join('');
 
   const diagnosis = Array.isArray(prescription?.diagnosis) ? prescription.diagnosis : [];
