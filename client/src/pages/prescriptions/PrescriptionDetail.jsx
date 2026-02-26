@@ -519,7 +519,7 @@ export default function PrescriptionDetail() {
                 {prescriptionDocuments.map((doc) => (
                   <a
                     key={doc.id}
-                    href={doc.filePath}
+                    href={doc.accessUrl || doc.filePath}
                     target="_blank"
                     rel="noreferrer"
                     className="block border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"

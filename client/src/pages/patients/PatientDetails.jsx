@@ -722,7 +722,7 @@ export default function PatientDetails() {
                       {documentsList.map((doc) => (
                         <a
                           key={doc.id}
-                          href={doc.filePath}
+                          href={doc.accessUrl || doc.filePath}
                           target="_blank"
                           rel="noreferrer"
                           className="block p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition"

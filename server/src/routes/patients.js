@@ -3,6 +3,7 @@ import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
 import multer from 'multer';
 import { persistPatientDocumentUpload } from '../services/patientDocumentStorageService.js';
+import { attachAccessUrlToDocuments } from '../services/patientDocumentAccessService.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -337,7 +338,8 @@ router.get('/:id/documents', checkPermission('patients', 'read'), async (req, re
       }
     });
 
-    res.json({ success: true, data: documents });
+    const docsWithAccess = await attachAccessUrlToDocuments(documents);
+    res.json({ success: true, data: docsWithAccess });
   } catch (error) {
     next(error);
   }

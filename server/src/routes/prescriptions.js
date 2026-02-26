@@ -6,6 +6,7 @@ import whatsappService from '../services/whatsappService.js';
 import { logger } from '../config/logger.js';
 import multer from 'multer';
 import { persistPatientDocumentUpload } from '../services/patientDocumentStorageService.js';
+import { attachAccessUrlToDocuments } from '../services/patientDocumentAccessService.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -405,6 +406,10 @@ router.get('/:id', checkPermission('prescriptions', 'read'), async (req, res, ne
       vitalsSnapshot: prescription.vitalsSnapshot ? JSON.parse(prescription.vitalsSnapshot) : null
     };
 
+    if (result.documents?.length) {
+      result.documents = await attachAccessUrlToDocuments(result.documents);
+    }
+
     res.json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -432,7 +437,8 @@ router.get('/:id/documents', checkPermission('prescriptions', 'read'), async (re
       orderBy: { uploadedAt: 'desc' }
     });
 
-    res.json({ success: true, data: documents });
+    const docsWithAccess = await attachAccessUrlToDocuments(documents);
+    res.json({ success: true, data: docsWithAccess });
   } catch (error) {
     next(error);
   }
