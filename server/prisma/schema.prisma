@@ -108,6 +108,7 @@ model Clinic {
   purchases         Purchase[]
   suppliers         Supplier[]
   purchaseUploads   PurchaseUpload[]
+  patientDocuments  PatientDocument[]
   stockTransactions StockTransaction[]
   ledgerEntries     LedgerEntry[]
   // Chart of accounts for this clinic
