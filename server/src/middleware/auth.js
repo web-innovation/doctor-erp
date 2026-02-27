@@ -224,6 +224,12 @@ export const PERMISSIONS = {
   TAX_SETTINGS: ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']
 };
 
+// Blogs
+PERMISSIONS['blogs:manage'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR'];
+PERMISSIONS['blogs:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR'];
+PERMISSIONS['blogs:update'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR'];
+PERMISSIONS['blogs:delete'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR'];
+
 // Purchases & OCR
 PERMISSIONS['purchases'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];
 PERMISSIONS['purchases:create'] = ['SUPER_ADMIN', 'ADMIN', 'DOCTOR', 'PHARMACIST', 'ACCOUNTANT', 'RECEPTIONIST'];

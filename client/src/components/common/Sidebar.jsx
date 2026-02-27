@@ -38,6 +38,7 @@ const menuItems = [
   { name: 'Labs', path: '/labs', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Agents & Commissions', path: '/agents', icon: UsersIcon, roles: ['admin', 'accountant', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Settings', path: '/settings', icon: Cog6ToothIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN'] },
+  { name: 'Blogs', path: '/blogs/manage', icon: DocumentTextIcon, roles: ['admin', 'doctor', 'DOCTOR', 'SUPER_ADMIN', 'ADMIN'] },
 ];
 
 // Admin menu items for Super Admin only
@@ -126,6 +127,7 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
     '/staff/leave': ['leaves:read', 'leaves:create', 'leaves:update'],
     '/reports': ['reports:opd', 'reports:collections'],
     '/settings': ['settings:clinic'],
+    '/blogs/manage': ['blogs:manage', 'blogs:create', 'blogs:update', 'blogs:delete'],
     // granular mappings for labs and agents
     '/labs-agents': ['labs:read', 'labs:create', 'labs:update'],
     '/labs': ['labs:read', 'labs:create', 'labs:update', 'labs:tests'],

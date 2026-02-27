@@ -32,6 +32,9 @@ import Reports from './pages/reports/Reports';
 import LabsAgents from './pages/labs-agents/LabsAgents';
 import LabTests from './pages/labs-agents/LabTests';
 import Settings from './pages/settings/Settings';
+import Blogs from './pages/blogs/Blogs';
+import BlogDetail from './pages/blogs/BlogDetail';
+import ManageBlogs from './pages/blogs/ManageBlogs';
 
 // Route-level code splitting to reduce homepage JS payload
 const Login = lazy(() => import('./pages/auth/Login'));
@@ -189,6 +192,8 @@ function App() {
       <Route path="/features/pharmacy-management-software-tricity" element={<PharmacyManagementTricity />} />
       <Route path="/features/online-report-dashboard-software-for-clinics-hospitals" element={<OnlineReportDashboardClinicsHospitals />} />
       <Route path="/features/smart-prescription-software-for-doctors" element={<SmartPrescriptionDoctors />} />
+      <Route path="/blogs" element={<Blogs />} />
+      <Route path="/blogs/:slug" element={<BlogDetail />} />
       
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
@@ -269,6 +274,7 @@ function App() {
         
         {/* Settings */}
         <Route path="/settings" element={<Settings />} />
+        <Route path="/blogs/manage" element={<ManageBlogs />} />
         
         {/* Profile - redirect to settings */}
         <Route path="/profile" element={<Navigate to="/settings" replace />} />

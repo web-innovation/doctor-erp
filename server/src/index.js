@@ -48,6 +48,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import clinicRoutes from './routes/clinic.js';
 import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
+import blogRoutes from './routes/blogs.js';
 
 const app = express();
 export const prisma = new PrismaClient();
@@ -196,6 +197,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/clinic', clinicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/blogs', blogRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

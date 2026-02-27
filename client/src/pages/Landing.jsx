@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   FaUserInjured,
   FaPrescriptionBottleAlt,
@@ -26,6 +27,7 @@ import {
   FaTimes,
 } from 'react-icons/fa';
 import SEO from '../components/seo/SEO';
+import blogService from '../services/blogService';
 
 const features = [
   {
@@ -192,6 +194,11 @@ const seoFaqs = [
 export default function Landing() {
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { data: recentBlogsResp } = useQuery({
+    queryKey: ['blogs-recent', 3],
+    queryFn: () => blogService.getRecent(3),
+  });
+  const recentBlogs = recentBlogsResp?.data || [];
 
   return (
     <div className="min-h-screen bg-white">
@@ -267,6 +274,7 @@ export default function Landing() {
               <a href="#features" className="text-gray-600 hover:text-blue-600 transition">Features</a>
               <a href="#why-choose" className="text-gray-600 hover:text-blue-600 transition">Why Choose Us</a>
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
+              <Link to="/blogs" className="text-gray-600 hover:text-blue-600 transition">Blogs</Link>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
             </div>
 
@@ -303,6 +311,13 @@ export default function Landing() {
                 >
                   Reports
                 </a>
+                <Link
+                  to="/blogs"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Blogs
+                </Link>
                 <Link
                   to="/login"
                   onClick={() => setMobileNavOpen(false)}
@@ -648,6 +663,45 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Recent Blogs */}
+      <section className="py-20 bg-white border-t border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Recent Blogs</h2>
+              <p className="text-gray-600 mt-2">Clinical workflow tips and product updates</p>
+            </div>
+            <Link to="/blogs" className="text-blue-600 hover:text-blue-700 font-medium">View all</Link>
+          </div>
+
+          {recentBlogs.length === 0 ? (
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-gray-600">
+              Blogs will appear here after publishing.
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-5">
+              {recentBlogs.map((post) => (
+                <article key={post.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden shadow-sm">
+                  {post.coverImage && (
+                    <img src={post.coverImage} alt={post.title} className="w-full h-44 object-cover" />
+                  )}
+                  <div className="p-4">
+                    <h3 className="text-lg font-semibold text-gray-900">{post.title}</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {post.clinic?.name || 'Docsy ERP'} · {new Date(post.publishedAt || post.createdAt).toLocaleDateString('en-GB')}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-3">{post.excerpt || ''}</p>
+                    <Link to={`/blogs/${post.slug}`} className="inline-flex mt-4 text-blue-600 hover:text-blue-700 font-medium">
+                      Read post
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* SEO Positioning Section */}
       <section className="py-20 bg-gray-50 border-y border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -802,6 +856,7 @@ export default function Landing() {
                 <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
                 <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
                 <li><Link to="/features/smart-prescription-software-for-doctors" className="text-gray-400 hover:text-white transition">Smart Prescription</Link></li>
+                <li><Link to="/blogs" className="text-gray-400 hover:text-white transition">Blogs</Link></li>
               </ul>
             </div>
             <div>
@@ -809,6 +864,7 @@ export default function Landing() {
               <ul className="space-y-2">
                 <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
                 <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
+                <li><Link to="/blogs" className="text-gray-400 hover:text-white transition">Blogs</Link></li>
                 <li><Link to="/login" className="text-gray-400 hover:text-white transition">Login</Link></li>
               </ul>
             </div>
