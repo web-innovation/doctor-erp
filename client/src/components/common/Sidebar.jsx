@@ -17,6 +17,7 @@ import {
   ClockIcon,
   CalendarIcon,
   BuildingOffice2Icon,
+  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
 import settingsService from '../../services/settingsService';
@@ -37,6 +38,7 @@ const menuItems = [
   { name: 'Reports', path: '/reports', icon: ChartBarIcon, roles: ['admin', 'doctor', 'accountant', 'DOCTOR', 'ACCOUNTANT', 'SUPER_ADMIN'] },
   { name: 'Labs', path: '/labs', icon: BeakerIcon, roles: ['admin', 'doctor', 'lab_technician', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
   { name: 'Agents & Commissions', path: '/agents', icon: UsersIcon, roles: ['admin', 'accountant', 'DOCTOR', 'SUPER_ADMIN', 'ACCOUNTANT'] },
+  { name: 'Help Center', path: '/help-center', icon: QuestionMarkCircleIcon, roles: ['admin', 'doctor', 'nurse', 'receptionist', 'DOCTOR', 'RECEPTIONIST', 'PHARMACIST', 'ACCOUNTANT', 'SUPER_ADMIN', 'STAFF', 'ADMIN'] },
   { name: 'Settings', path: '/settings', icon: Cog6ToothIcon, roles: ['admin', 'DOCTOR', 'SUPER_ADMIN'] },
   { name: 'Blogs', path: '/blogs/manage', icon: DocumentTextIcon, roles: ['admin', 'doctor', 'DOCTOR', 'SUPER_ADMIN', 'ADMIN'] },
 ];

@@ -62,6 +62,7 @@ export default function LabsAgents() {
   const [currentPage, setCurrentPage] = useState(1);
   const [commissionFilter, setCommissionFilter] = useState('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAddLabModalOpen, setIsAddLabModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -72,6 +73,13 @@ export default function LabsAgents() {
     handleSubmit,
     reset,
     formState: { errors },
+  } = useForm();
+
+  const {
+    register: registerLab,
+    handleSubmit: handleLabSubmit,
+    reset: resetLab,
+    formState: { errors: labErrors },
   } = useForm();
 
   const {
@@ -150,6 +158,19 @@ export default function LabsAgents() {
     },
   });
 
+  const createLabMutation = useMutation({
+    mutationFn: (data) => labsAgentsService.createLab(data),
+    onSuccess: () => {
+      toast.success('Lab added successfully');
+      queryClient.invalidateQueries(['labs']);
+      setIsAddLabModalOpen(false);
+      resetLab();
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to add lab');
+    },
+  });
+
   const updateAgentMutation = useMutation({
     mutationFn: ({ id, data }) => labsAgentsService.updateAgent(id, data),
     onSuccess: () => {
@@ -209,6 +230,18 @@ export default function LabsAgents() {
       commissionType: 'PERCENTAGE',
       commissionValue: data.commissionRate ? parseFloat(data.commissionRate) : 0,
       discountAllowed: data.discountAllowed ? parseFloat(data.discountAllowed) : 0,
+    });
+  };
+
+  const onAddLab = (data) => {
+    createLabMutation.mutate({
+      name: data.name,
+      address: data.address,
+      phone: data.phone,
+      email: data.email,
+      contactPerson: data.contactPerson,
+      commissionType: 'PERCENTAGE',
+      commissionValue: data.commissionValue ? parseFloat(data.commissionValue) : 0,
     });
   };
 
@@ -280,6 +313,7 @@ export default function LabsAgents() {
   const isLoading = labsLoading || agentsLoading || commissionsLoading;
 
   const canCreateAgent = useHasPerm('agents:create', ['SUPER_ADMIN', 'DOCTOR']);
+  const canCreateLab = useHasPerm('labs:manage', ['SUPER_ADMIN', 'DOCTOR', 'ADMIN']);
   const canUpdateAgent = useHasPerm('agents:update', ['SUPER_ADMIN', 'DOCTOR']);
   const canManageAgents = useHasPerm('agents:manage', ['SUPER_ADMIN', 'DOCTOR']);
   const canPayCommissions = useHasPerm('commissions:pay', ['SUPER_ADMIN', 'ACCOUNTANT']);
@@ -444,6 +478,14 @@ export default function LabsAgents() {
               <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
               <p className="text-gray-600 mt-1">{subtitle}</p>
             </div>
+            {activeTab === 'labs' && canCreateLab && (
+              <button
+                onClick={() => setIsAddLabModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-sky-700"
+              >
+                <FaPlus /> Add Lab
+              </button>
+            )}
             {activeTab === 'agents' && canCreateAgent && (
               <button
                 onClick={() => setIsAddModalOpen(true)}
@@ -588,6 +630,98 @@ export default function LabsAgents() {
             </div>
           )}
         </div>
+        <Modal
+          isOpen={isAddLabModalOpen}
+          onClose={() => {
+            setIsAddLabModalOpen(false);
+            resetLab();
+          }}
+          title="Add Lab"
+          size="lg"
+        >
+          <form onSubmit={handleLabSubmit(onAddLab)} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lab Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  {...registerLab('name', { required: 'Lab name is required' })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="Lab name"
+                />
+                {labErrors.name && <p className="mt-1 text-sm text-red-500">{labErrors.name.message}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                <input
+                  type="text"
+                  {...registerLab('contactPerson')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="Contact person"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  {...registerLab('phone')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="Phone number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  {...registerLab('email')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="Email"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  {...registerLab('commissionValue')}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="0"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <textarea
+                  {...registerLab('address')}
+                  rows={2}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  placeholder="Address"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddLabModalOpen(false);
+                  resetLab();
+                }}
+                className="px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createLabMutation.isPending}
+                className="px-4 py-2.5 bg-sky-600 text-white rounded-lg font-medium hover:bg-sky-700 disabled:opacity-50"
+              >
+                {createLabMutation.isPending ? 'Adding...' : 'Add Lab'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+
         <Modal
           isOpen={isAddModalOpen}
           onClose={() => {

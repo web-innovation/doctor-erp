@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import { sendSms } from '../services/smsService.js';
 import { requestOtp, verifyOtp, getOtpForDebug } from '../services/otpService.js';
 import emailService from '../services/emailService.js';
+import { SUPER_ADMIN_CONTROLS_KEY, normalizeAccessControls } from '../services/subscriptionService.js';
 
 const router = express.Router();
 
@@ -419,6 +420,13 @@ router.post('/register', [
           role: 'DOCTOR', // First user is doctor/owner
           clinicId: clinic.id
         }
+      });
+
+      const controls = normalizeAccessControls({}, clinic.createdAt);
+      await tx.clinicSettings.upsert({
+        where: { clinicId_key: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY } },
+        create: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY, value: JSON.stringify(controls) },
+        update: { value: JSON.stringify(controls), updatedAt: new Date() },
       });
 
       return { clinic, user };

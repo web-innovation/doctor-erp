@@ -275,6 +275,7 @@ export default function Landing() {
               <a href="#why-choose" className="text-gray-600 hover:text-blue-600 transition">Why Choose Us</a>
               <Link to="/pricing" className="text-gray-600 hover:text-blue-600 transition">Pricing</Link>
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
+              <Link to="/help-center" className="text-gray-600 hover:text-blue-600 transition">Help Center</Link>
               <Link to="/blogs" className="text-gray-600 hover:text-blue-600 transition">Blogs</Link>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
             </div>
@@ -320,6 +321,13 @@ export default function Landing() {
                   Pricing
                 </Link>
                 <Link
+                  to="/help-center"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Help Center
+                </Link>
+                <Link
                   to="/blogs"
                   onClick={() => setMobileNavOpen(false)}
                   className="px-2 py-2 text-gray-700 hover:text-blue-600"
@@ -357,6 +365,12 @@ export default function Landing() {
                 and seamless billing. Everything you need to run a successful clinic.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
+                <Link
+                  to="/register"
+                  className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
+                >
+                  Start with Free Trial
+                </Link>
                 <button
                   onClick={() => setShowDemoModal(true)}
                   className="inline-flex items-center justify-center border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition"
@@ -769,6 +783,12 @@ export default function Landing() {
             Join 500+ clinics already using Docsy ERP to deliver better patient care.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              to="/register"
+              className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
+            >
+              Start with Free Trial
+            </Link>
             <button
               onClick={() => setShowDemoModal(true)}
               className="inline-flex items-center justify-center border-2 border-gray-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:border-white transition"

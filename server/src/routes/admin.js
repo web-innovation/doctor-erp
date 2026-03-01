@@ -46,6 +46,34 @@ function parseJsonSafe(raw, fallback = null) {
 const normalizeAccessControls = (value, clinicCreatedAt) =>
   normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
+function mergeAccessControls(base, patch) {
+  const b = base && typeof base === 'object' ? base : {};
+  const p = patch && typeof patch === 'object' ? patch : {};
+
+  const merged = {
+    ...b,
+    ...p,
+    invoiceUploadLimit: {
+      ...(b.invoiceUploadLimit || {}),
+      ...((p.invoiceUploadLimit && typeof p.invoiceUploadLimit === 'object') ? p.invoiceUploadLimit : {}),
+    },
+    subscription: {
+      ...(b.subscription || {}),
+      ...((p.subscription && typeof p.subscription === 'object') ? p.subscription : {}),
+    },
+  };
+
+  if (Array.isArray(p.disabledPermissions)) {
+    merged.disabledPermissions = p.disabledPermissions;
+  } else if (Array.isArray(b.disabledPermissions)) {
+    merged.disabledPermissions = b.disabledPermissions;
+  } else {
+    merged.disabledPermissions = [];
+  }
+
+  return merged;
+}
+
 async function getClinicAccessControls(clinicId) {
   return getClinicControls(clinicId);
 }
@@ -357,11 +385,12 @@ router.get('/clinics/:id', async (req, res, next) => {
       getClinicAccessControls(clinic.id)
     ]);
 
+    const subscriptionSnapshot = getSubscriptionSnapshot(accessControls);
     res.json({
       success: true,
       data: {
         ...clinic,
-        accessControls,
+        accessControls: { ...accessControls, subscriptionSnapshot },
         stats: {
           totalPatients: clinic._count.patients,
           totalAppointments: clinic._count.appointments,
@@ -395,11 +424,63 @@ router.put('/clinics/:id/access-controls', async (req, res, next) => {
   try {
     const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
-    const controls = await saveClinicAccessControls(clinic.id, req.body || {});
+    const existingControls = await getClinicAccessControls(clinic.id);
+    const controls = await saveClinicAccessControls(clinic.id, mergeAccessControls(existingControls, req.body || {}));
     res.json({
       success: true,
       data: { ...controls, subscriptionSnapshot: getSubscriptionSnapshot(controls) },
       message: 'Access controls updated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /clinics/:id/subscription/extend - manually extend clinic subscription expiry
+router.post('/clinics/:id/subscription/extend', async (req, res, next) => {
+  try {
+    const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
+
+    const requestedDays = Number(req.body?.days);
+    const extensionDays = Number.isFinite(requestedDays) ? Math.floor(requestedDays) : 0;
+    if (extensionDays <= 0 || extensionDays > 3650) {
+      return res.status(400).json({
+        success: false,
+        message: 'days must be a positive integer between 1 and 3650'
+      });
+    }
+
+    const existingControls = await getClinicAccessControls(clinic.id);
+    const currentSnapshot = getSubscriptionSnapshot(existingControls);
+    const nowMs = Date.now();
+    const currentExpiryMs = new Date(currentSnapshot.expiresAt).getTime();
+    const baseMs = Math.max(nowMs, currentExpiryMs);
+    const extendedExpiry = new Date(baseMs + (extensionDays * 24 * 60 * 60 * 1000));
+
+    const requestedPlanCode = String(req.body?.planCode || '').trim().toUpperCase();
+    const validPlanCode = ['TRIAL', 'STARTER', 'GROWTH'].includes(requestedPlanCode)
+      ? requestedPlanCode
+      : undefined;
+
+    const controlsToSave = mergeAccessControls(existingControls, {
+      subscription: {
+        expiresAt: extendedExpiry.toISOString(),
+        ...(validPlanCode ? { planCode: validPlanCode } : {}),
+      }
+    });
+    const updatedControls = await saveClinicAccessControls(clinic.id, controlsToSave);
+    const updatedSnapshot = getSubscriptionSnapshot(updatedControls);
+
+    res.json({
+      success: true,
+      message: `Subscription extended by ${extensionDays} days`,
+      data: {
+        extensionDays,
+        previousSnapshot: currentSnapshot,
+        subscriptionSnapshot: updatedSnapshot,
+        accessControls: updatedControls
+      }
     });
   } catch (error) {
     next(error);
@@ -807,6 +888,13 @@ router.post('/clinics', async (req, res, next) => {
         }
       });
 
+      const controls = normalizeAccessControls({}, clinic.createdAt);
+      await tx.clinicSettings.upsert({
+        where: { clinicId_key: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY } },
+        create: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY, value: JSON.stringify(controls) },
+        update: { value: JSON.stringify(controls), updatedAt: new Date() }
+      });
+
       return { clinic, owner };
     });
 
@@ -1051,7 +1139,10 @@ router.get('/dashboard', async (req, res, next) => {
       newUsersThisMonth,
       newPatientsThisMonth,
       failedUploads24h,
-      draftPurchasesCount
+      draftPurchasesCount,
+      allClinicsLite,
+      controlsRows,
+      clinicLastLoginRows
     ] = await Promise.all([
       prisma.clinic.count(),
       prisma.clinic.count({ where: { isActive: true } }),
@@ -1090,8 +1181,75 @@ router.get('/dashboard', async (req, res, next) => {
       prisma.purchaseUpload.count({
         where: { status: 'FAILED', createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
       }),
-      prisma.purchase.count({ where: { status: 'DRAFT' } })
+      prisma.purchase.count({ where: { status: 'DRAFT' } }),
+      prisma.clinic.findMany({ select: { id: true, name: true, createdAt: true } }),
+      prisma.clinicSettings.findMany({
+        where: { key: SUPER_ADMIN_CONTROLS_KEY },
+        select: { clinicId: true, value: true }
+      }),
+      prisma.user.groupBy({
+        by: ['clinicId'],
+        where: {
+          role: { not: 'SUPER_ADMIN' },
+          clinicId: { not: null }
+        },
+        _max: { lastLogin: true }
+      })
     ]);
+
+    const controlsByClinicId = new Map();
+    controlsRows.forEach((row) => {
+      let parsed = {};
+      try {
+        parsed = row.value ? JSON.parse(row.value) : {};
+      } catch (_err) {
+        parsed = {};
+      }
+      controlsByClinicId.set(row.clinicId, normalizeAccessControls(parsed));
+    });
+
+    let underSubscriptionCount = 0;
+    let notOptedSubscriptionCount = 0;
+    let gracePeriodCount = 0;
+    let expiredSubscriptionCount = 0;
+    let trialCount = 0;
+
+    const lastLoginByClinicId = new Map();
+    clinicLastLoginRows.forEach((r) => {
+      if (r.clinicId) lastLoginByClinicId.set(r.clinicId, r._max?.lastLogin || null);
+    });
+
+    const nowMs = Date.now();
+    const inactivityByClinic = allClinicsLite.map((clinic) => {
+      const controls = controlsByClinicId.get(clinic.id) || normalizeAccessControls({}, clinic.createdAt);
+      const snapshot = getSubscriptionSnapshot(controls);
+      const planCode = String(snapshot.planCode || '').toUpperCase();
+
+      if (snapshot.status === 'GRACE') gracePeriodCount += 1;
+      if (snapshot.status === 'EXPIRED') expiredSubscriptionCount += 1;
+      if (planCode === 'TRIAL') {
+        trialCount += 1;
+        notOptedSubscriptionCount += 1;
+      } else if (snapshot.status === 'ACTIVE') {
+        underSubscriptionCount += 1;
+      }
+
+      const lastLogin = lastLoginByClinicId.get(clinic.id);
+      const lastActiveAt = lastLogin || clinic.createdAt;
+      const daysInactive = Math.max(0, Math.floor((nowMs - new Date(lastActiveAt).getTime()) / (24 * 60 * 60 * 1000)));
+      return {
+        id: clinic.id,
+        name: clinic.name,
+        lastActiveAt,
+        daysInactive,
+        subscriptionStatus: snapshot.status,
+        planCode: snapshot.planCode,
+      };
+    }).sort((a, b) => b.daysInactive - a.daysInactive);
+
+    const inactive7Days = inactivityByClinic.filter((c) => c.daysInactive >= 7).length;
+    const inactive30Days = inactivityByClinic.filter((c) => c.daysInactive >= 30).length;
+    const inactiveClinicsByDays = inactivityByClinic.slice(0, 15);
 
     // Get monthly growth data for charts (last 6 months) as per-month deltas
     const monthlyGrowth = [];
@@ -1136,7 +1294,18 @@ router.get('/dashboard', async (req, res, next) => {
           newUsersThisMonth,
           newPatientsThisMonth,
           failedUploads24h,
-          draftPurchasesCount
+          draftPurchasesCount,
+          subscription: {
+            underSubscriptionCount,
+            notOptedSubscriptionCount,
+            gracePeriodCount,
+            expiredSubscriptionCount,
+            trialCount,
+          },
+          inactiveUsage: {
+            inactive7Days,
+            inactive30Days,
+          }
         },
         infrastructure: {
           instanceUptimeSec: Math.floor(process.uptime()),
@@ -1156,7 +1325,8 @@ router.get('/dashboard', async (req, res, next) => {
           owner: c.users?.[0] || null,
           usersCount: c._count.users,
           patientsCount: c._count.patients
-        }))
+        })),
+        inactiveClinicsByDays
       }
     });
   } catch (error) {

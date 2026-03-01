@@ -22,9 +22,21 @@ const adminService = {
       newPatientsThisMonth: result.stats?.newPatientsThisMonth || 0,
       failedUploads24h: result.stats?.failedUploads24h || 0,
       draftPurchasesCount: result.stats?.draftPurchasesCount || 0,
+      subscription: result.stats?.subscription || {
+        underSubscriptionCount: 0,
+        notOptedSubscriptionCount: 0,
+        gracePeriodCount: 0,
+        expiredSubscriptionCount: 0,
+        trialCount: 0,
+      },
+      inactiveUsage: result.stats?.inactiveUsage || {
+        inactive7Days: 0,
+        inactive30Days: 0,
+      },
       monthlyGrowth: result.monthlyGrowth || [],
       recentClinics: result.recentClinics || [],
-      infrastructure: result.infrastructure || null
+      infrastructure: result.infrastructure || null,
+      inactiveClinicsByDays: result.inactiveClinicsByDays || [],
     };
   },
 
@@ -83,6 +95,11 @@ const adminService = {
 
   updateClinicAccessControls: async (clinicId, data) => {
     const response = await api.put(`/admin/clinics/${clinicId}/access-controls`, data);
+    return response.data;
+  },
+
+  extendClinicSubscription: async (clinicId, data) => {
+    const response = await api.post(`/admin/clinics/${clinicId}/subscription/extend`, data);
     return response.data;
   },
 

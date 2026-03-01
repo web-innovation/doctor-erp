@@ -165,6 +165,38 @@ const AdminDashboard = () => {
         />
       </div>
 
+      {/* Subscription & Engagement */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Under Subscription"
+          value={stats?.subscription?.underSubscriptionCount || 0}
+          icon={FiShield}
+          color="green"
+          subtitle="Active paid clinics"
+        />
+        <StatCard
+          title="Not Opted Subscription"
+          value={stats?.subscription?.notOptedSubscriptionCount || 0}
+          icon={FiAlertTriangle}
+          color="orange"
+          subtitle="Trial / not converted"
+        />
+        <StatCard
+          title="Grace Period Clinics"
+          value={stats?.subscription?.gracePeriodCount || 0}
+          icon={FiActivity}
+          color="indigo"
+          subtitle="Need renewal follow-up"
+        />
+        <StatCard
+          title="Inactive (30+ days)"
+          value={stats?.inactiveUsage?.inactive30Days || 0}
+          icon={FiTrendingDown}
+          color="red"
+          subtitle={`${stats?.inactiveUsage?.inactive7Days || 0} inactive 7+ days`}
+        />
+      </div>
+
       {/* Revenue and Appointments */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <StatCard
@@ -302,6 +334,44 @@ const AdminDashboard = () => {
           color="indigo"
           subtitle={`Draft purchases: ${stats?.draftPurchasesCount || 0}`}
         />
+      </div>
+
+      {/* Clinic Inactivity Table */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Clinic Inactivity (Days Since Last Use)</h2>
+          <Link to="/admin/clinics" className="text-purple-600 hover:text-purple-700 text-sm">View all clinics</Link>
+        </div>
+        {stats?.inactiveClinicsByDays?.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Clinic</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Plan</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Subscription Status</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Last Active</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Days Inactive</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.inactiveClinicsByDays.map((clinic) => (
+                  <tr key={clinic.id} className="border-b border-gray-50">
+                    <td className="py-2 text-sm text-gray-900">{clinic.name}</td>
+                    <td className="py-2 text-sm text-gray-600">{clinic.planCode || '-'}</td>
+                    <td className="py-2 text-sm text-gray-600">{clinic.subscriptionStatus || '-'}</td>
+                    <td className="py-2 text-sm text-gray-600">
+                      {clinic.lastActiveAt ? new Date(clinic.lastActiveAt).toLocaleDateString('en-GB') : '-'}
+                    </td>
+                    <td className="py-2 text-sm font-medium text-gray-900">{clinic.daysInactive ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm">No inactivity data available.</p>
+        )}
       </div>
 
       {/* Quick Actions */}

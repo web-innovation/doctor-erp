@@ -51,6 +51,8 @@ const ClinicDetail = () => {
     disabledPermissionsText: ''
   });
   const [savingControls, setSavingControls] = useState(false);
+  const [extensionDays, setExtensionDays] = useState('30');
+  const [extendingSubscription, setExtendingSubscription] = useState(false);
   const [setupFile, setSetupFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [lastImportResult, setLastImportResult] = useState(null);
@@ -199,6 +201,25 @@ const ClinicDetail = () => {
     }
   };
 
+  const handleExtendSubscription = async () => {
+    const days = Number(extensionDays);
+    if (!Number.isFinite(days) || days <= 0) {
+      alert('Please enter valid extension days');
+      return;
+    }
+    try {
+      setExtendingSubscription(true);
+      await adminService.extendClinicSubscription(id, { days: Math.floor(days) });
+      alert(`Subscription extended by ${Math.floor(days)} days`);
+      fetchClinic();
+    } catch (error) {
+      console.error('Failed to extend subscription:', error);
+      alert(error.response?.data?.message || 'Failed to extend subscription');
+    } finally {
+      setExtendingSubscription(false);
+    }
+  };
+
   const handleImportSetup = async (dryRun = false) => {
     if (!setupFile) {
       alert('Please select a CSV or XLSX file');
@@ -248,6 +269,8 @@ const ClinicDetail = () => {
   if (!clinic) {
     return null;
   }
+
+  const subscriptionSnapshot = clinic?.accessControls?.subscriptionSnapshot || null;
 
   return (
     <div className="space-y-6">
@@ -344,6 +367,50 @@ const ClinicDetail = () => {
         <div className="flex items-center gap-2">
           <FiSettings className="text-purple-600" />
           <h2 className="text-lg font-semibold text-gray-900">Clinic Access Controls</h2>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-gray-500">Plan</p>
+              <p className="text-sm font-semibold text-gray-900">{subscriptionSnapshot?.planCode || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Status</p>
+              <span className={`inline-flex mt-1 px-2 py-1 rounded-full text-xs font-medium ${
+                subscriptionSnapshot?.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                subscriptionSnapshot?.status === 'TRIAL' ? 'bg-blue-100 text-blue-700' :
+                subscriptionSnapshot?.status === 'GRACE' ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {subscriptionSnapshot?.status || '-'}
+              </span>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Expires On</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {subscriptionSnapshot?.expiresAt ? new Date(subscriptionSnapshot.expiresAt).toLocaleDateString('en-GB') : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Days To Expiry</p>
+              <p className="text-sm font-semibold text-gray-900">{subscriptionSnapshot?.daysToExpiry ?? '-'}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-3">
+            <Input
+              type="number"
+              min="1"
+              label="Extend Subscription (Days)"
+              value={extensionDays}
+              onChange={(e) => setExtensionDays(e.target.value)}
+            />
+            <Button onClick={handleExtendSubscription} loading={extendingSubscription}>
+              Extend Subscription
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Use this when clinic is in grace period or expired. Extension immediately updates expiry date.
+          </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input

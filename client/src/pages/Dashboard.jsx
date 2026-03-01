@@ -13,6 +13,7 @@ import {
   FaArrowRight,
   FaBell,
   FaChartLine,
+  FaBook,
 } from 'react-icons/fa';
 import {
   Chart as ChartJS,
@@ -113,6 +114,11 @@ export default function Dashboard() {
     ? normalizeRole(activeViewUser?.role || user?.role || 'STAFF')
     : (activeViewUser && activeViewUser.role) || (user && user.role) || 'STAFF';
   const isViewingAsAnother = !!(activeViewUser && activeViewUser.id && user && activeViewUser.id !== user.id);
+  const isClinicAdmin =
+    user?.isClinicAdmin === true ||
+    user?.clinicRole === 'ADMIN' ||
+    user?.isOwner === true ||
+    ['SUPER_ADMIN', 'ADMIN'].includes((user?.role || '').toString().toUpperCase());
 
   const hasPerm = (permKey) => {
     // Clinic admin (primary clinic doctor) should be able to see dashboard when NOT currently viewing-as another staff
@@ -368,10 +374,10 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions */}
-        {(hasPerm('appointments:create') || hasPerm('prescriptions:create') || hasPerm('patients:create')) && (
+        {(hasPerm('appointments:create') || hasPerm('prescriptions:create') || hasPerm('patients:create') || isClinicAdmin) && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-4">
               {hasPerm('appointments:create') && (
                 <QuickAction
                   icon={FaCalendarCheck}
@@ -394,6 +400,22 @@ export default function Dashboard() {
                   title="Add Patient"
                   to="/patients/new"
                   color="bg-green-500"
+                />
+              )}
+              {isClinicAdmin && (
+                <QuickAction
+                  icon={FaBook}
+                  title="Help Center"
+                  to="/help-center"
+                  color="bg-indigo-500"
+                />
+              )}
+              {isClinicAdmin && (
+                <QuickAction
+                  icon={FaBook}
+                  title="Quick Guide"
+                  to="/help-center#quick-guide"
+                  color="bg-slate-600"
                 />
               )}
             </div>

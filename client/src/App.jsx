@@ -10,6 +10,7 @@ import AuthLayout from './layouts/AuthLayout';
 // Landing Page (keep eagerly loaded for best first paint / SEO crawlability)
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
+import HelpCenter from './pages/HelpCenter';
 import Dashboard from './pages/Dashboard';
 import Patients from './pages/patients/Patients';
 import PatientDetails from './pages/patients/PatientDetails';
@@ -41,6 +42,7 @@ import ManageBlogs from './pages/blogs/ManageBlogs';
 const Login = lazy(() => import('./pages/auth/Login'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
+const Register = lazy(() => import('./pages/auth/Register'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const Clinics = lazy(() => import('./pages/admin/Clinics'));
@@ -195,12 +197,14 @@ function App() {
       <Route path="/features/online-report-dashboard-software-for-clinics-hospitals" element={<OnlineReportDashboardClinicsHospitals />} />
       <Route path="/features/smart-prescription-software-for-doctors" element={<SmartPrescriptionDoctors />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/help-center" element={<HelpCenter />} />
       <Route path="/blogs" element={<Blogs />} />
       <Route path="/blogs/:slug" element={<BlogDetail />} />
       
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
       </Route>
