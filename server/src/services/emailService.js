@@ -607,6 +607,15 @@ class EmailService {
    * Send password reset email
    */
   async sendPasswordReset(user, resetToken, resetUrl) {
+    // Backward compatibility: some callers pass (user, resetUrl)
+    let finalResetUrl = resetUrl;
+    if (!finalResetUrl && typeof resetToken === 'string' && /^https?:\/\//i.test(resetToken)) {
+      finalResetUrl = resetToken;
+    }
+    if (!finalResetUrl) {
+      throw new Error('Password reset URL is required');
+    }
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -631,11 +640,11 @@ class EmailService {
             <p>We received a request to reset your password. Click the button below to create a new password:</p>
             
             <p style="text-align: center;">
-              <a href="${resetUrl}" class="btn">Reset Password</a>
+              <a href="${finalResetUrl}" class="btn">Reset Password</a>
             </p>
             
             <p>Or copy and paste this link in your browser:</p>
-            <p style="word-break: break-all; background: #e2e8f0; padding: 10px; border-radius: 4px;">${resetUrl}</p>
+            <p style="word-break: break-all; background: #e2e8f0; padding: 10px; border-radius: 4px;">${finalResetUrl}</p>
             
             <div class="warning">
               <strong>⚠️ Security Notice:</strong>
@@ -659,10 +668,17 @@ class EmailService {
       to: user.email,
       subject: 'Password Reset Request - DocClinic',
       html,
-      text: `Password Reset\n\nDear ${user.name},\n\nClick this link to reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, please ignore this email.`,
+      text: `Password Reset\n\nDear ${user.name},\n\nClick this link to reset your password: ${finalResetUrl}\n\nThis link expires in 1 hour. If you didn't request this, please ignore this email.`,
       type: 'password_reset',
       userId: user.id,
     });
+  }
+
+  /**
+   * Compatibility wrapper used by auth routes
+   */
+  async sendPasswordResetEmail(user, resetUrl) {
+    return this.sendPasswordReset(user, resetUrl);
   }
 
   /**

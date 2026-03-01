@@ -7,5 +7,17 @@ Disallow: /admin/
 Disallow: /login
 Disallow: /register
 Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /dashboard
+Disallow: /patients
+Disallow: /appointments
+Disallow: /prescriptions
+Disallow: /pharmacy
+Disallow: /ledger
+Disallow: /billing
+Disallow: /staff
+Disallow: /reports
+Disallow: /settings
+Disallow: /blogs/manage
 
-Sitemap: https://docsyerp.com/sitemap.xml
+Sitemap: https://docsyerp.in/sitemap.xml
