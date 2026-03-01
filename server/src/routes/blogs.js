@@ -14,6 +14,11 @@ function slugify(input) {
     .replace(/^-|-$/g, '');
 }
 
+function estimateReadingMinutes(content) {
+  const words = String(content || '').trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 220));
+}
+
 function canManageBlogs(req) {
   const role = (req.user?.role || '').toUpperCase();
   if (role === 'SUPER_ADMIN') return true;
@@ -39,9 +44,16 @@ function serializeBlog(post) {
     id: post.id,
     title: post.title,
     slug: post.slug,
+    category: post.category,
     excerpt: post.excerpt,
     content: post.content,
     coverImage: post.coverImage,
+    coverImageAlt: post.coverImageAlt,
+    metaTitle: post.metaTitle,
+    metaDescription: post.metaDescription,
+    focusKeywords: post.focusKeywords,
+    canonicalUrl: post.canonicalUrl,
+    readingMinutes: post.readingMinutes || estimateReadingMinutes(post.content),
     isPublished: post.isPublished,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
@@ -88,6 +100,10 @@ router.get('/public', async (req, res, next) => {
         { title: { contains: search, mode: 'insensitive' } },
         { excerpt: { contains: search, mode: 'insensitive' } },
         { content: { contains: search, mode: 'insensitive' } },
+        { metaTitle: { contains: search, mode: 'insensitive' } },
+        { metaDescription: { contains: search, mode: 'insensitive' } },
+        { focusKeywords: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -175,25 +191,61 @@ router.post('/manage/posts', async (req, res, next) => {
     if (!canManageBlogs(req)) return res.status(403).json({ success: false, message: 'Insufficient permissions' });
     const title = String(req.body?.title || '').trim();
     const content = String(req.body?.content || '').trim();
+    const slugInput = String(req.body?.slug || '').trim();
+    const category = req.body?.category ? String(req.body.category).trim() : null;
     const excerptInput = String(req.body?.excerpt || '').trim();
     const coverImage = req.body?.coverImage ? String(req.body.coverImage).trim() : null;
+    const coverImageAlt = req.body?.coverImageAlt ? String(req.body.coverImageAlt).trim() : null;
+    const metaTitleInput = String(req.body?.metaTitle || '').trim();
+    const metaDescriptionInput = String(req.body?.metaDescription || '').trim();
+    const focusKeywordsInput = String(req.body?.focusKeywords || '').trim();
+    const canonicalUrlInput = String(req.body?.canonicalUrl || '').trim();
+    const readingMinutesInput = Number(req.body?.readingMinutes);
     const isPublished = !!req.body?.isPublished;
 
     if (!title) return res.status(400).json({ success: false, message: 'Title is required' });
     if (!content) return res.status(400).json({ success: false, message: 'Content is required' });
+    if (metaTitleInput && metaTitleInput.length > 70) {
+      return res.status(400).json({ success: false, message: 'Meta title should be at most 70 characters' });
+    }
+    if (metaDescriptionInput && metaDescriptionInput.length > 170) {
+      return res.status(400).json({ success: false, message: 'Meta description should be at most 170 characters' });
+    }
+    if (canonicalUrlInput) {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(canonicalUrlInput);
+      } catch (_err) {
+        return res.status(400).json({ success: false, message: 'Canonical URL must be a valid absolute URL' });
+      }
+    }
 
-    const slug = await generateUniqueSlug(title);
+    const slugCandidate = slugify(slugInput || title) || 'blog-post';
+    const slugExists = await prisma.blogPost.findUnique({ where: { slug: slugCandidate }, select: { id: true } });
+    const slug = slugExists ? await generateUniqueSlug(slugCandidate) : slugCandidate;
     const excerpt = excerptInput || content.slice(0, 200);
     const publishedAt = isPublished ? new Date() : null;
     const clinicId = req.user.role === 'SUPER_ADMIN' ? (req.body?.clinicId || null) : req.user.clinicId;
+    const readingMinutes = Number.isFinite(readingMinutesInput) && readingMinutesInput > 0
+      ? Math.floor(readingMinutesInput)
+      : estimateReadingMinutes(content);
+    const metaTitle = metaTitleInput || title;
+    const metaDescription = metaDescriptionInput || excerpt;
 
     const post = await prisma.blogPost.create({
       data: {
         title,
         slug,
+        category,
         excerpt,
         content,
         coverImage,
+        coverImageAlt,
+        metaTitle,
+        metaDescription,
+        focusKeywords: focusKeywordsInput || null,
+        canonicalUrl: canonicalUrlInput || null,
+        readingMinutes,
         isPublished,
         publishedAt,
         authorId: req.user.id,

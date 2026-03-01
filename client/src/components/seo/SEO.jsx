@@ -22,7 +22,16 @@ function upsertCanonical(url) {
   tag.setAttribute('href', url);
 }
 
-export default function SEO({ title, description, keywords = null, path = '/', schema = null, image = null }) {
+export default function SEO({
+  title,
+  description,
+  keywords = null,
+  path = '/',
+  schema = null,
+  image = null,
+  canonicalUrl = null,
+  ogType = 'website',
+}) {
   useEffect(() => {
     if (title) document.title = title;
     upsertMeta('name', 'description', description);
@@ -33,14 +42,14 @@ export default function SEO({ title, description, keywords = null, path = '/', s
     }
     upsertMeta('property', 'og:title', title);
     upsertMeta('property', 'og:description', description);
-    upsertMeta('property', 'og:type', 'website');
+    upsertMeta('property', 'og:type', ogType || 'website');
     upsertMeta('property', 'og:site_name', 'Docsy ERP');
     upsertMeta('name', 'twitter:card', 'summary_large_image');
     upsertMeta('name', 'twitter:title', title);
     upsertMeta('name', 'twitter:description', description);
 
     const origin = window.location.origin || 'https://docsyerp.in';
-    const canonical = `${origin}${path}`;
+    const canonical = canonicalUrl || `${origin}${path}`;
     upsertMeta('property', 'og:url', canonical);
     upsertCanonical(canonical);
 
@@ -65,7 +74,7 @@ export default function SEO({ title, description, keywords = null, path = '/', s
       const el = document.getElementById(schemaId);
       if (el) el.remove();
     };
-  }, [title, description, keywords, path, schema, image]);
+  }, [title, description, keywords, path, schema, image, canonicalUrl, ogType]);
 
   return null;
 }
