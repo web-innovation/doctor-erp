@@ -15,6 +15,7 @@ class EmailService {
     this.transporter = null;
     this.provider = null;
     this.initialized = false;
+    this.lastInitError = null;
   }
 
   /**
@@ -22,51 +23,64 @@ class EmailService {
    * @param {Object} config - Email configuration from database or env
    */
   async initialize(config = null) {
-    try {
-      // Try to get config from database first (clinic settings)
-      if (!config) {
-        config = await this.getEmailConfigFromDB();
-      }
+    const candidates = [];
+    if (config && config.provider) {
+      candidates.push({ source: 'provided', config });
+    } else {
+      const dbConfig = await this.getEmailConfigFromDB();
+      const envConfig = this.getEmailConfigFromEnv();
+      if (dbConfig?.provider) candidates.push({ source: 'database', config: dbConfig });
+      if (envConfig?.provider) candidates.push({ source: 'environment', config: envConfig });
+    }
 
-      // Fall back to environment variables
-      if (!config) {
-        config = this.getEmailConfigFromEnv();
-      }
-
-      if (!config || !config.provider) {
-        logger.warn('Email service: No configuration found. Email notifications disabled.');
-        return false;
-      }
-
-      this.provider = config.provider;
-
-      switch (config.provider) {
-        case 'gmail':
-          this.transporter = await this.createGmailTransporter(config);
-          break;
-        case 'gmail-app-password':
-          this.transporter = await this.createGmailAppPasswordTransporter(config);
-          break;
-        case 'outlook':
-          this.transporter = await this.createOutlookTransporter(config);
-          break;
-        case 'smtp':
-          this.transporter = await this.createSMTPTransporter(config);
-          break;
-        default:
-          throw new Error(`Unknown email provider: ${config.provider}`);
-      }
-
-      // Verify connection
-      await this.transporter.verify();
-      this.initialized = true;
-      logger.info(`Email service initialized with ${config.provider} provider`);
-      return true;
-    } catch (error) {
-      logger.error('Failed to initialize email service:', error);
+    if (!candidates.length) {
+      logger.warn('Email service: No configuration found. Email notifications disabled.');
       this.initialized = false;
+      this.lastInitError = 'No email configuration found';
       return false;
     }
+
+    let lastError = null;
+    for (const candidate of candidates) {
+      try {
+        const current = candidate.config;
+        this.provider = current.provider;
+
+        switch (current.provider) {
+          case 'gmail':
+            this.transporter = await this.createGmailTransporter(current);
+            break;
+          case 'gmail-app-password':
+            this.transporter = await this.createGmailAppPasswordTransporter(current);
+            break;
+          case 'outlook':
+            this.transporter = await this.createOutlookTransporter(current);
+            break;
+          case 'smtp':
+            this.transporter = await this.createSMTPTransporter(current);
+            break;
+          default:
+            throw new Error(`Unknown email provider: ${current.provider}`);
+        }
+
+        await this.transporter.verify();
+        this.initialized = true;
+        this.lastInitError = null;
+        logger.info(`Email service initialized with ${current.provider} provider (${candidate.source})`);
+        return true;
+      } catch (error) {
+        lastError = error;
+        logger.warn(`Email initialization failed using ${candidate.source} config`, {
+          provider: candidate.config?.provider,
+          error: error?.message || error
+        });
+      }
+    }
+
+    logger.error('Failed to initialize email service with all available configurations', lastError);
+    this.initialized = false;
+    this.lastInitError = lastError?.message || 'Unknown email initialization error';
+    return false;
   }
 
   /**
@@ -220,7 +234,11 @@ class EmailService {
    * Create standard SMTP transporter (SES, SendGrid, etc.)
    */
   async createSMTPTransporter(config) {
-    const { host, port, user, password, secure } = config;
+    const host = String(config.host || '').trim();
+    const port = Number(config.port) || 587;
+    const user = String(config.user || '').trim();
+    const password = String(config.password || '').trim();
+    const secure = Boolean(config.secure);
 
     if (!host || !user || !password) {
       throw new Error('SMTP requires host, user, and password');
@@ -259,13 +277,13 @@ class EmailService {
    * Get email configuration from environment variables
    */
   getEmailConfigFromEnv() {
-    const provider = process.env.EMAIL_PROVIDER;
+    const provider = String(process.env.EMAIL_PROVIDER || '').trim();
     if (!provider) return null;
 
     const baseConfig = {
       provider,
-      userEmail: process.env.EMAIL_USER || process.env.EMAIL_FROM_EMAIL || 'support@docyerp.in',
-      fromName: process.env.EMAIL_FROM_NAME || 'Docsy ERP',
+      userEmail: String(process.env.EMAIL_USER || process.env.EMAIL_FROM_EMAIL || 'support@docsyerp.in').trim(),
+      fromName: String(process.env.EMAIL_FROM_NAME || 'Docsy ERP').trim(),
     };
 
     if (provider === 'gmail') {
@@ -296,13 +314,14 @@ class EmailService {
     }
 
     if (provider === 'smtp') {
+      const smtpSecureRaw = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
       return {
         ...baseConfig,
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        user: process.env.SMTP_USER,
-        password: process.env.SMTP_PASSWORD,
-        secure: process.env.SMTP_SECURE === 'true',
+        host: String(process.env.SMTP_HOST || '').trim(),
+        port: parseInt(String(process.env.SMTP_PORT || '').trim(), 10) || 587,
+        user: String(process.env.SMTP_USER || '').trim(),
+        password: String(process.env.SMTP_PASSWORD || '').trim(),
+        secure: smtpSecureRaw === 'true' || smtpSecureRaw === '1' || smtpSecureRaw === 'yes',
       };
     }
 
@@ -318,14 +337,14 @@ class EmailService {
     if (!this.initialized) {
       const initialized = await this.initialize();
       if (!initialized) {
-        throw new Error('Email service not configured. Please set up email in settings.');
+        throw new Error(`Email service initialization failed: ${this.lastInitError || 'check SMTP provider configuration'}`);
       }
     }
 
     const { to, subject, text, html, attachments, userId, patientId, type } = options;
 
     try {
-      const fromEmail = process.env.EMAIL_FROM_EMAIL || process.env.EMAIL_USER || 'support@docyerp.in';
+      const fromEmail = process.env.EMAIL_FROM_EMAIL || process.env.EMAIL_USER || 'support@docsyerp.in';
       const fromName = process.env.EMAIL_FROM_NAME || 'Docsy ERP';
 
       const mailOptions = {
