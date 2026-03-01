@@ -75,6 +75,25 @@ function buildUserPayload(user) {
   };
 }
 
+function getFrontendBaseUrl(req) {
+  const envBase = process.env.FRONTEND_URL;
+  if (envBase) return String(envBase).replace(/\/+$/, '');
+  const host = req.get('host');
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0];
+  if (!host) return 'http://localhost:5173';
+  return `${proto}://${host}`;
+}
+
+function buildPasswordResetToken(user) {
+  const secret = process.env.PASSWORD_RESET_SECRET || process.env.JWT_SECRET;
+  const passwordChecksum = crypto.createHash('sha256').update(String(user.password || '')).digest('hex').slice(0, 16);
+  return jwt.sign(
+    { userId: user.id, purpose: 'password_reset', passwordChecksum },
+    secret,
+    { expiresIn: process.env.PASSWORD_RESET_EXPIRES_IN || '1h' }
+  );
+}
+
 // ===========================================
 // PASSWORD REQUIREMENTS (for UI)
 // ===========================================
@@ -413,6 +432,17 @@ router.post('/register', [
 
     logger.info(`New clinic registered: ${clinicName} by ${email}`);
 
+    try {
+      await emailService.sendWelcomeEmail({
+        id: result.user.id,
+        name: result.user.name,
+        email: result.user.email,
+        role: result.user.role,
+      });
+    } catch (e) {
+      logger.warn(`Welcome email failed for ${email}: ${e.message}`);
+    }
+
     res.status(201).json({
       message: 'Registration successful',
       token,
@@ -424,6 +454,104 @@ router.post('/register', [
         clinic: result.clinic
       }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===========================================
+// FORGOT PASSWORD
+// ===========================================
+router.post('/forgot-password', [
+  body('email').isEmail().withMessage('Valid email required'),
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const user = await prisma.user.findFirst({ where: { email } });
+
+    // Always return success-like message to prevent email enumeration
+    const genericMessage = 'If the account exists, a password reset link has been sent.';
+
+    if (!user || !user.isActive) {
+      return res.json({ success: true, message: genericMessage });
+    }
+
+    const token = buildPasswordResetToken(user);
+    const frontendBase = getFrontendBaseUrl(req);
+    const resetUrl = `${frontendBase}/reset-password?token=${encodeURIComponent(token)}`;
+
+    try {
+      await emailService.sendPasswordResetEmail(user, resetUrl);
+    } catch (e) {
+      logger.error(`Failed to send password reset email to ${email}: ${e.message}`);
+    }
+
+    return res.json({ success: true, message: genericMessage });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===========================================
+// RESET PASSWORD
+// ===========================================
+router.post('/reset-password', [
+  body('token').notEmpty().withMessage('Token is required'),
+  body('newPassword').notEmpty().withMessage('New password is required'),
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { token, newPassword } = req.body;
+    const secret = process.env.PASSWORD_RESET_SECRET || process.env.JWT_SECRET;
+    let decoded;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch (_err) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset link' });
+    }
+
+    if (!decoded?.userId || decoded?.purpose !== 'password_reset') {
+      return res.status(400).json({ success: false, message: 'Invalid reset token' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user || !user.isActive) {
+      return res.status(400).json({ success: false, message: 'Invalid reset token' });
+    }
+
+    const currentChecksum = crypto.createHash('sha256').update(String(user.password || '')).digest('hex').slice(0, 16);
+    if (decoded.passwordChecksum !== currentChecksum) {
+      return res.status(400).json({ success: false, message: 'Reset link is no longer valid' });
+    }
+
+    const passwordValidation = validatePassword(newPassword, { email: user.email, name: user.name });
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password does not meet security requirements',
+        details: passwordValidation.errors
+      });
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword }
+      });
+      await tx.session.deleteMany({ where: { userId: user.id } });
+    });
+
+    return res.json({ success: true, message: 'Password reset successful. Please login again.' });
   } catch (error) {
     next(error);
   }

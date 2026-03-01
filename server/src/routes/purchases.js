@@ -1,10 +1,16 @@
 import express from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
 import geminiAdapter from '../services/ocr/geminiAdapter.js';
 import openaiAdapter from '../services/ocr/openaiAdapter.js';
 import { ensurePurchaseUploadTempDir, persistPurchaseUpload } from '../services/purchaseStorageService.js';
+import {
+  getClinicControls,
+  getEffectiveUploadLimits,
+  getSubscriptionSnapshot,
+} from '../services/subscriptionService.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -103,25 +109,33 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const allowedMimeTypes = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+]);
 
-async function getClinicUploadLimits(clinicId) {
-  try {
-    const row = await prisma.clinicSettings.findUnique({
-      where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
-      select: { value: true }
-    });
-    const parsed = row?.value ? JSON.parse(row.value) : null;
-    const monthly = Number(parsed?.invoiceUploadLimit?.monthly);
-    const yearly = Number(parsed?.invoiceUploadLimit?.yearly);
-    return {
-      monthly: Number.isFinite(monthly) && monthly >= 0 ? monthly : null,
-      yearly: Number.isFinite(yearly) && yearly >= 0 ? yearly : null
-    };
-  } catch (_err) {
-    return { monthly: null, yearly: null };
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (!allowedMimeTypes.has(mime)) {
+      return cb(new Error('Unsupported file type. Use PDF, JPG, PNG, or WEBP.'));
+    }
+    return cb(null, true);
   }
-}
+});
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many invoice uploads. Please try again later.' },
+});
 
 function toNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -191,26 +205,44 @@ function mergePurchaseWithParsedJson(purchase, upload) {
 }
 
 // POST /upload - upload purchase invoice image/pdf
-router.post('/upload', checkPermission('purchases', 'create'), upload.single('file'), async (req, res, next) => {
+router.post('/upload', uploadRateLimiter, checkPermission('purchases', 'create'), upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     const clinicId = req.user.clinicId;
     const clinic = await prisma.clinic.findUnique({ where: { id: clinicId } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
 
-    const limits = await getClinicUploadLimits(clinicId);
-    if (limits.monthly !== null || limits.yearly !== null) {
+    const controls = await getClinicControls(clinicId);
+    const snapshot = getSubscriptionSnapshot(controls);
+    if (snapshot.isReadOnly) {
+      return res.status(403).json({
+        success: false,
+        message: 'Subscription expired. Account is in read-only mode. Please upgrade plan.'
+      });
+    }
+    const limits = getEffectiveUploadLimits(controls);
+    if (limits.trialTotal !== null || limits.monthly !== null || limits.yearly !== null) {
       const now = new Date();
       const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startYear = new Date(now.getFullYear(), 0, 1);
+      const trialStart = controls?.subscription?.trialStartAt ? new Date(controls.subscription.trialStartAt) : null;
       const [monthCount, yearCount] = await Promise.all([
         limits.monthly !== null ? prisma.purchaseUpload.count({ where: { clinicId, createdAt: { gte: startMonth } } }) : Promise.resolve(0),
         limits.yearly !== null ? prisma.purchaseUpload.count({ where: { clinicId, createdAt: { gte: startYear } } }) : Promise.resolve(0)
       ]);
+      const trialCount = (limits.trialTotal !== null && trialStart)
+        ? await prisma.purchaseUpload.count({ where: { clinicId, createdAt: { gte: trialStart } } })
+        : 0;
+      if (limits.trialTotal !== null && trialCount >= limits.trialTotal) {
+        return res.status(429).json({
+          success: false,
+          message: `Trial invoice upload limit reached (${limits.trialTotal}). Upgrade to continue uploading invoices.`
+        });
+      }
       if (limits.monthly !== null && monthCount >= limits.monthly) {
         return res.status(429).json({
           success: false,
-          message: `Monthly invoice upload limit reached (${limits.monthly}). Please contact Docsy ERP team to increase the limit.`
+          message: `Monthly invoice upload limit reached (${limits.monthly}). Upgrade your plan for higher limits.`
         });
       }
       if (limits.yearly !== null && yearCount >= limits.yearly) {

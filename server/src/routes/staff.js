@@ -3,6 +3,11 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
 import { logAuthEvent } from '../middleware/hipaaAudit.js';
+import {
+  getClinicControls,
+  getSubscriptionSnapshot,
+  getEffectiveStaffLimit,
+} from '../services/subscriptionService.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -22,19 +27,14 @@ function resolveClinicId(req) {
 }
 
 async function enforceClinicStaffLimit(clinicId) {
-  const controls = await prisma.clinicSettings.findUnique({
-    where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
-    select: { value: true }
-  }).catch(() => null);
-  if (!controls?.value) return;
-  let limit = null;
-  try {
-    const parsed = JSON.parse(controls.value);
-    const n = Number(parsed?.staffLimit || 0);
-    limit = Number.isFinite(n) && n > 0 ? n : null;
-  } catch (_err) {
-    limit = null;
+  const controls = await getClinicControls(clinicId);
+  const snapshot = getSubscriptionSnapshot(controls);
+  if (snapshot.isReadOnly) {
+    const err = new Error('Subscription expired. Account is in read-only mode. Please upgrade.');
+    err.statusCode = 403;
+    throw err;
   }
+  const limit = getEffectiveStaffLimit(controls);
   if (!limit) return;
   const existing = await prisma.user.count({
     where: { clinicId, role: { not: 'SUPER_ADMIN' } }

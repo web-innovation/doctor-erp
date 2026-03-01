@@ -1,31 +1,17 @@
 import express from 'express';
 import { prisma } from '../index.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
+import {
+  normalizeAccessControls as normalizeAccessControlsWithSubscription,
+  getClinicControls,
+  getSubscriptionSnapshot,
+} from '../services/subscriptionService.js';
 
 const router = express.Router();
 router.use(authenticate);
 
-function normalizeAccessControls(value) {
-  const src = value && typeof value === 'object' ? value : {};
-  const disabledPermissions = Array.isArray(src.disabledPermissions)
-    ? [...new Set(src.disabledPermissions.map((p) => String(p || '').trim()).filter(Boolean))]
-    : [];
-  const normalizeLimit = (v) => {
-    if (v === null || v === undefined || v === '') return null;
-    const n = Number(v);
-    if (!Number.isFinite(n)) return null;
-    if (n < 0) return null;
-    return n;
-  };
-  return {
-    disabledPermissions,
-    invoiceUploadLimit: {
-      monthly: normalizeLimit(src?.invoiceUploadLimit?.monthly),
-      yearly: normalizeLimit(src?.invoiceUploadLimit?.yearly)
-    },
-    staffLimit: normalizeLimit(src?.staffLimit)
-  };
-}
+const normalizeAccessControls = (value, clinicCreatedAt) =>
+  normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
 function resolveClinicIdForRead(req) {
   const userClinicId = req?.user?.clinicId;
@@ -291,17 +277,13 @@ router.get('/access-controls', async (req, res, next) => {
   try {
     const { clinicId, allowFallback } = resolveClinicIdForRead(req);
     if (!clinicId && allowFallback) {
-      return res.json({ success: true, data: normalizeAccessControls({}) });
+      const empty = normalizeAccessControls({});
+      return res.json({ success: true, data: { ...empty, subscriptionSnapshot: getSubscriptionSnapshot(empty) } });
     }
     if (!clinicId) return res.status(400).json({ success: false, message: 'clinicId is required' });
 
-    const row = await prisma.clinicSettings.findUnique({
-      where: { clinicId_key: { clinicId, key: 'super_admin_controls' } },
-      select: { value: true }
-    });
-    const parsed = row?.value ? JSON.parse(row.value) : null;
-    const data = normalizeAccessControls(parsed || {});
-    res.json({ success: true, data });
+    const data = await getClinicControls(clinicId);
+    res.json({ success: true, data: { ...data, subscriptionSnapshot: getSubscriptionSnapshot(data) } });
   } catch (error) {
     next(error);
   }

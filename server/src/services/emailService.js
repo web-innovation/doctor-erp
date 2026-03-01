@@ -264,8 +264,8 @@ class EmailService {
 
     const baseConfig = {
       provider,
-      userEmail: process.env.EMAIL_USER,
-      fromName: process.env.EMAIL_FROM_NAME || 'DocClinic',
+      userEmail: process.env.EMAIL_USER || process.env.EMAIL_FROM_EMAIL || 'support@docyerp.in',
+      fromName: process.env.EMAIL_FROM_NAME || 'Docsy ERP',
     };
 
     if (provider === 'gmail') {
@@ -325,8 +325,8 @@ class EmailService {
     const { to, subject, text, html, attachments, userId, patientId, type } = options;
 
     try {
-      const fromEmail = process.env.EMAIL_USER || 'noreply@docclinic.com';
-      const fromName = process.env.EMAIL_FROM_NAME || 'DocClinic';
+      const fromEmail = process.env.EMAIL_FROM_EMAIL || process.env.EMAIL_USER || 'support@docyerp.in';
+      const fromName = process.env.EMAIL_FROM_NAME || 'Docsy ERP';
 
       const mailOptions = {
         from: `"${fromName}" <${fromEmail}>`,

@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
+import settingsService from '../services/settingsService';
 
 const DashboardLayout = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -10,6 +12,13 @@ const DashboardLayout = () => {
     return saved ? JSON.parse(saved) : false;
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { data: accessResp } = useQuery({
+    queryKey: ['accessControls'],
+    queryFn: () => settingsService.getAccessControls(),
+    staleTime: 60 * 1000,
+  });
+  const accessControls = accessResp?.data?.data || accessResp?.data || accessResp || null;
+  const subscriptionSnapshot = accessControls?.subscriptionSnapshot || null;
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
@@ -52,6 +61,23 @@ const DashboardLayout = () => {
 
         {/* Page content */}
         <main className="p-4 md:p-6 lg:p-8">
+          {subscriptionSnapshot && (
+            <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+              subscriptionSnapshot.status === 'EXPIRED'
+                ? 'border-red-300 bg-red-50 text-red-700'
+                : subscriptionSnapshot.status === 'GRACE'
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : (subscriptionSnapshot.remindersDue || []).length
+                    ? 'border-blue-300 bg-blue-50 text-blue-700'
+                    : 'hidden'
+            }`}>
+              {subscriptionSnapshot.status === 'EXPIRED'
+                ? 'Subscription expired. Account is now read-only. Please upgrade plan.'
+                : subscriptionSnapshot.status === 'GRACE'
+                  ? `Subscription expired. Grace period active (${subscriptionSnapshot.daysToExpiry} days to lock). Upgrade now to avoid read-only mode.`
+                  : `Subscription renewal reminder: ${subscriptionSnapshot.daysToExpiry} day(s) left.`}
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

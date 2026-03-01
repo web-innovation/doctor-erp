@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { prisma } from '../index.js';
 import { AppError } from './errorHandler.js';
+import { normalizeAccessControls, getSubscriptionSnapshot } from '../services/subscriptionService.js';
 
 // Authenticate: verify JWT and attach user + clinic + staffProfile
 export async function authenticate(req, res, next) {
@@ -268,11 +269,16 @@ export function checkPermission(resource, action) {
       const allowedRolesSet = new Set(PERMISSIONS[permission] || []);
       let permissionDisabled = false;
 
+      const isReadPermission = (() => {
+        const p = String(permission || '').toLowerCase();
+        return p.endsWith(':read') || p.endsWith(':view') || p === 'dashboard:read' || p === 'dashboard:view';
+      })();
+
       // Try to fetch clinic-level overrides (additive)
       try {
         if (req.user && req.user.clinicId) {
           const [clinic, controls] = await Promise.all([
-            prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true } }),
+            prisma.clinic.findUnique({ where: { id: req.user.clinicId }, select: { rolePermissions: true, createdAt: true } }),
             prisma.clinicSettings.findUnique({
               where: { clinicId_key: { clinicId: req.user.clinicId, key: 'super_admin_controls' } },
               select: { value: true }
@@ -296,6 +302,12 @@ export function checkPermission(resource, action) {
           // Super-admin clinic controls can hard-disable specific permissions for clinic users.
           try {
             const payload = controls?.value ? JSON.parse(controls.value) : null;
+            const normalizedControls = normalizeAccessControls(payload || {}, clinic?.createdAt || new Date());
+            const subSnapshot = getSubscriptionSnapshot(normalizedControls);
+            if (subSnapshot.isReadOnly && !isReadPermission) {
+              return next(new AppError('Subscription expired. Account is in read-only mode.', 403));
+            }
+
             const disabled = Array.isArray(payload?.disabledPermissions) ? payload.disabledPermissions : [];
             const normalizeDisabled = (value) => {
               const raw = String(value || '').trim().toLowerCase();

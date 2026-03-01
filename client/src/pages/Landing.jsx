@@ -273,6 +273,7 @@ export default function Landing() {
             <div className="hidden md:flex items-center space-x-8">
               <a href="#features" className="text-gray-600 hover:text-blue-600 transition">Features</a>
               <a href="#why-choose" className="text-gray-600 hover:text-blue-600 transition">Why Choose Us</a>
+              <Link to="/pricing" className="text-gray-600 hover:text-blue-600 transition">Pricing</Link>
               <a href="#reports" className="text-gray-600 hover:text-blue-600 transition">Reports</a>
               <Link to="/blogs" className="text-gray-600 hover:text-blue-600 transition">Blogs</Link>
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>
@@ -311,6 +312,13 @@ export default function Landing() {
                 >
                   Reports
                 </a>
+                <Link
+                  to="/pricing"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="px-2 py-2 text-gray-700 hover:text-blue-600"
+                >
+                  Pricing
+                </Link>
                 <Link
                   to="/blogs"
                   onClick={() => setMobileNavOpen(false)}
@@ -856,6 +864,7 @@ export default function Landing() {
                 <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
                 <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
                 <li><Link to="/features/smart-prescription-software-for-doctors" className="text-gray-400 hover:text-white transition">Smart Prescription</Link></li>
+                <li><Link to="/pricing" className="text-gray-400 hover:text-white transition">Pricing</Link></li>
                 <li><Link to="/blogs" className="text-gray-400 hover:text-white transition">Blogs</Link></li>
               </ul>
             </div>
@@ -864,6 +873,7 @@ export default function Landing() {
               <ul className="space-y-2">
                 <li><Link to="/features/patient-management-system-for-clinics" className="text-gray-400 hover:text-white transition">Patient Management</Link></li>
                 <li><Link to="/features/pharmacy-management-software-tricity" className="text-gray-400 hover:text-white transition">Pharmacy Software</Link></li>
+                <li><Link to="/pricing" className="text-gray-400 hover:text-white transition">Pricing</Link></li>
                 <li><Link to="/blogs" className="text-gray-400 hover:text-white transition">Blogs</Link></li>
                 <li><Link to="/login" className="text-gray-400 hover:text-white transition">Login</Link></li>
               </ul>

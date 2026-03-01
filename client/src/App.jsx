@@ -9,6 +9,7 @@ import AuthLayout from './layouts/AuthLayout';
 
 // Landing Page (keep eagerly loaded for best first paint / SEO crawlability)
 import Landing from './pages/Landing';
+import Pricing from './pages/Pricing';
 import Dashboard from './pages/Dashboard';
 import Patients from './pages/patients/Patients';
 import PatientDetails from './pages/patients/PatientDetails';
@@ -39,6 +40,7 @@ import ManageBlogs from './pages/blogs/ManageBlogs';
 // Route-level code splitting to reduce homepage JS payload
 const Login = lazy(() => import('./pages/auth/Login'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const Clinics = lazy(() => import('./pages/admin/Clinics'));
@@ -192,6 +194,7 @@ function App() {
       <Route path="/features/pharmacy-management-software-tricity" element={<PharmacyManagementTricity />} />
       <Route path="/features/online-report-dashboard-software-for-clinics-hospitals" element={<OnlineReportDashboardClinicsHospitals />} />
       <Route path="/features/smart-prescription-software-for-doctors" element={<SmartPrescriptionDoctors />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/blogs" element={<Blogs />} />
       <Route path="/blogs/:slug" element={<BlogDetail />} />
       
@@ -199,6 +202,7 @@ function App() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Route>
 
       {/* Protected Dashboard Routes */}

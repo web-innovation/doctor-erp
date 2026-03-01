@@ -6,6 +6,13 @@ import path from 'path';
 import XLSX from 'xlsx';
 import { prisma } from '../index.js';
 import { authenticate } from '../middleware/auth.js';
+import {
+  SUPER_ADMIN_CONTROLS_KEY,
+  normalizeAccessControls as normalizeAccessControlsWithSubscription,
+  getClinicControls,
+  getSubscriptionSnapshot,
+  getEffectiveStaffLimit,
+} from '../services/subscriptionService.js';
 
 const router = express.Router();
 
@@ -23,14 +30,9 @@ const requireSuperAdmin = (req, res, next) => {
 router.use(authenticate);
 router.use(requireSuperAdmin);
 
-const SUPER_ADMIN_CONTROLS_KEY = 'super_admin_controls';
 const setupUpload = multer({ storage: multer.memoryStorage() });
 
-const DEFAULT_SUPER_ADMIN_CONTROLS = {
-  disabledPermissions: [],
-  invoiceUploadLimit: { monthly: null, yearly: null },
-  staffLimit: null
-};
+const DEFAULT_SUPER_ADMIN_CONTROLS = normalizeAccessControlsWithSubscription({}, new Date());
 
 function parseJsonSafe(raw, fallback = null) {
   if (!raw || typeof raw !== 'string') return fallback;
@@ -41,46 +43,16 @@ function parseJsonSafe(raw, fallback = null) {
   }
 }
 
-function toNullableInt(v) {
-  if (v === undefined || v === null || v === '') return null;
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function normalizeAccessControls(value) {
-  const src = value && typeof value === 'object' ? value : {};
-  const disabledPermissions = Array.isArray(src.disabledPermissions)
-    ? [...new Set(src.disabledPermissions.map((p) => String(p || '').trim()).filter(Boolean))]
-    : [];
-  const monthly = toNullableInt(src?.invoiceUploadLimit?.monthly);
-  const yearly = toNullableInt(src?.invoiceUploadLimit?.yearly);
-  const staffLimit = toNullableInt(src.staffLimit);
-  const normalizeLimit = (value) => {
-    if (value === null) return null;
-    if (!Number.isFinite(value)) return null;
-    if (value < 0) return null;
-    return value;
-  };
-  return {
-    disabledPermissions,
-    invoiceUploadLimit: {
-      monthly: normalizeLimit(monthly),
-      yearly: normalizeLimit(yearly)
-    },
-    staffLimit: staffLimit && staffLimit > 0 ? staffLimit : null
-  };
-}
+const normalizeAccessControls = (value, clinicCreatedAt) =>
+  normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
 async function getClinicAccessControls(clinicId) {
-  const rec = await prisma.clinicSettings.findUnique({
-    where: { clinicId_key: { clinicId, key: SUPER_ADMIN_CONTROLS_KEY } }
-  });
-  const parsed = parseJsonSafe(rec?.value, DEFAULT_SUPER_ADMIN_CONTROLS);
-  return normalizeAccessControls(parsed || DEFAULT_SUPER_ADMIN_CONTROLS);
+  return getClinicControls(clinicId);
 }
 
 async function saveClinicAccessControls(clinicId, value) {
-  const controls = normalizeAccessControls(value);
+  const clinic = await prisma.clinic.findUnique({ where: { id: clinicId }, select: { createdAt: true } });
+  const controls = normalizeAccessControls(value, clinic?.createdAt || new Date());
   await prisma.clinicSettings.upsert({
     where: { clinicId_key: { clinicId, key: SUPER_ADMIN_CONTROLS_KEY } },
     create: { clinicId, key: SUPER_ADMIN_CONTROLS_KEY, value: JSON.stringify(controls) },
@@ -412,7 +384,7 @@ router.get('/clinics/:id/access-controls', async (req, res, next) => {
     const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
     const data = await getClinicAccessControls(clinic.id);
-    res.json({ success: true, data });
+    res.json({ success: true, data: { ...data, subscriptionSnapshot: getSubscriptionSnapshot(data) } });
   } catch (error) {
     next(error);
   }
@@ -424,7 +396,11 @@ router.put('/clinics/:id/access-controls', async (req, res, next) => {
     const clinic = await prisma.clinic.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
     const controls = await saveClinicAccessControls(clinic.id, req.body || {});
-    res.json({ success: true, data: controls, message: 'Access controls updated successfully' });
+    res.json({
+      success: true,
+      data: { ...controls, subscriptionSnapshot: getSubscriptionSnapshot(controls) },
+      message: 'Access controls updated successfully'
+    });
   } catch (error) {
     next(error);
   }
@@ -1213,17 +1189,25 @@ router.post('/clinics/:id/staff', async (req, res, next) => {
     }
 
     const accessControls = await getClinicAccessControls(clinicId);
-    if (accessControls.staffLimit) {
+    const subscriptionSnapshot = getSubscriptionSnapshot(accessControls);
+    if (subscriptionSnapshot.isReadOnly) {
+      return res.status(403).json({
+        success: false,
+        message: 'Subscription expired. Clinic is in read-only mode.'
+      });
+    }
+    const staffLimit = getEffectiveStaffLimit(accessControls);
+    if (staffLimit) {
       const activeStaffUsers = await prisma.user.count({
         where: {
           clinicId,
           role: { not: 'SUPER_ADMIN' }
         }
       });
-      if (activeStaffUsers >= accessControls.staffLimit) {
+      if (activeStaffUsers >= staffLimit) {
         return res.status(400).json({
           success: false,
-          message: `Staff limit reached for clinic (${accessControls.staffLimit})`
+          message: `Staff limit reached for clinic (${staffLimit})`
         });
       }
     }
