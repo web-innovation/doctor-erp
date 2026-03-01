@@ -16,6 +16,16 @@ class EmailService {
     this.provider = null;
     this.initialized = false;
     this.lastInitError = null;
+    this.activeConfigKey = null;
+  }
+
+  buildConfigKey(config = null, source = 'unknown') {
+    if (!config || !config.provider) return `${source}:none`;
+    const provider = String(config.provider || '').trim().toLowerCase();
+    const user = String(config.userEmail || config.user || '').trim().toLowerCase();
+    const host = String(config.host || '').trim().toLowerCase();
+    const clinic = String(config.clinicId || '').trim();
+    return [source, provider, user, host, clinic].join('|');
   }
 
   /**
@@ -66,6 +76,7 @@ class EmailService {
         await this.transporter.verify();
         this.initialized = true;
         this.lastInitError = null;
+        this.activeConfigKey = this.buildConfigKey(current, candidate.source);
         logger.info(`Email service initialized with ${current.provider} provider (${candidate.source})`);
         return true;
       } catch (error) {
@@ -80,6 +91,7 @@ class EmailService {
     logger.error('Failed to initialize email service with all available configurations', lastError);
     this.initialized = false;
     this.lastInitError = lastError?.message || 'Unknown email initialization error';
+    this.activeConfigKey = null;
     return false;
   }
 
@@ -258,14 +270,18 @@ class EmailService {
   /**
    * Get email configuration from database (clinic settings)
    */
-  async getEmailConfigFromDB() {
+  async getEmailConfigFromDB(clinicId = null) {
     try {
-      const settings = await prisma.clinicSettings?.findFirst({
-        where: { key: 'email_config' },
-      });
+      const where = clinicId
+        ? { key: 'email_config', clinicId }
+        : { key: 'email_config' };
+      const settings = await prisma.clinicSettings?.findFirst({ where });
 
       if (settings?.value) {
-        return JSON.parse(settings.value);
+        const parsed = JSON.parse(settings.value);
+        return (parsed && typeof parsed === 'object')
+          ? { ...parsed, clinicId: clinicId || parsed.clinicId || null }
+          : parsed;
       }
       return null;
     } catch {
@@ -322,6 +338,7 @@ class EmailService {
         user: String(process.env.SMTP_USER || '').trim(),
         password: String(process.env.SMTP_PASSWORD || '').trim(),
         secure: smtpSecureRaw === 'true' || smtpSecureRaw === '1' || smtpSecureRaw === 'yes',
+        clinicId: null,
       };
     }
 
@@ -334,8 +351,23 @@ class EmailService {
    * @returns {Promise<Object>} - Send result
    */
   async sendEmail(options) {
-    if (!this.initialized) {
-      const initialized = await this.initialize();
+    const clinicId = options?.clinicId ? String(options.clinicId) : null;
+    const forceEnvConfig = options?.forceEnvConfig === true;
+    const preferredConfig = forceEnvConfig
+      ? this.getEmailConfigFromEnv()
+      : (clinicId ? (await this.getEmailConfigFromDB(clinicId)) : this.getEmailConfigFromEnv());
+
+    if (clinicId && !forceEnvConfig && !preferredConfig) {
+      throw new Error('Clinic email is not configured. Please configure clinic email in Settings > Notifications.');
+    }
+
+    const preferredSource = forceEnvConfig ? 'environment-forced' : (clinicId ? 'clinic' : 'environment');
+    const preferredKey = this.buildConfigKey(preferredConfig, preferredSource);
+
+    if (!this.initialized || !this.transporter || this.activeConfigKey !== preferredKey) {
+      const initialized = preferredConfig
+        ? await this.initialize(preferredConfig)
+        : await this.initialize();
       if (!initialized) {
         throw new Error(`Email service initialization failed: ${this.lastInitError || 'check SMTP provider configuration'}`);
       }
@@ -470,6 +502,7 @@ class EmailService {
       text: `Appointment Reminder\n\nDear ${patient.name},\n\nThis is a reminder about your upcoming appointment on ${formattedDate}.\n\nPlease arrive 10-15 minutes before your scheduled time.`,
       type: 'appointment_reminder',
       patientId: patient.id,
+      clinicId: appointment?.clinicId || patient?.clinicId || null,
     });
   }
 
@@ -543,6 +576,7 @@ class EmailService {
       attachments,
       type: 'prescription',
       patientId: patient.id,
+      clinicId: prescription?.clinicId || patient?.clinicId || null,
     });
   }
 
@@ -619,6 +653,7 @@ class EmailService {
       attachments,
       type: 'bill',
       patientId: patient.id,
+      clinicId: bill?.clinicId || patient?.clinicId || null,
     });
   }
 
@@ -690,6 +725,7 @@ class EmailService {
       text: `Password Reset\n\nDear ${user.name},\n\nClick this link to reset your password: ${finalResetUrl}\n\nThis link expires in 1 hour. If you didn't request this, please ignore this email.`,
       type: 'password_reset',
       userId: user.id,
+      forceEnvConfig: true,
     });
   }
 
@@ -752,6 +788,7 @@ class EmailService {
       text: `Welcome to DocClinic!\n\nYour account has been created.\n\nEmail: ${user.email}\n${tempPassword ? `Temporary Password: ${tempPassword}\n` : ''}Role: ${user.role}\n\nPlease change your password after your first login.`,
       type: 'welcome',
       userId: user.id,
+      forceEnvConfig: true,
     });
   }
 

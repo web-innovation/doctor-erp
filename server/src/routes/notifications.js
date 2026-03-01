@@ -183,6 +183,7 @@ router.post('/email/test', authorize('DOCTOR'), async (req, res) => {
       text: 'Email Configuration Working! This is a test email from DocClinic ERP.',
       type: 'test',
       userId: req.user.id,
+      clinicId: req.user.clinicId,
     });
 
     res.json({ success: true, message: `Test email sent to ${req.user.email}` });
