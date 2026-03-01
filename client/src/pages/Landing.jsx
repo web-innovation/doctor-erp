@@ -68,6 +68,18 @@ const benefits = [
   { icon: FaHospital, text: 'Startup-friendly - built for growing clinics' },
 ];
 
+const trialHighlights = [
+  '14-day free trial',
+  'No card required',
+  'Setup support included',
+];
+
+const heroUniqueWins = [
+  'AI-assisted prescriptions and notes',
+  'One connected flow: OPD, pharmacy, billing, reports',
+  'Role-based controls for clinic admin and staff',
+];
+
 const uniqueHighlights = [
   {
     icon: FaLayerGroup,
@@ -347,54 +359,115 @@ export default function Landing() {
         </div>
       </nav>
 
+      <section className="bg-slate-900 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-amber-400/20 text-amber-300 px-3 py-1 font-semibold">
+                Limited Offer
+              </span>
+              <span className="text-slate-100">Start your clinic on Docsy ERP with a risk-free free trial.</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-slate-200">
+              {trialHighlights.map((item) => (
+                <span key={item} className="inline-flex items-center rounded-full bg-white/10 px-3 py-1">
+                  <FaCheckCircle className="mr-2 text-emerald-300" />
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-blue-50 via-white to-indigo-50 pt-16 pb-32 overflow-hidden">
-        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+      <section className="relative bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 pt-16 pb-24 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.25),transparent_42%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.18),transparent_35%)]"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div>
-              <div className="inline-flex items-center bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
-                <FaStar className="mr-2" /> Built for startups & growing clinics
+              <div className="inline-flex items-center bg-blue-500/15 text-blue-200 border border-blue-300/30 px-4 py-2 rounded-full text-sm font-medium mb-6">
+                <FaStar className="mr-2" /> Built for clinics that want speed and scale
               </div>
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
-                Smart Healthcare Management for{' '}
-                <span className="text-blue-600">Modern Clinics</span>
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
+                Launch Your Digital Clinic in{' '}
+                <span className="text-cyan-300">14 Days Free</span>
               </h1>
-              <p className="text-xl text-gray-600 mb-8 leading-relaxed">
-                Streamline your practice with intelligent patient management, smart prescriptions,
-                and seamless billing. Everything you need to run a successful clinic.
+              <p className="text-xl text-slate-200 mb-8 leading-relaxed">
+                Docsy ERP gives you an all-in-one clinic operating system: patients, prescriptions, pharmacy, billing, and reports with AI support.
+                Fast onboarding. No chaos. Ready for growth from day one.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link
                   to="/register"
-                  className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
+                  className="inline-flex items-center justify-center bg-cyan-400 text-slate-950 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-cyan-300 transition"
                 >
-                  Start with Free Trial
+                  Start 14-Day Free Trial
+                  <FaArrowRight className="ml-2" />
                 </Link>
                 <button
                   onClick={() => setShowDemoModal(true)}
-                  className="inline-flex items-center justify-center border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:border-blue-600 hover:text-blue-600 transition"
+                  className="inline-flex items-center justify-center border-2 border-slate-500 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:border-cyan-300 hover:text-cyan-200 transition"
                 >
                   Book a Demo
                 </button>
               </div>
-              <div className="mt-8 flex items-center gap-8">
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                {heroUniqueWins.map((item) => (
+                  <div key={item} className="inline-flex items-center text-sm text-slate-200 bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+                    <FaCheckCircle className="text-emerald-300 mr-2 shrink-0" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-8 flex flex-wrap items-center gap-8">
                 {benefits.map((benefit, index) => (
-                  <div key={index} className="flex items-center text-sm text-gray-600">
-                    <benefit.icon className="text-green-500 mr-2" />
+                  <div key={index} className="flex items-center text-sm text-slate-300">
+                    <benefit.icon className="text-emerald-300 mr-2" />
                     {benefit.text}
                   </div>
                 ))}
               </div>
             </div>
-            <div className="hidden lg:block">
-              <div className="relative">
-                <div className="absolute -inset-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur-2xl opacity-20"></div>
-                <img
-                  src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800"
-                  alt="Doctor using tablet"
-                  className="relative rounded-2xl shadow-2xl"
-                />
+            <div className="lg:block">
+              <div className="relative rounded-3xl border border-white/15 bg-white/5 backdrop-blur-md p-6 shadow-2xl">
+                <div className="absolute -top-6 -right-6 rounded-2xl bg-emerald-400 text-slate-900 px-4 py-2 font-semibold shadow-lg">
+                  Trial Live
+                </div>
+                <div className="mb-6">
+                  <p className="text-slate-300 text-sm">Go live checklist</p>
+                  <h3 className="text-2xl font-bold text-white mt-1">Clinic Setup in 3 Steps</h3>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    'Register clinic admin account and create staff roles',
+                    'Import patients, configure services, templates, and billing',
+                    'Start consultations with AI-supported prescription flow',
+                  ].map((step, idx) => (
+                    <div key={step} className="flex items-start gap-3 rounded-xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                      <div className="w-7 h-7 rounded-full bg-cyan-400 text-slate-900 text-sm font-bold flex items-center justify-center shrink-0">{idx + 1}</div>
+                      <p className="text-slate-100">{step}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-4">
+                    <p className="text-sm text-cyan-100">Starter Plan</p>
+                    <p className="text-2xl font-bold text-white">₹999/mo</p>
+                    <p className="text-xs text-slate-300 mt-1">3 users included</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-300/30 bg-emerald-300/10 p-4">
+                    <p className="text-sm text-emerald-100">Upload Limit</p>
+                    <p className="text-2xl font-bold text-white">100/mo</p>
+                    <p className="text-xs text-slate-300 mt-1">After free trial</p>
+                  </div>
+                </div>
+                <Link
+                  to="/register"
+                  className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-white text-slate-900 px-5 py-3 font-semibold hover:bg-slate-100 transition"
+                >
+                  Create Clinic Account
+                </Link>
               </div>
             </div>
           </div>
