@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FiPlus, FiSearch, FiEdit, FiLock, FiEye, FiUnlock } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit, FiLock, FiEye, FiUnlock, FiTrash2 } from 'react-icons/fi';
 import adminService from '../../services/adminService';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -13,6 +13,8 @@ const Clinics = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showHardDeleteModal, setShowHardDeleteModal] = useState(false);
+  const [hardDeleteConfirmText, setHardDeleteConfirmText] = useState('');
   const [selectedClinic, setSelectedClinic] = useState(null);
   const [formData, setFormData] = useState({
     clinicName: '',
@@ -97,6 +99,26 @@ const Clinics = () => {
     }
   };
 
+  const handlePermanentDelete = async () => {
+    if (!selectedClinic) return;
+    if (hardDeleteConfirmText.trim() !== selectedClinic.name) {
+      alert('Please type exact clinic name to confirm permanent deletion');
+      return;
+    }
+    try {
+      await adminService.deleteClinicPermanently(selectedClinic.id, {
+        confirmText: hardDeleteConfirmText.trim(),
+      });
+      setShowHardDeleteModal(false);
+      setHardDeleteConfirmText('');
+      setSelectedClinic(null);
+      fetchClinics();
+    } catch (error) {
+      console.error('Failed to delete clinic permanently:', error);
+      alert(error.response?.data?.message || 'Failed to delete clinic permanently');
+    }
+  };
+
   const openEditModal = (clinic) => {
     setSelectedClinic(clinic);
     setFormData({
@@ -110,6 +132,12 @@ const Clinics = () => {
   const openDeleteModal = (clinic) => {
     setSelectedClinic(clinic);
     setShowDeleteModal(true);
+  };
+
+  const openHardDeleteModal = (clinic) => {
+    setSelectedClinic(clinic);
+    setHardDeleteConfirmText('');
+    setShowHardDeleteModal(true);
   };
 
   const resetForm = () => {
@@ -276,6 +304,13 @@ const Clinics = () => {
                                 <FiUnlock />
                               </button>
                             )}
+                            <button
+                              onClick={() => openHardDeleteModal(clinic)}
+                              className="text-red-700 hover:text-red-900 p-1"
+                              title="Delete Permanently"
+                            >
+                              <FiTrash2 />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -447,6 +482,58 @@ const Clinics = () => {
             </Button>
             <Button variant="danger" onClick={handleDelete}>
               Block Clinic
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Permanent Delete Confirmation Modal */}
+      <Modal
+        isOpen={showHardDeleteModal}
+        onClose={() => {
+          setShowHardDeleteModal(false);
+          setSelectedClinic(null);
+          setHardDeleteConfirmText('');
+        }}
+        title="Delete Clinic Permanently"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            This action will permanently delete <strong>{selectedClinic?.name}</strong> and all related data
+            (patients, bills, prescriptions, pharmacy, staff, settings, and records).
+          </p>
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+            This action cannot be undone.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Type clinic name to confirm
+            </label>
+            <input
+              type="text"
+              value={hardDeleteConfirmText}
+              onChange={(e) => setHardDeleteConfirmText(e.target.value)}
+              placeholder={selectedClinic?.name || ''}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowHardDeleteModal(false);
+                setSelectedClinic(null);
+                setHardDeleteConfirmText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handlePermanentDelete}
+              disabled={!selectedClinic || hardDeleteConfirmText.trim() !== selectedClinic.name}
+            >
+              Delete Permanently
             </Button>
           </div>
         </div>

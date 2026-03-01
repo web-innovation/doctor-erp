@@ -73,6 +73,11 @@ const adminService = {
     return response.data;
   },
 
+  deleteClinicPermanently: async (id, payload) => {
+    const response = await api.delete(`/admin/clinics/${id}/permanent`, { data: payload });
+    return response.data;
+  },
+
   activateClinic: async (id) => {
     const response = await api.post(`/admin/clinics/${id}/activate`);
     return response.data;

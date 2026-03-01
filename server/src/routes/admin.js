@@ -987,6 +987,125 @@ router.delete('/clinics/:id', async (req, res, next) => {
   }
 });
 
+// DELETE /clinics/:id/permanent - Hard delete clinic and all related data
+router.delete('/clinics/:id/permanent', async (req, res, next) => {
+  try {
+    const clinicId = req.params.id;
+    const clinic = await prisma.clinic.findUnique({
+      where: { id: clinicId },
+      select: { id: true, name: true }
+    });
+    if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
+
+    const confirmText = String(req.body?.confirmText || '').trim();
+    const confirmToken = String(req.body?.confirmToken || '').trim().toUpperCase();
+    if (confirmText !== clinic.name && confirmToken !== 'DELETE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Confirmation failed. Provide clinic name in confirmText or use confirmToken=DELETE.'
+      });
+    }
+
+    const summary = await prisma.$transaction(async (tx) => {
+      const users = await tx.user.findMany({
+        where: { clinicId },
+        select: { id: true }
+      });
+      const userIds = users.map((u) => u.id);
+
+      const staffs = await tx.staff.findMany({
+        where: { clinicId },
+        select: { id: true }
+      });
+      const staffIds = staffs.map((s) => s.id);
+
+      const labs = await tx.lab.findMany({
+        where: { clinicId },
+        select: { id: true }
+      });
+      const labIds = labs.map((l) => l.id);
+
+      const agents = await tx.agent.findMany({
+        where: { clinicId },
+        select: { id: true }
+      });
+      const agentIds = agents.map((a) => a.id);
+
+      const patients = await tx.patient.findMany({
+        where: { clinicId },
+        select: { id: true }
+      });
+      const patientIds = patients.map((p) => p.id);
+
+      const counts = {};
+      counts.documentAiUsages = (await tx.documentAiUsage.deleteMany({ where: { clinicId } })).count;
+      counts.purchaseUploads = (await tx.purchaseUpload.deleteMany({ where: { clinicId } })).count;
+      counts.stockHistory = (await tx.stockHistory.deleteMany({ where: { product: { clinicId } } })).count;
+      counts.stockBatches = (await tx.stockBatch.deleteMany({ where: { product: { clinicId } } })).count;
+      counts.stockTransactions = (await tx.stockTransaction.deleteMany({ where: { clinicId } })).count;
+      counts.billPayments = (await tx.payment.deleteMany({ where: { clinicId } })).count;
+      counts.prescriptions = (await tx.prescription.deleteMany({ where: { clinicId } })).count;
+      counts.appointments = (await tx.appointment.deleteMany({ where: { clinicId } })).count;
+      counts.bills = (await tx.bill.deleteMany({ where: { clinicId } })).count;
+      counts.purchases = (await tx.purchase.deleteMany({ where: { clinicId } })).count;
+      counts.ledgerEntries = (await tx.ledgerEntry.deleteMany({ where: { clinicId } })).count;
+      counts.accounts = (await tx.account.deleteMany({ where: { clinicId } })).count;
+      if (labIds.length || agentIds.length) {
+        counts.commissions = (await tx.commissionRecord.deleteMany({
+          where: {
+            OR: [
+              ...(labIds.length ? [{ labId: { in: labIds } }] : []),
+              ...(agentIds.length ? [{ agentId: { in: agentIds } }] : []),
+            ]
+          }
+        })).count;
+      } else {
+        counts.commissions = 0;
+      }
+      counts.labTests = (await tx.labTest.deleteMany({ where: { clinicId } })).count;
+      counts.labStaff = (await tx.labStaff.deleteMany({ where: { clinicId } })).count;
+      counts.labs = (await tx.lab.deleteMany({ where: { clinicId } })).count;
+      counts.agents = (await tx.agent.deleteMany({ where: { clinicId } })).count;
+      counts.pharmacyProducts = (await tx.pharmacyProduct.deleteMany({ where: { clinicId } })).count;
+      if (patientIds.length) {
+        counts.patientVitals = (await tx.patientVital.deleteMany({ where: { patientId: { in: patientIds } } })).count;
+      } else {
+        counts.patientVitals = 0;
+      }
+      counts.patientDocuments = (await tx.patientDocument.deleteMany({ where: { clinicId } })).count;
+      counts.patients = (await tx.patient.deleteMany({ where: { clinicId } })).count;
+      counts.staffAttendance = staffIds.length
+        ? (await tx.attendance.deleteMany({ where: { staffId: { in: staffIds } } })).count
+        : 0;
+      counts.staffLeaves = staffIds.length
+        ? (await tx.leave.deleteMany({ where: { staffId: { in: staffIds } } })).count
+        : 0;
+      counts.staffAssignments = (await tx.staffAssignment.deleteMany({ where: { clinicId } })).count;
+      counts.staff = (await tx.staff.deleteMany({ where: { clinicId } })).count;
+      counts.blogPosts = (await tx.blogPost.deleteMany({ where: { clinicId } })).count;
+      counts.clinicSettings = (await tx.clinicSettings.deleteMany({ where: { clinicId } })).count;
+
+      if (userIds.length) {
+        await tx.auditLog.updateMany({
+          where: { userId: { in: userIds } },
+          data: { userId: null }
+        });
+      }
+      counts.users = (await tx.user.deleteMany({ where: { clinicId } })).count;
+      counts.clinic = (await tx.clinic.deleteMany({ where: { id: clinicId } })).count;
+      return counts;
+    });
+
+    return res.json({
+      success: true,
+      message: `Clinic "${clinic.name}" and related data deleted permanently`,
+      data: { clinicId, summary }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // POST /clinics/:id/activate - Reactivate clinic
 router.post('/clinics/:id/activate', async (req, res, next) => {
   try {

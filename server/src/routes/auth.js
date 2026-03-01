@@ -417,7 +417,7 @@ router.post('/register', [
           email,
           phone,
           password: hashedPassword,
-          role: 'DOCTOR', // First user is doctor/owner
+          role: 'ADMIN', // First signup user is clinic admin/owner
           clinicId: clinic.id
         }
       });
