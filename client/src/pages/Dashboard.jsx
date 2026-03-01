@@ -122,11 +122,11 @@ export default function Dashboard() {
 
   const hasPerm = (permKey) => {
     // Clinic admin (primary clinic doctor) should be able to see dashboard when NOT currently viewing-as another staff
-    if (user?.isClinicAdmin && !isViewingAsAnother) return true;
+    if (isClinicAdmin && !isViewingAsAnother) return true;
 
     if (!rolePermissions) {
-      // fallback: doctors and super_admin see full dashboard, others limited
-      return ['DOCTOR', 'SUPER_ADMIN'].includes((effectiveRole || '').toString().toUpperCase());
+      // fallback: doctors, admins and super_admin see full dashboard, others limited
+      return ['DOCTOR', 'ADMIN', 'SUPER_ADMIN'].includes((effectiveRole || '').toString().toUpperCase());
     }
 
     const effectiveRoleKey = (effectiveRole || '').toString().toUpperCase();

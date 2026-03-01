@@ -22,8 +22,13 @@ const useAuthStore = create(
         try { localStorage.setItem('token', token); } catch (e) { /* ignore */ }
         // Compute clinic-admin flag consistently so UI immediately reflects admin role
         const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+        const roleUpper = (user?.role || '').toString().toUpperCase();
         const isClinicAdminFlag = !!(
-          user?.isClinicAdmin || user?.clinicRole === 'ADMIN' || user?.isOwner || demoAdminEmails.includes(user?.email)
+          user?.isClinicAdmin ||
+          user?.clinicRole === 'ADMIN' ||
+          user?.isOwner ||
+          roleUpper === 'ADMIN' ||
+          demoAdminEmails.includes(user?.email)
         );
         set({ user: { ...user, isClinicAdmin: isClinicAdminFlag }, token, isLoading: false, error: null });
       },
@@ -33,8 +38,17 @@ const useAuthStore = create(
         try {
           const response = await authService.login(email, password);
           const { user, token } = response.data;
+          const roleUpper = (user?.role || '').toString().toUpperCase();
+          const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+          const isClinicAdminFlag = !!(
+            user?.isClinicAdmin ||
+            user?.clinicRole === 'ADMIN' ||
+            user?.isOwner ||
+            roleUpper === 'ADMIN' ||
+            demoAdminEmails.includes(user?.email)
+          );
           localStorage.setItem('token', token);
-          set({ user, token, isLoading: false });
+          set({ user: { ...user, isClinicAdmin: isClinicAdminFlag }, token, isLoading: false });
           return response;
         } catch (error) {
           const message = error.response?.data?.message || 'Login failed';
@@ -48,8 +62,17 @@ const useAuthStore = create(
         try {
           const response = await authService.register(data);
           const { user, token } = response.data;
+          const roleUpper = (user?.role || '').toString().toUpperCase();
+          const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+          const isClinicAdminFlag = !!(
+            user?.isClinicAdmin ||
+            user?.clinicRole === 'ADMIN' ||
+            user?.isOwner ||
+            roleUpper === 'ADMIN' ||
+            demoAdminEmails.includes(user?.email)
+          );
           localStorage.setItem('token', token);
-          set({ user, token, isLoading: false });
+          set({ user: { ...user, isClinicAdmin: isClinicAdminFlag }, token, isLoading: false });
           return response;
         } catch (error) {
           const message = error.response?.data?.message || 'Registration failed';
@@ -95,10 +118,12 @@ const useAuthStore = create(
           const userData = response.data || {};
           // Compute clinic-admin flag: prefer server-provided flag, fall back to known clinic-owner/demo emails
           const demoAdminEmails = ['doctor@demo.com', 'admin@docclinic.com'];
+          const roleUpper = (userData?.role || '').toString().toUpperCase();
           const isClinicAdminFlag = !!(
             userData.isClinicAdmin ||
             userData.clinicRole === 'ADMIN' ||
             userData.isOwner ||
+            roleUpper === 'ADMIN' ||
             demoAdminEmails.includes(userData.email)
           );
 

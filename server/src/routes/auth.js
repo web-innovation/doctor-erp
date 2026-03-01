@@ -57,6 +57,7 @@ function buildEffectiveRole(user) {
 }
 
 function buildUserPayload(user) {
+  const roleUpper = String(user?.role || '').toUpperCase();
   return {
     id: user.id,
     name: user.name,
@@ -64,6 +65,7 @@ function buildUserPayload(user) {
     phone: user.phone,
     role: user.role,
     effectiveRole: buildEffectiveRole(user),
+    isClinicAdmin: roleUpper === 'ADMIN' || user?.isClinicAdmin === true,
     avatar: user.avatar,
     preferences: user.preferences,
     clinic: user.clinic,
