@@ -271,6 +271,7 @@ const ClinicDetail = () => {
   }
 
   const subscriptionSnapshot = clinic?.accessControls?.subscriptionSnapshot || null;
+  const subscriptionConfig = clinic?.accessControls?.subscription || {};
 
   return (
     <div className="space-y-6">
@@ -396,6 +397,22 @@ const ClinicDetail = () => {
               <p className="text-sm font-semibold text-gray-900">{subscriptionSnapshot?.daysToExpiry ?? '-'}</p>
             </div>
           </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-gray-500">Included Staff Accounts</p>
+              <p className="text-sm font-semibold text-gray-900">{subscriptionConfig?.includedUsers ?? '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Trial Invoice Upload Limit</p>
+              <p className="text-sm font-semibold text-gray-900">{subscriptionConfig?.trialInvoiceUploadLimit ?? 10} total</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Monthly Upload Limit</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {clinic?.accessControls?.invoiceUploadLimit?.monthly ?? subscriptionConfig?.monthlyInvoiceUploads ?? '-'}
+              </p>
+            </div>
+          </div>
           <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-3">
             <Input
               type="number"
@@ -436,7 +453,7 @@ const ClinicDetail = () => {
           <Input
             type="number"
             min="0"
-            label="Staff Limit"
+            label="Staff Limit (excluding clinic admin)"
             value={accessControls.staffLimit}
             onChange={(e) => setAccessControls((s) => ({ ...s, staffLimit: e.target.value }))}
           />

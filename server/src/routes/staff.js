@@ -37,7 +37,7 @@ async function enforceClinicStaffLimit(clinicId) {
   const limit = getEffectiveStaffLimit(controls);
   if (!limit) return;
   const existing = await prisma.user.count({
-    where: { clinicId, role: { not: 'SUPER_ADMIN' } }
+    where: { clinicId, role: { notIn: ['SUPER_ADMIN', 'ADMIN'] } }
   });
   if (existing >= limit) {
     const err = new Error(`Staff limit reached for clinic (${limit})`);

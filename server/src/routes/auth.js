@@ -424,7 +424,13 @@ router.post('/register', [
         }
       });
 
-      const controls = normalizeAccessControls({}, clinic.createdAt);
+      const controls = normalizeAccessControls({
+        subscription: {
+          // Self-signup clinics start on trial with 3 staff accounts and 10 invoice uploads.
+          includedUsers: 3,
+          trialInvoiceUploadLimit: 10,
+        },
+      }, clinic.createdAt);
       await tx.clinicSettings.upsert({
         where: { clinicId_key: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY } },
         create: { clinicId: clinic.id, key: SUPER_ADMIN_CONTROLS_KEY, value: JSON.stringify(controls) },

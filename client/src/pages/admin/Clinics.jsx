@@ -254,10 +254,13 @@ const Clinics = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-xs">
                           <div className="text-gray-900">
-                            Staff: {clinic?.accessControls?.staffLimit ?? 'No limit'}
+                            Staff: {clinic?.accessControls?.staffLimit ?? clinic?.accessControls?.subscription?.includedUsers ?? 'No limit'}
                           </div>
                           <div className="text-gray-500">
-                            Upload/month: {clinic?.accessControls?.invoiceUploadLimit?.monthly ?? 'No limit'}
+                            Trial invoices: {clinic?.accessControls?.subscription?.trialInvoiceUploadLimit ?? 10} total
+                          </div>
+                          <div className="text-gray-500">
+                            Upload/month: {clinic?.accessControls?.invoiceUploadLimit?.monthly ?? clinic?.accessControls?.subscription?.monthlyInvoiceUploads ?? 'No limit'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

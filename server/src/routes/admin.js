@@ -1490,7 +1490,7 @@ router.post('/clinics/:id/staff', async (req, res, next) => {
       const activeStaffUsers = await prisma.user.count({
         where: {
           clinicId,
-          role: { not: 'SUPER_ADMIN' }
+          role: { notIn: ['SUPER_ADMIN', 'ADMIN'] }
         }
       });
       if (activeStaffUsers >= staffLimit) {
