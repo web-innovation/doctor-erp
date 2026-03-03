@@ -134,8 +134,14 @@ const Header = ({ onMenuClick }) => {
     time: n?.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now'
   }));
 
+  // Super admin should see only super-admin scoped notifications.
+  // Do not merge clinic/local notification cache for this role.
   const baseNotifications = isSuperAdmin ? superAdminNotifications : dashboardNotifications;
-  const notifications = [...localNotifications, ...baseNotifications].map((notification) => {
+  const mergedNotifications = isSuperAdmin
+    ? baseNotifications
+    : [...localNotifications, ...baseNotifications];
+
+  const notifications = mergedNotifications.map((notification) => {
     const seen = seenNotificationKeys.has(getNotificationKey(notification));
     return {
       ...notification,
