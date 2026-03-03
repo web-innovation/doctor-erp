@@ -5,8 +5,19 @@ import { logImpersonation } from '../middleware/hipaaAudit.js';
 
 const router = express.Router();
 
+function blockSuperAdminClinicDashboard(req, res, next) {
+  const role = (req?.user?.role || '').toString().toUpperCase();
+  if (role === 'SUPER_ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Super admin cannot access clinic dashboard endpoints. Use /api/admin dashboard APIs.'
+    });
+  }
+  return next();
+}
+
 // GET /stats - Today's counts (OPD, revenue, appointments)
-router.get('/stats', authenticate, checkPermission('dashboard:read'), async (req, res) => {
+router.get('/stats', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -92,7 +103,7 @@ router.get('/stats', authenticate, checkPermission('dashboard:read'), async (req
 });
 
 // GET /charts - Chart data
-router.get('/charts', authenticate, checkPermission('dashboard:read'), async (req, res) => {
+router.get('/charts', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
   try {
     const { period = '7days' } = req.query;
     const clinicId = req.query.clinicId || req.user.clinicId;
@@ -146,7 +157,7 @@ router.get('/charts', authenticate, checkPermission('dashboard:read'), async (re
 });
 
 // GET /alerts - Alerts and notifications
-router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (req, res) => {
+router.get('/alerts', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
   try {
     const clinicId = req.query.clinicId || req.user.clinicId;
     const staffId = req.query.staffId || null;
@@ -190,7 +201,7 @@ router.get('/alerts', authenticate, checkPermission('dashboard:read'), async (re
 });
 
 // GET /recent - Recent activity
-router.get('/recent', authenticate, checkPermission('dashboard:read'), async (req, res) => {
+router.get('/recent', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
   try {
     const clinicId = req.query.clinicId || req.user.clinicId;
     const limit = parseInt(req.query.limit) || 10;

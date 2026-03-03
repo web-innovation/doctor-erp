@@ -59,6 +59,7 @@ const SmartPrescriptionDoctors = lazy(() => import('./pages/features/SmartPrescr
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, isLoading } = useAuth();
+  const defaultAuthedPath = (user?.role || '').toString().toUpperCase() === 'SUPER_ADMIN' ? '/admin' : '/dashboard';
 
   if (isLoading) {
     return (
@@ -75,7 +76,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   if (allowedRoles) {
     const userRole = (user?.role || '').toString().toUpperCase();
     const allowed = allowedRoles.map(r => r.toString().toUpperCase());
-    if (!allowed.includes(userRole)) return <Navigate to="/dashboard" replace />;
+    if (!allowed.includes(userRole)) return <Navigate to={defaultAuthedPath} replace />;
   }
 
   return children;
@@ -83,6 +84,7 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 function App() {
   const { user } = useAuth();
+  const homePath = (user?.role || '').toString().toUpperCase() === 'SUPER_ADMIN' ? '/admin' : '/dashboard';
 
   useEffect(() => {
     document.documentElement.setAttribute('lang', 'en-GB');
@@ -189,7 +191,7 @@ function App() {
       >
       <Routes>
       {/* Public Routes */}
-      <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+      <Route path="/" element={user ? <Navigate to={homePath} /> : <Landing />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/features/patient-management-system-for-clinics" element={<PatientManagementClinics />} />
@@ -203,8 +205,8 @@ function App() {
       
       {/* Auth Routes */}
       <Route element={<AuthLayout />}>
-        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-        <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+        <Route path="/login" element={user ? <Navigate to={homePath} /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to={homePath} /> : <Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
       </Route>
@@ -297,7 +299,7 @@ function App() {
       </Route>
 
       {/* Fallback */}
-      <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} replace />} />
+      <Route path="*" element={<Navigate to={user ? homePath : "/"} replace />} />
     </Routes>
     </Suspense>
     </>
@@ -306,13 +308,15 @@ function App() {
 
 // Route wrapper using permission-based check for reports
 function ReportsRoute() {
+  const { user } = useAuth();
+  const homePath = (user?.role || '').toString().toUpperCase() === 'SUPER_ADMIN' ? '/admin' : '/dashboard';
   const canAccess =
     useHasPerm('reports:opd') ||
     useHasPerm('reports:sales') ||
     useHasPerm('reports:pharmacy') ||
     useHasPerm('reports:commissions') ||
     useHasPerm('reports:view', ['SUPER_ADMIN', 'DOCTOR', 'ACCOUNTANT']);
-  if (!canAccess) return <Navigate to="/dashboard" replace />;
+  if (!canAccess) return <Navigate to={homePath} replace />;
   return <Reports />;
 }
 

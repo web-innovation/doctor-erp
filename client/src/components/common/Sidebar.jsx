@@ -142,6 +142,9 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
   // Filter menu items based on user role and clinic-level rolePermissions (if present)
   const filteredMenuItems = menuItems.filter((item) => {
+    // Super admin should operate from Admin panel only; hide clinic console menus.
+    if (normalizedRole === 'SUPER_ADMIN') return false;
+
     const normalizeDisabled = (value) => {
       const raw = String(value || '').trim().toLowerCase();
       if (!raw) return '';
@@ -295,34 +298,6 @@ const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
                     </li>
                   );
                 })}
-              </ul>
-              {/* Link back to clinic dashboard */}
-              {showExpanded && (
-                <div className="px-3 mt-4 mb-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                    Switch View
-                  </p>
-                </div>
-              )}
-              {isCompact && <div className="border-t border-gray-200 my-2 mx-3"></div>}
-              <ul className="space-y-1 px-3">
-                <li>
-                  <NavLink
-                    to="/dashboard"
-                    onClick={onMobileClose}
-                    className={`
-                      flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200
-                      text-gray-600 hover:bg-gray-50 hover:text-gray-900
-                      ${isCompact ? 'justify-center' : ''}
-                    `}
-                    title={isCompact ? 'Clinic Dashboard' : ''}
-                  >
-                    <HomeIcon className="h-5 w-5 flex-shrink-0 text-gray-400" />
-                    {showExpanded && (
-                      <span className="ml-3">Clinic Dashboard</span>
-                    )}
-                  </NavLink>
-                </li>
               </ul>
             </>
           ) : (

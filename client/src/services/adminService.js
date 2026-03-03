@@ -37,6 +37,12 @@ const adminService = {
       recentClinics: result.recentClinics || [],
       infrastructure: result.infrastructure || null,
       inactiveClinicsByDays: result.inactiveClinicsByDays || [],
+      billingCycleCost: result.stats?.billingCycleCost || {
+        currency: 'INR',
+        totalCostInr: 0,
+        byProvider: {},
+        items: [],
+      },
     };
   },
 

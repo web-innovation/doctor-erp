@@ -20,6 +20,7 @@ import authService from '../../services/authService';
 import { useQueryClient } from '@tanstack/react-query';
 import { dashboardService } from '../../services/dashboardService';
 import appNotificationService from '../../services/appNotificationService';
+import adminService from '../../services/adminService';
 
 const Header = ({ onMenuClick }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,6 +37,7 @@ const Header = ({ onMenuClick }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, activeViewUser, setActiveViewUser, clearActiveViewUser } = useAuth();
+  const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
   const getNotificationKey = (notification) => {
     const source = notification?.source || 'unknown';
@@ -56,6 +58,14 @@ const Header = ({ onMenuClick }) => {
     queryKey: ['dashboardAlerts', activeViewUser?.id || null],
     queryFn: () => dashboardService.getAlerts(activeViewUser?.id || null),
     refetchInterval: 60000, // Refresh every minute
+    enabled: !!user && !isSuperAdmin,
+  });
+
+  const { data: superAdminDashboard } = useQuery({
+    queryKey: ['header-super-admin-dashboard'],
+    queryFn: () => adminService.getDashboard(),
+    refetchInterval: 60000,
+    enabled: !!user && isSuperAdmin,
   });
 
   // Convert alerts to notifications format
@@ -82,12 +92,50 @@ const Header = ({ onMenuClick }) => {
     });
   });
 
+  const superAdminNotifications = [];
+  if (isSuperAdmin) {
+    if ((superAdminDashboard?.newClinicsThisMonth || 0) > 0) {
+      superAdminNotifications.push({
+        id: 'sa-new-clinics',
+        title: 'New Clinic Signups',
+        message: `${superAdminDashboard.newClinicsThisMonth} clinic(s) joined this month`,
+        time: 'Just now',
+        unread: true,
+        source: 'super-admin',
+        path: '/admin/clinics',
+      });
+    }
+    if ((superAdminDashboard?.subscription?.gracePeriodCount || 0) > 0) {
+      superAdminNotifications.push({
+        id: 'sa-grace-period',
+        title: 'Clinics In Grace Period',
+        message: `${superAdminDashboard.subscription.gracePeriodCount} clinic(s) need subscription attention`,
+        time: 'Just now',
+        unread: true,
+        source: 'super-admin',
+        path: '/admin/clinics',
+      });
+    }
+    if ((superAdminDashboard?.inactiveUsage?.inactive7Days || 0) > 0) {
+      superAdminNotifications.push({
+        id: 'sa-inactive-7d',
+        title: 'Inactive Clinics',
+        message: `${superAdminDashboard.inactiveUsage.inactive7Days} clinic(s) inactive for 7+ days`,
+        time: 'Just now',
+        unread: true,
+        source: 'super-admin',
+        path: '/admin',
+      });
+    }
+  }
+
   const localNotifications = (customNotifications || []).map((n) => ({
     ...n,
     time: n?.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now'
   }));
 
-  const notifications = [...localNotifications, ...dashboardNotifications].map((notification) => {
+  const baseNotifications = isSuperAdmin ? superAdminNotifications : dashboardNotifications;
+  const notifications = [...localNotifications, ...baseNotifications].map((notification) => {
     const seen = seenNotificationKeys.has(getNotificationKey(notification));
     return {
       ...notification,
@@ -561,7 +609,7 @@ const Header = ({ onMenuClick }) => {
                   </div>
                   <div className="px-4 py-3 border-t border-gray-200">
                     <Link
-                      to="/dashboard"
+                      to={isSuperAdmin ? '/admin' : '/dashboard'}
                       className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                       onClick={() => setShowNotifications(false)}
                     >

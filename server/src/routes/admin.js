@@ -43,6 +43,28 @@ function parseJsonSafe(raw, fallback = null) {
   }
 }
 
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseCostItemsJson(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        name: String(item?.name || '').trim(),
+        provider: String(item?.provider || 'other').trim(),
+        amountInr: toNumber(item?.amountInr, NaN),
+      }))
+      .filter((item) => item.name && Number.isFinite(item.amountInr) && item.amountInr >= 0);
+  } catch (_err) {
+    return [];
+  }
+}
+
 const normalizeAccessControls = (value, clinicCreatedAt) =>
   normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
@@ -1242,6 +1264,7 @@ router.get('/dashboard', async (req, res, next) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
     const [
       totalClinics,
@@ -1259,6 +1282,7 @@ router.get('/dashboard', async (req, res, next) => {
       newPatientsThisMonth,
       failedUploads24h,
       draftPurchasesCount,
+      uploadUsageByProvider,
       allClinicsLite,
       controlsRows,
       clinicLastLoginRows
@@ -1301,6 +1325,11 @@ router.get('/dashboard', async (req, res, next) => {
         where: { status: 'FAILED', createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
       }),
       prisma.purchase.count({ where: { status: 'DRAFT' } }),
+      prisma.purchaseUpload.groupBy({
+        by: ['provider'],
+        where: { createdAt: { gte: thisMonth, lt: nextMonth } },
+        _count: { _all: true }
+      }),
       prisma.clinic.findMany({ select: { id: true, name: true, createdAt: true } }),
       prisma.clinicSettings.findMany({
         where: { key: SUPER_ADMIN_CONTROLS_KEY },
@@ -1370,6 +1399,64 @@ router.get('/dashboard', async (req, res, next) => {
     const inactive30Days = inactivityByClinic.filter((c) => c.daysInactive >= 30).length;
     const inactiveClinicsByDays = inactivityByClinic.slice(0, 15);
 
+    // Current billing-cycle infra costing (month-to-date).
+    const providerCounts = {};
+    (uploadUsageByProvider || []).forEach((row) => {
+      const key = String(row?.provider || 'unknown').toLowerCase();
+      providerCounts[key] = (providerCounts[key] || 0) + (row?._count?._all || 0);
+    });
+
+    const openaiDocRateInr = toNumber(process.env.OPENAI_OCR_COST_PER_DOC_INR, 0);
+    const geminiDocRateInr = toNumber(process.env.GEMINI_OCR_COST_PER_DOC_INR, 0);
+    const openaiDocs = providerCounts.openai || 0;
+    const geminiDocs = providerCounts.gemini || 0;
+    const openaiAiCostInr = openaiDocs * openaiDocRateInr;
+    const geminiAiCostInr = geminiDocs * geminiDocRateInr;
+
+    const defaultCostItems = [
+      { name: 'AWS RDS', provider: 'aws', amountInr: toNumber(process.env.AWS_RDS_MONTHLY_COST_INR, 0) },
+      { name: 'AWS EC2', provider: 'aws', amountInr: toNumber(process.env.AWS_EC2_MONTHLY_COST_INR, 0) },
+      { name: 'AWS S3', provider: 'aws', amountInr: toNumber(process.env.AWS_S3_MONTHLY_COST_INR, 0) },
+      { name: 'AWS CloudFront', provider: 'aws', amountInr: toNumber(process.env.AWS_CLOUDFRONT_MONTHLY_COST_INR, 0) },
+      { name: 'AWS Other', provider: 'aws', amountInr: toNumber(process.env.AWS_OTHER_MONTHLY_COST_INR, 0) },
+      { name: 'Email / SMS', provider: 'other', amountInr: toNumber(process.env.COMMS_MONTHLY_COST_INR, 0) },
+      { name: 'Other Infra', provider: 'other', amountInr: toNumber(process.env.OTHER_INFRA_MONTHLY_COST_INR, 0) },
+    ].filter((item) => item.amountInr > 0);
+
+    const configuredCustomItems = parseCostItemsJson(process.env.INFRA_COST_ITEMS_JSON);
+    const aiItems = [
+      {
+        name: 'OpenAI OCR',
+        provider: 'ai',
+        amountInr: openaiAiCostInr,
+        usage: { documents: openaiDocs, unitCostInr: openaiDocRateInr }
+      },
+      {
+        name: 'Gemini OCR',
+        provider: 'ai',
+        amountInr: geminiAiCostInr,
+        usage: { documents: geminiDocs, unitCostInr: geminiDocRateInr }
+      }
+    ].filter((item) => item.amountInr > 0 || (item.usage?.documents || 0) > 0);
+
+    const billingItems = [...defaultCostItems, ...configuredCustomItems, ...aiItems];
+    const totalCostInr = billingItems.reduce((sum, item) => sum + toNumber(item.amountInr, 0), 0);
+    const byProvider = billingItems.reduce((acc, item) => {
+      const key = String(item.provider || 'other').toLowerCase();
+      acc[key] = (acc[key] || 0) + toNumber(item.amountInr, 0);
+      return acc;
+    }, {});
+
+    const billingCycleCost = {
+      currency: 'INR',
+      cycleStart: thisMonth,
+      cycleEnd: nextMonth,
+      generatedAt: new Date(),
+      items: billingItems,
+      totalCostInr,
+      byProvider
+    };
+
     // Get monthly growth data for charts (last 6 months) as per-month deltas
     const monthlyGrowth = [];
     for (let i = 5; i >= 0; i--) {
@@ -1424,7 +1511,8 @@ router.get('/dashboard', async (req, res, next) => {
           inactiveUsage: {
             inactive7Days,
             inactive30Days,
-          }
+          },
+          billingCycleCost
         },
         infrastructure: {
           instanceUptimeSec: Math.floor(process.uptime()),

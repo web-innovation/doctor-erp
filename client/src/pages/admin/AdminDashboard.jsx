@@ -113,6 +113,7 @@ const AdminDashboard = () => {
   const clinicGrowth = stats?.newClinicsLastMonth > 0
     ? (((stats?.newClinicsThisMonth - stats?.newClinicsLastMonth) / stats?.newClinicsLastMonth) * 100).toFixed(1)
     : stats?.newClinicsThisMonth > 0 ? 100 : 0;
+  const billing = stats?.billingCycleCost || { totalCostInr: 0, byProvider: {}, items: [] };
 
   return (
     <div className="space-y-6">
@@ -334,6 +335,74 @@ const AdminDashboard = () => {
           color="indigo"
           subtitle={`Draft purchases: ${stats?.draftPurchasesCount || 0}`}
         />
+      </div>
+
+      {/* Costing */}
+      <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Current Billing Cycle Cost</h2>
+          <p className="text-xs text-gray-500">
+            {billing?.cycleStart ? `From ${new Date(billing.cycleStart).toLocaleDateString('en-GB')}` : 'Current month'}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Infra Cost"
+            value={formatCurrency(billing?.totalCostInr || 0)}
+            icon={FiDollarSign}
+            color="purple"
+            subtitle="AWS + AI + Other"
+          />
+          <StatCard
+            title="AWS Cost"
+            value={formatCurrency(billing?.byProvider?.aws || 0)}
+            icon={FiCpu}
+            color="blue"
+            subtitle="Configured monthly estimate"
+          />
+          <StatCard
+            title="AI Cost"
+            value={formatCurrency(billing?.byProvider?.ai || 0)}
+            icon={FiActivity}
+            color="green"
+            subtitle="Usage-based (OCR providers)"
+          />
+          <StatCard
+            title="Other Cost"
+            value={formatCurrency(billing?.byProvider?.other || 0)}
+            icon={FiHardDrive}
+            color="indigo"
+            subtitle="Email/SMS and misc infra"
+          />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left py-2 text-sm font-semibold text-gray-600">Component</th>
+                <th className="text-left py-2 text-sm font-semibold text-gray-600">Provider</th>
+                <th className="text-right py-2 text-sm font-semibold text-gray-600">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(billing?.items || []).length > 0 ? (
+                billing.items.map((item, idx) => (
+                  <tr key={`${item.name}-${idx}`} className="border-b border-gray-50">
+                    <td className="py-2 text-sm text-gray-900">{item.name}</td>
+                    <td className="py-2 text-sm text-gray-600 uppercase">{item.provider || 'other'}</td>
+                    <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(item.amountInr || 0)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="py-4 text-sm text-gray-500 text-center">
+                    No costing components configured yet. Set infra cost env values to see live totals.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Clinic Inactivity Table */}
