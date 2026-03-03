@@ -16,6 +16,10 @@ function blockSuperAdminClinicDashboard(req, res, next) {
   return next();
 }
 
+function buildDashboardNotificationKey({ clinicId, scopeId = 'all', type, identifier }) {
+  return [clinicId || 'no-clinic', scopeId || 'all', type || 'generic', identifier || 'na'].join('|');
+}
+
 // GET /stats - Today's counts (OPD, revenue, appointments)
 router.get('/stats', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
   try {
@@ -161,6 +165,7 @@ router.get('/alerts', authenticate, blockSuperAdminClinicDashboard, checkPermiss
   try {
     const clinicId = req.query.clinicId || req.user.clinicId;
     const staffId = req.query.staffId || null;
+    const scopeId = staffId || 'all';
     const clinicFilter = clinicId ? { clinicId } : {};
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -190,12 +195,130 @@ router.get('/alerts', authenticate, blockSuperAdminClinicDashboard, checkPermiss
     const lowStockItems = allPharmacyItems.filter(item => item.quantity < (item.minStock || 10)).slice(0, 10);
     
     const alerts = [];
-    if (pendingBills > 0) alerts.push({ type: 'warning', title: 'Pending Bills', message: `${pendingBills} bill(s) pending`, count: pendingBills });
-    if (lowStockItems.length > 0) alerts.push({ type: 'danger', title: 'Low Stock', message: `${lowStockItems.length} item(s) low`, items: lowStockItems });
-    
-    res.json({ success: true, data: { alerts, upcomingAppointments } });
+    if (pendingBills > 0) {
+      alerts.push({
+        key: buildDashboardNotificationKey({
+          clinicId,
+          scopeId,
+          type: 'pending-bills',
+          identifier: String(pendingBills)
+        }),
+        type: 'warning',
+        title: 'Pending Bills',
+        message: `${pendingBills} bill(s) pending`,
+        count: pendingBills
+      });
+    }
+    if (lowStockItems.length > 0) {
+      const lowStockFingerprint = lowStockItems.map((item) => item.id).sort().join(',');
+      alerts.push({
+        key: buildDashboardNotificationKey({
+          clinicId,
+          scopeId,
+          type: 'low-stock',
+          identifier: lowStockFingerprint || String(lowStockItems.length)
+        }),
+        type: 'danger',
+        title: 'Low Stock',
+        message: `${lowStockItems.length} item(s) low`,
+        items: lowStockItems
+      });
+    }
+
+    const upcomingAppointmentsWithKeys = upcomingAppointments.map((apt) => ({
+      ...apt,
+      key: buildDashboardNotificationKey({
+        clinicId,
+        scopeId,
+        type: 'appointment',
+        identifier: `${apt.id}:${apt.timeSlot || 'na'}`
+      })
+    }));
+
+    const allKeys = [
+      ...alerts.map((alert) => alert.key).filter(Boolean),
+      ...upcomingAppointmentsWithKeys.map((apt) => apt.key).filter(Boolean)
+    ];
+
+    const readRows = allKeys.length
+      ? await prisma.dashboardNotificationRead.findMany({
+          where: {
+            clinicId,
+            userId: req.user.id,
+            notificationKey: { in: allKeys }
+          },
+          select: { notificationKey: true }
+        })
+      : [];
+    const readSet = new Set(readRows.map((row) => row.notificationKey));
+
+    const alertsWithStatus = alerts.map((alert) => ({
+      ...alert,
+      unread: !readSet.has(alert.key)
+    }));
+    const upcomingAppointmentsWithStatus = upcomingAppointmentsWithKeys.map((apt) => ({
+      ...apt,
+      unread: !readSet.has(apt.key)
+    }));
+    const unreadCount = alertsWithStatus.filter((a) => a.unread).length
+      + upcomingAppointmentsWithStatus.filter((a) => a.unread).length;
+
+    res.json({
+      success: true,
+      data: {
+        alerts: alertsWithStatus,
+        upcomingAppointments: upcomingAppointmentsWithStatus,
+        unreadCount
+      }
+    });
   } catch (error) {
     console.error('Dashboard alerts error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /alerts/mark-read - Persist read-state for dashboard notifications
+router.post('/alerts/mark-read', authenticate, blockSuperAdminClinicDashboard, checkPermission('dashboard:read'), async (req, res) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const userId = req.user.id;
+    const payload = Array.isArray(req.body?.keys) ? req.body.keys : [];
+    const keys = [...new Set(payload.map((k) => String(k || '').trim()).filter(Boolean))].slice(0, 500);
+
+    if (!clinicId) {
+      return res.status(400).json({ success: false, message: 'Missing clinic context' });
+    }
+
+    if (!keys.length) {
+      return res.json({ success: true, data: { marked: 0 } });
+    }
+
+    await Promise.all(
+      keys.map((notificationKey) =>
+        prisma.dashboardNotificationRead.upsert({
+          where: {
+            clinicId_userId_notificationKey: {
+              clinicId,
+              userId,
+              notificationKey
+            }
+          },
+          create: {
+            clinicId,
+            userId,
+            notificationKey,
+            readAt: new Date()
+          },
+          update: {
+            readAt: new Date()
+          }
+        })
+      )
+    );
+
+    res.json({ success: true, data: { marked: keys.length } });
+  } catch (error) {
+    console.error('Dashboard alerts mark-read error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

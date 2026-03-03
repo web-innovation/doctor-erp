@@ -33,6 +33,7 @@ model User {
   staffProfile     Staff?
   sessions         Session[]
   auditLogs        AuditLog[]
+  dashboardNotificationReads DashboardNotificationRead[]
   purchaseUploads  PurchaseUpload[]
   patientDocuments PatientDocument[] @relation("PatientDocumentUploader")
   purchasesCreated Purchase[]
@@ -116,6 +117,7 @@ model Clinic {
   accounts          Account[]
   documentAiUsages  DocumentAiUsage[]
   blogPosts         BlogPost[]
+  dashboardNotificationReads DashboardNotificationRead[]
 }
 
 model BlogPost {
@@ -891,6 +893,22 @@ model LabStaff {
   @@unique([staffId, labId])
   @@index([labId])
   @@index([clinicId])
+}
+
+model DashboardNotificationRead {
+  id              String   @id @default(uuid())
+  notificationKey String
+  readAt          DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinicId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@unique([clinicId, userId, notificationKey])
+  @@index([clinicId, userId])
+  @@index([readAt])
 }
 
 // ==========================================

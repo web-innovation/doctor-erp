@@ -52,6 +52,16 @@ const dashboardService = {
   },
 
   /**
+   * Mark dashboard alert notifications as read on server
+   * @param {string[]} keys
+   * @returns {Promise}
+   */
+  markAlertsRead: async (keys = []) => {
+    const response = await api.post('/dashboard/alerts/mark-read', { keys });
+    return response.data;
+  },
+
+  /**
    * Get recent activity feed
    * @param {number} [limit=10] - Number of activities to fetch
    * @returns {Promise} - Recent activities including:

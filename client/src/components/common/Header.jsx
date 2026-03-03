@@ -22,6 +22,33 @@ import { dashboardService } from '../../services/dashboardService';
 import appNotificationService from '../../services/appNotificationService';
 import adminService from '../../services/adminService';
 
+const SEEN_NOTIFICATIONS_STORAGE_PREFIX = 'header_seen_notifications_v1';
+
+const buildSeenNotificationsStorageKey = (userId) => (
+  `${SEEN_NOTIFICATIONS_STORAGE_PREFIX}:${userId || 'anonymous'}`
+);
+
+const readSeenNotificationKeys = (userId) => {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(buildSeenNotificationsStorageKey(userId));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (e) {
+    return new Set();
+  }
+};
+
+const writeSeenNotificationKeys = (userId, keysSet) => {
+  if (typeof window === 'undefined') return;
+  const keys = Array.from(keysSet || []);
+  window.localStorage.setItem(
+    buildSeenNotificationsStorageKey(userId),
+    JSON.stringify(keys)
+  );
+};
+
 const Header = ({ onMenuClick }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -38,8 +65,10 @@ const Header = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout, activeViewUser, setActiveViewUser, clearActiveViewUser } = useAuth();
   const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
+  const currentSeenStorageUserId = user?.id || 'anonymous';
 
   const getNotificationKey = (notification) => {
+    if (notification?.key) return String(notification.key);
     const source = notification?.source || 'unknown';
     const idPart = notification?.id ? String(notification.id) : '';
     const titlePart = notification?.title || '';
@@ -70,11 +99,12 @@ const Header = ({ onMenuClick }) => {
 
   // Convert alerts to notifications format
   const dashboardNotifications = (alertsData?.data?.alerts || []).map((alert, index) => ({
-    id: index + 1,
+    id: alert.key || `alert-${index + 1}`,
+    key: alert.key || null,
     title: alert.title,
     message: alert.message,
     time: 'Just now',
-    unread: true,
+    unread: alert.unread !== false,
     type: alert.type,
     source: 'dashboard'
   }));
@@ -83,11 +113,12 @@ const Header = ({ onMenuClick }) => {
   const upcomingAppointments = alertsData?.data?.upcomingAppointments || [];
   upcomingAppointments.forEach((apt, index) => {
     dashboardNotifications.push({
-      id: 100 + index,
+      id: apt.key || apt.id || `appointment-${index + 1}`,
+      key: apt.key || null,
       title: 'Upcoming Appointment',
       message: `${apt.patient?.name} at ${apt.timeSlot || 'scheduled'}`,
       time: 'Today',
-      unread: true,
+      unread: apt.unread !== false,
       source: 'dashboard'
     });
   });
@@ -150,6 +181,14 @@ const Header = ({ onMenuClick }) => {
   });
 
   const unreadCount = notifications.filter((n) => n.unread).length;
+
+  useEffect(() => {
+    setSeenNotificationKeys(readSeenNotificationKeys(currentSeenStorageUserId));
+  }, [currentSeenStorageUserId]);
+
+  useEffect(() => {
+    writeSeenNotificationKeys(currentSeenStorageUserId, seenNotificationKeys);
+  }, [currentSeenStorageUserId, seenNotificationKeys]);
 
   // Generate breadcrumbs from path
   const getBreadcrumbs = () => {
@@ -425,7 +464,25 @@ const Header = ({ onMenuClick }) => {
     }
   };
 
-  const handleNotificationClick = (notification) => {
+  const markServerNotificationsRead = async (items = []) => {
+    const keys = [...new Set(
+      (items || [])
+        .filter((n) => n?.source === 'dashboard' && n?.key)
+        .map((n) => String(n.key))
+    )];
+    if (!keys.length) return;
+    try {
+      await dashboardService.markAlertsRead(keys);
+      queryClient.invalidateQueries({ queryKey: ['dashboardAlerts'] });
+      if (activeViewUser?.id) {
+        queryClient.invalidateQueries({ queryKey: ['dashboardAlerts', activeViewUser.id] });
+      }
+    } catch (error) {
+      console.error('Failed to persist dashboard notification read-state:', error);
+    }
+  };
+
+  const handleNotificationClick = async (notification) => {
     if (!notification) return;
     const notificationKey = getNotificationKey(notification);
     setSeenNotificationKeys((prev) => {
@@ -436,19 +493,21 @@ const Header = ({ onMenuClick }) => {
     if (notification.source === 'local' && notification.id) {
       appNotificationService.remove(notification.id);
     }
+    await markServerNotificationsRead([notification]);
     if (notification.path) {
       navigate(notification.path);
     }
     setShowNotifications(false);
   };
 
-  const handleBellClick = () => {
+  const handleBellClick = async () => {
     if (!showNotifications) {
       setSeenNotificationKeys((prev) => {
         const next = new Set(prev);
         notifications.forEach((notification) => next.add(getNotificationKey(notification)));
         return next;
       });
+      await markServerNotificationsRead(notifications);
     }
     setShowNotifications((prev) => !prev);
   };
