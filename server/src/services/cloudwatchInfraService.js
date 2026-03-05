@@ -131,13 +131,16 @@ async function getMetricAverage(cw, GetMetricStatisticsCommand, { namespace, met
 
 async function findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost) {
   if (!dbHost) return null;
+  const needle = dbHost.toLowerCase();
   let marker;
   for (;;) {
     const res = await rds.send(new DescribeDBInstancesCommand({ Marker: marker }));
     const list = Array.isArray(res?.DBInstances) ? res.DBInstances : [];
     const found = list.find((db) => {
       const endpoint = db?.Endpoint?.Address;
-      return endpoint && endpoint.toLowerCase() === dbHost.toLowerCase();
+      if (!endpoint) return false;
+      const ep = endpoint.toLowerCase();
+      return ep === needle || ep.includes(needle) || needle.includes(ep);
     });
     if (found) return found;
     marker = res?.Marker;
@@ -161,7 +164,7 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
   const result = {
     source: 'cloudwatch',
     instance: { cpuPercent: null, memoryPercent: null, instanceId: null },
-    rds: { cpuPercent: null, memoryPercent: null, dbInstanceIdentifier: null, endpointMatchUsed: false },
+    rds: { cpuPercent: null, memoryPercent: null, dbInstanceIdentifier: null, endpointMatchUsed: false, debug: null },
   };
 
   const { cw, rds, GetMetricStatisticsCommand, DescribeDBInstancesCommand } = await getAwsClients(region);
@@ -193,9 +196,20 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
     result.instance.memoryPercent = clampPercent(ec2Mem);
   }
 
-  let db = await findRdsInstanceByIdentifier(rds, DescribeDBInstancesCommand, rdsDbInstanceIdentifier).catch(() => null);
+  let db = await findRdsInstanceByIdentifier(rds, DescribeDBInstancesCommand, rdsDbInstanceIdentifier).catch((err) => {
+    result.rds.debug = `describe-by-id-failed:${err?.name || 'error'}`;
+    return null;
+  });
+  const guessedDbIdentifier = dbHost ? dbHost.split('.')[0] : null;
+  if (!db && guessedDbIdentifier && guessedDbIdentifier !== rdsDbInstanceIdentifier) {
+    db = await findRdsInstanceByIdentifier(rds, DescribeDBInstancesCommand, guessedDbIdentifier).catch(() => null);
+    if (db) result.rds.debug = 'resolved-by-guessed-id';
+  }
   if (!db) {
-    db = await findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost).catch(() => null);
+    db = await findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost).catch((err) => {
+      result.rds.debug = `describe-by-endpoint-failed:${err?.name || 'error'}`;
+      return null;
+    });
     if (db) result.rds.endpointMatchUsed = true;
   }
   if (db?.DBInstanceIdentifier) {
@@ -219,6 +233,7 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
     ]);
 
     result.rds.cpuPercent = clampPercent(rdsCpu);
+    if (result.rds.debug == null) result.rds.debug = 'resolved';
 
     const classKey = String(db.DBInstanceClass || '').toLowerCase();
     const totalMemBytes = RDS_INSTANCE_MEMORY_BYTES_MAP[classKey] || null;
@@ -226,6 +241,8 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
       const usedPct = ((totalMemBytes - rdsFreeableMemBytes) / totalMemBytes) * 100;
       result.rds.memoryPercent = clampPercent(usedPct);
     }
+  } else {
+    result.rds.debug = result.rds.debug || 'rds-instance-not-resolved';
   }
 
   return result;

@@ -428,6 +428,11 @@ const AdminDashboard = () => {
             RDS CPU: {stats?.infrastructure?.cloudwatch?.metricSource?.rdsCpu || 'n/a'},
             RDS Memory: {stats?.infrastructure?.cloudwatch?.metricSource?.rdsMemory || 'n/a'}
           </p>
+          {stats?.infrastructure?.cloudwatch?.rdsDebug && (
+            <p className="text-xs text-gray-500">
+              RDS resolution: {stats.infrastructure.cloudwatch.rdsDebug}
+            </p>
+          )}
         </div>
       )}
 

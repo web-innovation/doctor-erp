@@ -1613,6 +1613,7 @@ router.get('/dashboard', async (req, res, next) => {
             instanceId: cloudwatchUtil?.instance?.instanceId || null,
             dbInstanceIdentifier: cloudwatchUtil?.rds?.dbInstanceIdentifier || null,
             rdsEndpointMatchUsed: !!cloudwatchUtil?.rds?.endpointMatchUsed,
+            rdsDebug: cloudwatchUtil?.rds?.debug || null,
             metricSource
           }
         },
