@@ -164,7 +164,15 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
   const result = {
     source: 'cloudwatch',
     instance: { cpuPercent: null, memoryPercent: null, instanceId: null },
-    rds: { cpuPercent: null, memoryPercent: null, dbInstanceIdentifier: null, endpointMatchUsed: false, debug: null },
+    rds: {
+      cpuPercent: null,
+      memoryPercent: null,
+      dbInstanceIdentifier: null,
+      endpointMatchUsed: false,
+      debug: null,
+      freeableMemoryBytes: null,
+      estimatedTotalMemoryBytes: null,
+    },
   };
 
   const { cw, rds, GetMetricStatisticsCommand, DescribeDBInstancesCommand } = await getAwsClients(region);
@@ -233,10 +241,12 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInsta
     ]);
 
     result.rds.cpuPercent = clampPercent(rdsCpu);
+    result.rds.freeableMemoryBytes = Number.isFinite(rdsFreeableMemBytes) ? rdsFreeableMemBytes : null;
     if (result.rds.debug == null) result.rds.debug = 'resolved';
 
     const classKey = String(db.DBInstanceClass || '').toLowerCase();
     const totalMemBytes = RDS_INSTANCE_MEMORY_BYTES_MAP[classKey] || null;
+    result.rds.estimatedTotalMemoryBytes = Number.isFinite(totalMemBytes) ? totalMemBytes : null;
     if (Number.isFinite(rdsFreeableMemBytes) && Number.isFinite(totalMemBytes) && totalMemBytes > 0) {
       const usedPct = ((totalMemBytes - rdsFreeableMemBytes) / totalMemBytes) * 100;
       result.rds.memoryPercent = clampPercent(usedPct);

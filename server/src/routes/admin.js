@@ -92,6 +92,13 @@ function buildUtilAlert(label, percent, threshold = 80) {
   };
 }
 
+function getUtilStatusWithThresholds(percent, warning = 80, critical = 90) {
+  if (!Number.isFinite(percent)) return 'unknown';
+  if (percent >= critical) return 'critical';
+  if (percent >= warning) return 'warning';
+  return 'ok';
+}
+
 const normalizeAccessControls = (value, clinicCreatedAt) =>
   normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
@@ -1509,31 +1516,70 @@ router.get('/dashboard', async (req, res, next) => {
     }
 
     const instanceCpuUtilPercent = cloudwatchUtil?.instance?.cpuPercent ?? fallbackInstanceCpuUtilPercent;
-    const instanceMemoryUtilPercent = cloudwatchUtil?.instance?.memoryPercent ?? fallbackInstanceMemoryUtilPercent;
+    // Prefer host memory calculation; CWAgent mem_used_percent can be missing/misconfigured and return 0.
+    const instanceMemoryUtilPercent = fallbackInstanceMemoryUtilPercent ?? cloudwatchUtil?.instance?.memoryPercent ?? null;
     const rdsCpuUtilPercent = cloudwatchUtil?.rds?.cpuPercent ?? fallbackRdsCpuUtilPercent;
     const rdsMemoryUtilPercent = cloudwatchUtil?.rds?.memoryPercent ?? fallbackRdsMemoryUtilPercent;
+    const rdsFreeableMemoryBytes = cloudwatchUtil?.rds?.freeableMemoryBytes ?? null;
+    const rdsFreeableMemoryMb = Number.isFinite(rdsFreeableMemoryBytes)
+      ? Math.round(rdsFreeableMemoryBytes / (1024 * 1024))
+      : null;
     const metricSource = {
       instanceCpu: cloudwatchUtil?.instance?.cpuPercent != null ? 'cloudwatch' : 'fallback',
-      instanceMemory: cloudwatchUtil?.instance?.memoryPercent != null ? 'cloudwatch' : 'fallback',
+      instanceMemory: fallbackInstanceMemoryUtilPercent != null ? 'host-os' : (cloudwatchUtil?.instance?.memoryPercent != null ? 'cloudwatch' : 'fallback'),
       rdsCpu: cloudwatchUtil?.rds?.cpuPercent != null ? 'cloudwatch' : 'fallback',
       rdsMemory: cloudwatchUtil?.rds?.memoryPercent != null ? 'cloudwatch' : 'fallback',
     };
+
+    // RDS memory from FreeableMemory is cache-inclusive and not equivalent to AWS Alarm state.
+    // Use conservative freeable-memory thresholds for action alerts.
+    const rdsMemoryLevel = (() => {
+      if (!Number.isFinite(rdsFreeableMemoryMb)) return getUtilStatus(rdsMemoryUtilPercent);
+      if (rdsFreeableMemoryMb <= 128) return 'critical';
+      if (rdsFreeableMemoryMb <= 256) return 'warning';
+      return 'ok';
+    })();
+    const rdsMemoryAlert = (() => {
+      if (!Number.isFinite(rdsFreeableMemoryMb)) return null;
+      if (rdsFreeableMemoryMb <= 128) {
+        return {
+          metric: 'RDS Memory',
+          level: 'critical',
+          percent: rdsMemoryUtilPercent,
+          message: `RDS FreeableMemory is low (${rdsFreeableMemoryMb} MB)`
+        };
+      }
+      if (rdsFreeableMemoryMb <= 256) {
+        return {
+          metric: 'RDS Memory',
+          level: 'warning',
+          percent: rdsMemoryUtilPercent,
+          message: `RDS FreeableMemory is getting low (${rdsFreeableMemoryMb} MB)`
+        };
+      }
+      return null;
+    })();
 
     const utilizationMatrix = {
       instance: {
         cpuPercent: instanceCpuUtilPercent,
         memoryPercent: instanceMemoryUtilPercent,
+        cpuLevel: getUtilStatusWithThresholds(instanceCpuUtilPercent, 80, 90),
+        memoryLevel: getUtilStatusWithThresholds(instanceMemoryUtilPercent, 80, 90),
       },
       rds: {
         cpuPercent: rdsCpuUtilPercent,
         memoryPercent: rdsMemoryUtilPercent,
+        cpuLevel: getUtilStatusWithThresholds(rdsCpuUtilPercent, 80, 90),
+        memoryLevel: rdsMemoryLevel,
+        freeableMemoryMb: rdsFreeableMemoryMb,
       }
     };
     const utilizationAlerts = [
       buildUtilAlert('Instance CPU', instanceCpuUtilPercent),
       buildUtilAlert('Instance Memory', instanceMemoryUtilPercent),
       buildUtilAlert('RDS CPU', rdsCpuUtilPercent),
-      buildUtilAlert('RDS Memory', rdsMemoryUtilPercent),
+      rdsMemoryAlert,
     ].filter(Boolean);
     const infraCriticalAlerts = utilizationAlerts.filter((a) => a.level === 'critical').length + (failedUploads24h > 0 ? 1 : 0);
     const infraActionAlerts = utilizationAlerts.length + (failedUploads24h > 0 ? 1 : 0);

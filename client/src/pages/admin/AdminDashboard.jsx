@@ -360,7 +360,7 @@ const AdminDashboard = () => {
         <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">Infra Utilization Matrix</h2>
-            <p className="text-xs text-gray-500">Thresholds: warning at 80%, critical at 90%</p>
+            <p className="text-xs text-gray-500">Thresholds: CPU/Instance-Memory warning 80%, critical 90%; RDS memory uses FreeableMemory (MB).</p>
           </div>
 
           {utilizationAlerts.length > 0 && (
@@ -393,11 +393,24 @@ const AdminDashboard = () => {
               </thead>
               <tbody>
                 {[
-                  { name: 'Instance', cpu: utilization?.instance?.cpuPercent, mem: utilization?.instance?.memoryPercent },
-                  { name: 'RDS', cpu: utilization?.rds?.cpuPercent, mem: utilization?.rds?.memoryPercent },
+                  {
+                    name: 'Instance',
+                    cpu: utilization?.instance?.cpuPercent,
+                    mem: utilization?.instance?.memoryPercent,
+                    cpuLevel: utilization?.instance?.cpuLevel,
+                    memLevel: utilization?.instance?.memoryLevel,
+                  },
+                  {
+                    name: 'RDS',
+                    cpu: utilization?.rds?.cpuPercent,
+                    mem: utilization?.rds?.memoryPercent,
+                    cpuLevel: utilization?.rds?.cpuLevel,
+                    memLevel: utilization?.rds?.memoryLevel,
+                    freeableMemoryMb: utilization?.rds?.freeableMemoryMb,
+                  },
                 ].map((row) => {
-                  const cpuLevel = getMetricLevel(row.cpu);
-                  const memLevel = getMetricLevel(row.mem);
+                  const cpuLevel = row.cpuLevel || getMetricLevel(row.cpu);
+                  const memLevel = row.memLevel || getMetricLevel(row.mem);
                   return (
                     <tr key={row.name} className="border-b border-gray-50">
                       <td className="py-3 text-sm font-medium text-gray-900">{row.name}</td>
@@ -407,7 +420,11 @@ const AdminDashboard = () => {
                           {cpuLevel.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-3 text-sm text-gray-700">{formatPct(row.mem)}</td>
+                      <td className="py-3 text-sm text-gray-700">
+                        {row.name === 'RDS'
+                          ? (typeof row.freeableMemoryMb === 'number' ? `${row.freeableMemoryMb} MB freeable` : 'N/A')
+                          : formatPct(row.mem)}
+                      </td>
                       <td className="py-3 text-sm">
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getMetricBadgeClass(memLevel)}`}>
                           {memLevel.toUpperCase()}
