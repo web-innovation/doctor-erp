@@ -1501,7 +1501,8 @@ router.get('/dashboard', async (req, res, next) => {
     try {
       cloudwatchUtil = await getCloudwatchInfraUtilization({
         region: process.env.AWS_REGION || 'ap-south-1',
-        databaseUrl: process.env.DATABASE_URL
+        databaseUrl: process.env.DATABASE_URL,
+        rdsDbInstanceIdentifier: process.env.RDS_DB_INSTANCE_IDENTIFIER
       });
     } catch (_err) {
       cloudwatchUtil = null;
@@ -1511,6 +1512,12 @@ router.get('/dashboard', async (req, res, next) => {
     const instanceMemoryUtilPercent = cloudwatchUtil?.instance?.memoryPercent ?? fallbackInstanceMemoryUtilPercent;
     const rdsCpuUtilPercent = cloudwatchUtil?.rds?.cpuPercent ?? fallbackRdsCpuUtilPercent;
     const rdsMemoryUtilPercent = cloudwatchUtil?.rds?.memoryPercent ?? fallbackRdsMemoryUtilPercent;
+    const metricSource = {
+      instanceCpu: cloudwatchUtil?.instance?.cpuPercent != null ? 'cloudwatch' : 'fallback',
+      instanceMemory: cloudwatchUtil?.instance?.memoryPercent != null ? 'cloudwatch' : 'fallback',
+      rdsCpu: cloudwatchUtil?.rds?.cpuPercent != null ? 'cloudwatch' : 'fallback',
+      rdsMemory: cloudwatchUtil?.rds?.memoryPercent != null ? 'cloudwatch' : 'fallback',
+    };
 
     const utilizationMatrix = {
       instance: {
@@ -1604,7 +1611,9 @@ router.get('/dashboard', async (req, res, next) => {
           cloudwatch: {
             enabled: !!cloudwatchUtil,
             instanceId: cloudwatchUtil?.instance?.instanceId || null,
-            dbInstanceIdentifier: cloudwatchUtil?.rds?.dbInstanceIdentifier || null
+            dbInstanceIdentifier: cloudwatchUtil?.rds?.dbInstanceIdentifier || null,
+            rdsEndpointMatchUsed: !!cloudwatchUtil?.rds?.endpointMatchUsed,
+            metricSource
           }
         },
         monthlyGrowth,

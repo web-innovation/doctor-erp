@@ -146,11 +146,22 @@ async function findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost
   return null;
 }
 
-async function fetchCloudwatchInfraUtilization({ region, databaseUrl }) {
+async function findRdsInstanceByIdentifier(rds, DescribeDBInstancesCommand, dbInstanceIdentifier) {
+  if (!dbInstanceIdentifier) return null;
+  try {
+    const res = await rds.send(new DescribeDBInstancesCommand({ DBInstanceIdentifier: dbInstanceIdentifier }));
+    const list = Array.isArray(res?.DBInstances) ? res.DBInstances : [];
+    return list[0] || null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInstanceIdentifier }) {
   const result = {
     source: 'cloudwatch',
     instance: { cpuPercent: null, memoryPercent: null, instanceId: null },
-    rds: { cpuPercent: null, memoryPercent: null, dbInstanceIdentifier: null },
+    rds: { cpuPercent: null, memoryPercent: null, dbInstanceIdentifier: null, endpointMatchUsed: false },
   };
 
   const { cw, rds, GetMetricStatisticsCommand, DescribeDBInstancesCommand } = await getAwsClients(region);
@@ -182,7 +193,11 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl }) {
     result.instance.memoryPercent = clampPercent(ec2Mem);
   }
 
-  const db = await findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost).catch(() => null);
+  let db = await findRdsInstanceByIdentifier(rds, DescribeDBInstancesCommand, rdsDbInstanceIdentifier).catch(() => null);
+  if (!db) {
+    db = await findRdsInstanceByEndpoint(rds, DescribeDBInstancesCommand, dbHost).catch(() => null);
+    if (db) result.rds.endpointMatchUsed = true;
+  }
   if (db?.DBInstanceIdentifier) {
     const dbId = db.DBInstanceIdentifier;
     result.rds.dbInstanceIdentifier = dbId;
@@ -216,12 +231,12 @@ async function fetchCloudwatchInfraUtilization({ region, databaseUrl }) {
   return result;
 }
 
-export async function getCloudwatchInfraUtilization({ region, databaseUrl }) {
+export async function getCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInstanceIdentifier }) {
   const now = Date.now();
   if (cache.value && now < cache.expiresAt) return cache.value;
   if (cache.pending) return cache.pending;
 
-  cache.pending = fetchCloudwatchInfraUtilization({ region, databaseUrl })
+  cache.pending = fetchCloudwatchInfraUtilization({ region, databaseUrl, rdsDbInstanceIdentifier })
     .then((value) => {
       cache.value = value;
       cache.expiresAt = Date.now() + CACHE_TTL_MS;

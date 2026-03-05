@@ -422,6 +422,12 @@ const AdminDashboard = () => {
           <p className="text-xs text-gray-500">
             Source: {stats?.infrastructure?.cloudwatch?.enabled ? 'AWS CloudWatch (live)' : 'Fallback telemetry'}.
           </p>
+          <p className="text-xs text-gray-500">
+            Metric source - Instance CPU: {stats?.infrastructure?.cloudwatch?.metricSource?.instanceCpu || 'n/a'},
+            Instance Memory: {stats?.infrastructure?.cloudwatch?.metricSource?.instanceMemory || 'n/a'},
+            RDS CPU: {stats?.infrastructure?.cloudwatch?.metricSource?.rdsCpu || 'n/a'},
+            RDS Memory: {stats?.infrastructure?.cloudwatch?.metricSource?.rdsMemory || 'n/a'}
+          </p>
         </div>
       )}
 
