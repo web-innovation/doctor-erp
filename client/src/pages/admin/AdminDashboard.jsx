@@ -420,7 +420,7 @@ const AdminDashboard = () => {
             </table>
           </div>
           <p className="text-xs text-gray-500">
-            Note: RDS utilization values are read from environment variables (`RDS_CPU_UTILIZATION_PCT`, `RDS_MEMORY_UTILIZATION_PCT`).
+            Source: {stats?.infrastructure?.cloudwatch?.enabled ? 'AWS CloudWatch (live)' : 'Fallback telemetry'}.
           </p>
         </div>
       )}

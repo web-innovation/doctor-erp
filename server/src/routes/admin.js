@@ -13,6 +13,7 @@ import {
   getSubscriptionSnapshot,
   getEffectiveStaffLimit,
 } from '../services/subscriptionService.js';
+import { getCloudwatchInfraUtilization } from '../services/cloudwatchInfraService.js';
 
 const router = express.Router();
 
@@ -1485,17 +1486,31 @@ router.get('/dashboard', async (req, res, next) => {
 
     const cpuCores = Math.max(1, os.cpus()?.length || 1);
     const load1m = os.loadavg?.()[0] || 0;
-    const instanceCpuUtilPercent =
-      clampPercent(toNumber(process.env.INSTANCE_CPU_UTILIZATION_PCT, NaN))
-      ?? clampPercent((load1m / cpuCores) * 100);
     const memoryTotal = os.totalmem();
     const memoryFree = os.freemem();
-    const instanceMemoryUtilPercent = memoryTotal > 0
+    const fallbackInstanceCpuUtilPercent =
+      clampPercent(toNumber(process.env.INSTANCE_CPU_UTILIZATION_PCT, NaN))
+      ?? clampPercent((load1m / cpuCores) * 100);
+    const fallbackInstanceMemoryUtilPercent = memoryTotal > 0
       ? clampPercent(((memoryTotal - memoryFree) / memoryTotal) * 100)
       : null;
+    const fallbackRdsCpuUtilPercent = clampPercent(toNumber(process.env.RDS_CPU_UTILIZATION_PCT, NaN));
+    const fallbackRdsMemoryUtilPercent = clampPercent(toNumber(process.env.RDS_MEMORY_UTILIZATION_PCT, NaN));
 
-    const rdsCpuUtilPercent = clampPercent(toNumber(process.env.RDS_CPU_UTILIZATION_PCT, NaN));
-    const rdsMemoryUtilPercent = clampPercent(toNumber(process.env.RDS_MEMORY_UTILIZATION_PCT, NaN));
+    let cloudwatchUtil = null;
+    try {
+      cloudwatchUtil = await getCloudwatchInfraUtilization({
+        region: process.env.AWS_REGION || 'ap-south-1',
+        databaseUrl: process.env.DATABASE_URL
+      });
+    } catch (_err) {
+      cloudwatchUtil = null;
+    }
+
+    const instanceCpuUtilPercent = cloudwatchUtil?.instance?.cpuPercent ?? fallbackInstanceCpuUtilPercent;
+    const instanceMemoryUtilPercent = cloudwatchUtil?.instance?.memoryPercent ?? fallbackInstanceMemoryUtilPercent;
+    const rdsCpuUtilPercent = cloudwatchUtil?.rds?.cpuPercent ?? fallbackRdsCpuUtilPercent;
+    const rdsMemoryUtilPercent = cloudwatchUtil?.rds?.memoryPercent ?? fallbackRdsMemoryUtilPercent;
 
     const utilizationMatrix = {
       instance: {
@@ -1585,7 +1600,12 @@ router.get('/dashboard', async (req, res, next) => {
           utilization: utilizationMatrix,
           utilizationAlerts,
           infraCriticalAlerts,
-          infraActionAlerts
+          infraActionAlerts,
+          cloudwatch: {
+            enabled: !!cloudwatchUtil,
+            instanceId: cloudwatchUtil?.instance?.instanceId || null,
+            dbInstanceIdentifier: cloudwatchUtil?.rds?.dbInstanceIdentifier || null
+          }
         },
         monthlyGrowth,
         recentClinics: recentClinics.map(c => ({
