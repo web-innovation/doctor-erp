@@ -114,6 +114,25 @@ const AdminDashboard = () => {
     ? (((stats?.newClinicsThisMonth - stats?.newClinicsLastMonth) / stats?.newClinicsLastMonth) * 100).toFixed(1)
     : stats?.newClinicsThisMonth > 0 ? 100 : 0;
   const billing = stats?.billingCycleCost || { totalCostInr: 0, byProvider: {}, items: [] };
+  const appUptimeHours = Math.floor((stats?.infrastructure?.appUptimeSec || 0) / 3600);
+  const utilization = stats?.infrastructure?.utilization || {
+    instance: { cpuPercent: null, memoryPercent: null },
+    rds: { cpuPercent: null, memoryPercent: null }
+  };
+  const utilizationAlerts = stats?.infrastructure?.utilizationAlerts || [];
+  const getMetricLevel = (percent) => {
+    if (typeof percent !== 'number') return 'unknown';
+    if (percent >= 90) return 'critical';
+    if (percent >= 80) return 'warning';
+    return 'ok';
+  };
+  const getMetricBadgeClass = (level) => {
+    if (level === 'critical') return 'bg-red-100 text-red-700';
+    if (level === 'warning') return 'bg-amber-100 text-amber-700';
+    if (level === 'ok') return 'bg-emerald-100 text-emerald-700';
+    return 'bg-gray-100 text-gray-600';
+  };
+  const formatPct = (value) => (typeof value === 'number' ? `${value.toFixed(1)}%` : 'N/A');
 
   return (
     <div className="space-y-6">
@@ -316,17 +335,17 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
           title="AWS Critical Alerts"
-          value={stats?.infrastructure?.awsCriticalAlerts || 0}
+          value={stats?.infrastructure?.infraCriticalAlerts ?? stats?.infrastructure?.awsCriticalAlerts ?? 0}
           icon={FiAlertTriangle}
-          color={(stats?.infrastructure?.awsCriticalAlerts || 0) > 0 ? 'red' : 'green'}
-          subtitle="Based on failed ingestion signals"
+          color={(stats?.infrastructure?.infraCriticalAlerts ?? stats?.infrastructure?.awsCriticalAlerts ?? 0) > 0 ? 'red' : 'green'}
+          subtitle={`Action alerts: ${stats?.infrastructure?.infraActionAlerts || 0}`}
         />
         <StatCard
           title="Instance Uptime"
           value={`${Math.floor((stats?.infrastructure?.instanceUptimeSec || 0) / 3600)}h`}
           icon={FiCpu}
           color="blue"
-          subtitle={stats?.infrastructure?.platform || 'Runtime info'}
+          subtitle={`${stats?.infrastructure?.platform || 'Runtime info'}${appUptimeHours > 0 ? ` | App: ${appUptimeHours}h` : ''}`}
         />
         <StatCard
           title="Memory Used"
@@ -336,6 +355,75 @@ const AdminDashboard = () => {
           subtitle={`Draft purchases: ${stats?.draftPurchasesCount || 0}`}
         />
       </div>
+
+      {(utilizationAlerts.length > 0 || stats?.infrastructure?.utilization) && (
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">Infra Utilization Matrix</h2>
+            <p className="text-xs text-gray-500">Thresholds: warning at 80%, critical at 90%</p>
+          </div>
+
+          {utilizationAlerts.length > 0 && (
+            <div className="space-y-2">
+              {utilizationAlerts.map((alert, idx) => (
+                <div
+                  key={`${alert.metric}-${idx}`}
+                  className={`rounded-lg border px-3 py-2 text-sm ${
+                    alert.level === 'critical'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-700'
+                  }`}
+                >
+                  {alert.message}. Action recommended.
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px]">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">System</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">CPU</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">CPU Status</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Memory</th>
+                  <th className="text-left py-2 text-sm font-semibold text-gray-600">Memory Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { name: 'Instance', cpu: utilization?.instance?.cpuPercent, mem: utilization?.instance?.memoryPercent },
+                  { name: 'RDS', cpu: utilization?.rds?.cpuPercent, mem: utilization?.rds?.memoryPercent },
+                ].map((row) => {
+                  const cpuLevel = getMetricLevel(row.cpu);
+                  const memLevel = getMetricLevel(row.mem);
+                  return (
+                    <tr key={row.name} className="border-b border-gray-50">
+                      <td className="py-3 text-sm font-medium text-gray-900">{row.name}</td>
+                      <td className="py-3 text-sm text-gray-700">{formatPct(row.cpu)}</td>
+                      <td className="py-3 text-sm">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getMetricBadgeClass(cpuLevel)}`}>
+                          {cpuLevel.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-3 text-sm text-gray-700">{formatPct(row.mem)}</td>
+                      <td className="py-3 text-sm">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getMetricBadgeClass(memLevel)}`}>
+                          {memLevel.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-500">
+            Note: RDS utilization values are read from environment variables (`RDS_CPU_UTILIZATION_PCT`, `RDS_MEMORY_UTILIZATION_PCT`).
+          </p>
+        </div>
+      )}
 
       {/* Costing */}
       <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">

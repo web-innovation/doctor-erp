@@ -30,7 +30,8 @@ export default function Login() {
       console.log('Login response:', data);
       login(data.user, data.token);
       toast.success('Login successful!');
-      navigate('/dashboard');
+      const role = (data?.user?.role || '').toString().toUpperCase();
+      navigate(role === 'SUPER_ADMIN' ? '/admin' : '/dashboard');
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || 'Invalid credentials');

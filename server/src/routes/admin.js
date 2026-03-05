@@ -65,6 +65,32 @@ function parseCostItemsJson(raw) {
   }
 }
 
+function clampPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n < 0) return 0;
+  if (n > 100) return 100;
+  return Math.round(n * 100) / 100;
+}
+
+function getUtilStatus(percent) {
+  if (!Number.isFinite(percent)) return 'unknown';
+  if (percent >= 90) return 'critical';
+  if (percent >= 80) return 'warning';
+  return 'ok';
+}
+
+function buildUtilAlert(label, percent, threshold = 80) {
+  if (!Number.isFinite(percent) || percent < threshold) return null;
+  const status = getUtilStatus(percent);
+  return {
+    metric: label,
+    percent,
+    level: status === 'critical' ? 'critical' : 'warning',
+    message: `${label} utilization is ${percent}%`
+  };
+}
+
 const normalizeAccessControls = (value, clinicCreatedAt) =>
   normalizeAccessControlsWithSubscription(value, clinicCreatedAt || new Date());
 
@@ -1457,6 +1483,39 @@ router.get('/dashboard', async (req, res, next) => {
       byProvider
     };
 
+    const cpuCores = Math.max(1, os.cpus()?.length || 1);
+    const load1m = os.loadavg?.()[0] || 0;
+    const instanceCpuUtilPercent =
+      clampPercent(toNumber(process.env.INSTANCE_CPU_UTILIZATION_PCT, NaN))
+      ?? clampPercent((load1m / cpuCores) * 100);
+    const memoryTotal = os.totalmem();
+    const memoryFree = os.freemem();
+    const instanceMemoryUtilPercent = memoryTotal > 0
+      ? clampPercent(((memoryTotal - memoryFree) / memoryTotal) * 100)
+      : null;
+
+    const rdsCpuUtilPercent = clampPercent(toNumber(process.env.RDS_CPU_UTILIZATION_PCT, NaN));
+    const rdsMemoryUtilPercent = clampPercent(toNumber(process.env.RDS_MEMORY_UTILIZATION_PCT, NaN));
+
+    const utilizationMatrix = {
+      instance: {
+        cpuPercent: instanceCpuUtilPercent,
+        memoryPercent: instanceMemoryUtilPercent,
+      },
+      rds: {
+        cpuPercent: rdsCpuUtilPercent,
+        memoryPercent: rdsMemoryUtilPercent,
+      }
+    };
+    const utilizationAlerts = [
+      buildUtilAlert('Instance CPU', instanceCpuUtilPercent),
+      buildUtilAlert('Instance Memory', instanceMemoryUtilPercent),
+      buildUtilAlert('RDS CPU', rdsCpuUtilPercent),
+      buildUtilAlert('RDS Memory', rdsMemoryUtilPercent),
+    ].filter(Boolean);
+    const infraCriticalAlerts = utilizationAlerts.filter((a) => a.level === 'critical').length + (failedUploads24h > 0 ? 1 : 0);
+    const infraActionAlerts = utilizationAlerts.length + (failedUploads24h > 0 ? 1 : 0);
+
     // Get monthly growth data for charts (last 6 months) as per-month deltas
     const monthlyGrowth = [];
     for (let i = 5; i >= 0; i--) {
@@ -1515,12 +1574,18 @@ router.get('/dashboard', async (req, res, next) => {
           billingCycleCost
         },
         infrastructure: {
-          instanceUptimeSec: Math.floor(process.uptime()),
+          // Host/instance uptime (e.g., EC2), not just Node process uptime.
+          instanceUptimeSec: Math.floor(os.uptime()),
+          appUptimeSec: Math.floor(process.uptime()),
           memoryUsedMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
           memoryTotalMb: Math.round(os.totalmem() / (1024 * 1024)),
-          loadAvg1m: os.loadavg?.()[0] || 0,
+          loadAvg1m: load1m,
           platform: `${os.platform()} ${os.release()}`,
-          awsCriticalAlerts: failedUploads24h > 0 ? failedUploads24h : 0
+          awsCriticalAlerts: failedUploads24h > 0 ? failedUploads24h : 0,
+          utilization: utilizationMatrix,
+          utilizationAlerts,
+          infraCriticalAlerts,
+          infraActionAlerts
         },
         monthlyGrowth,
         recentClinics: recentClinics.map(c => ({
