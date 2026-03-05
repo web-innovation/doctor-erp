@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaRegClock, FaArrowRight } from 'react-icons/fa';
 import blogService from '../../services/blogService';
 import SEO from '../../components/seo/SEO';
+import PublicSiteHeader from '../../components/public/PublicSiteHeader';
+import PublicSiteFooter from '../../components/public/PublicSiteFooter';
 
 const BLOG_KEYWORDS = [
   'clinic management blog',
@@ -43,6 +45,7 @@ export default function Blogs() {
           },
         ]}
       />
+      <PublicSiteHeader />
 
       <section className="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
@@ -154,6 +157,7 @@ export default function Blogs() {
           </button>
         </div>
       </div>
+      <PublicSiteFooter />
     </div>
   );
 }

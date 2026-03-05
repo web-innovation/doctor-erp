@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { FaRegClock } from 'react-icons/fa';
 import blogService from '../../services/blogService';
 import SEO from '../../components/seo/SEO';
+import PublicSiteHeader from '../../components/public/PublicSiteHeader';
+import PublicSiteFooter from '../../components/public/PublicSiteFooter';
 
 function buildArticleSchema(post) {
   if (!post) return null;
@@ -54,16 +56,26 @@ export default function BlogDetail() {
   const post = data?.data;
 
   if (isLoading) {
-    return <div className="min-h-screen bg-slate-50 p-8 text-gray-600">Loading blog...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <PublicSiteHeader />
+        <div className="p-8 text-gray-600">Loading blog...</div>
+        <PublicSiteFooter />
+      </div>
+    );
   }
 
   if (isError || !post) {
     return (
-      <div className="min-h-screen bg-slate-50 p-8">
-        <div className="max-w-4xl mx-auto bg-white rounded-xl border border-gray-100 p-8">
+      <div className="min-h-screen bg-slate-50">
+        <PublicSiteHeader />
+        <div className="max-w-4xl mx-auto p-8">
+          <div className="bg-white rounded-xl border border-gray-100 p-8">
           <p className="text-red-600">Blog not found.</p>
           <Link to="/blogs" className="inline-block mt-4 text-blue-600 hover:text-blue-700">Back to blogs</Link>
+          </div>
         </div>
+        <PublicSiteFooter />
       </div>
     );
   }
@@ -80,6 +92,7 @@ export default function BlogDetail() {
         ogType="article"
         schema={buildArticleSchema(post)}
       />
+      <PublicSiteHeader />
 
       <article className="max-w-5xl mx-auto px-4 py-10">
         <Link to="/blogs" className="text-blue-600 hover:text-blue-700 text-sm">Back to blogs</Link>
@@ -108,6 +121,7 @@ export default function BlogDetail() {
           </div>
         </div>
       </article>
+      <PublicSiteFooter />
     </div>
   );
 }
