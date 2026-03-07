@@ -11,6 +11,7 @@ import AuthLayout from './layouts/AuthLayout';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import HelpCenter from './pages/HelpCenter';
+import AppointmentConfirmation from './pages/AppointmentConfirmation';
 import Dashboard from './pages/Dashboard';
 import Patients from './pages/patients/Patients';
 import PatientDetails from './pages/patients/PatientDetails';
@@ -200,6 +201,7 @@ function App() {
       <Route path="/features/smart-prescription-software-for-doctors" element={<SmartPrescriptionDoctors />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/help-center" element={<HelpCenter />} />
+      <Route path="/appointment-confirmation" element={<AppointmentConfirmation />} />
       <Route path="/blogs" element={<Blogs />} />
       <Route path="/blogs/:slug" element={<BlogDetail />} />
       
