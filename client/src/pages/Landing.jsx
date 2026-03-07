@@ -742,6 +742,52 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Business Location */}
+      <section className="py-20 bg-slate-50 border-y border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Visit Our Office</h2>
+            <p className="text-gray-600 max-w-3xl mx-auto">
+              Meet our team to discuss clinic setup, onboarding, and product demo.
+            </p>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6 items-stretch">
+            <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white min-h-[360px]">
+              <iframe
+                src="https://storage.googleapis.com/maps-solutions-u8sz5k9i65/locator-plus/ozv4/locator-plus.html"
+                width="100%"
+                height="100%"
+                style={{ border: 0 }}
+                loading="lazy"
+                title="Docsy ERP office location map"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Docsy ERP</h3>
+              <div className="space-y-4 text-gray-700">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Address</p>
+                  <p>29A Blue Ridge 2, Zirakpur, SAS Nagar 160104</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Phone</p>
+                  <a href="tel:8284073790" className="block text-blue-700 hover:text-blue-800">8284073790</a>
+                  <a href="tel:9306845764" className="block text-blue-700 hover:text-blue-800">9306845764</a>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Email</p>
+                  <a href="mailto:support@docsyerp.in" className="block text-blue-700 hover:text-blue-800">support@docsyerp.in</a>
+                  <a href="mailto:docsy360@gmail.com" className="block text-blue-700 hover:text-blue-800">docsy360@gmail.com</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* GA AI Section */}
       <section id="g-a-ai" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
