@@ -7,13 +7,12 @@ export default function PharmacyManagementTricity() {
       title="Pharmacy Management Software"
       subtitle="Cloud pharmacy software for clinic and retail counters with inventory, GST billing, expiry tracking and purchase workflows."
       description="Built for fast-moving clinic pharmacies, Docsy ERP simplifies medicine billing, stock control, GST-ready invoices, and prescription-linked dispensing. Teams reduce stockouts, billing errors, and manual reconciliation."
-      seoTitle="Pharmacy Management Software in tricity | Docsy ERP"
-      seoDescription="Docsy ERP delivers medical store inventory software, pharmacy billing software and cloud pharmacy software for clinic billing, stock control and reports."
+      seoTitle="Pharmacy Management & Billing Software in Tricity | Docsy ERP"
+      seoDescription="Docsy ERP pharmacy software helps clinics and medical stores manage inventory, GST billing, batch tracking, expiry alerts, and pharmacy reports in one system."
       seoKeywords={[
-        'Pharmacy Management Software in tricity',
-        'Medical store inventory software',
-        'Pharmacy billing software',
-        'Cloud pharmacy software for clinic'
+        'pharmacy management software tricity',
+        'pharmacy billing software',
+        'medical store software'
       ]}
       primaryKeyword="Pharmacy management software"
       secondaryKeywords={[

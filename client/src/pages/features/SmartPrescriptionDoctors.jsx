@@ -7,13 +7,12 @@ export default function SmartPrescriptionDoctors() {
       title="Smart Prescription Software for Doctors"
       subtitle="Digital prescription software for doctors with dosage templates, medicine search, and quick patient-friendly print/PDF output."
       description="Docsy ERP helps doctors generate clear, digital, and error-free prescriptions faster. It improves OPD consultation speed, reduces handwriting confusion, and keeps records linked with patient history and billing."
-      seoTitle="Smart Prescription Software for Doctors | Docsy ERP"
-      seoDescription="Docsy ERP clinic e-prescription system and digital prescription software for doctors in India with EMR integration for secure, paperless workflows."
+      seoTitle="Smart Digital Prescription Software for Doctors | Docsy ERP"
+      seoDescription="Create fast, clear, and digital prescriptions with Docsy ERP. Improve OPD workflow with prescription templates, patient history access, and clinic-ready records."
       seoKeywords={[
-        'Smart Prescription Software for Doctors',
-        'Clinic e-prescription system',
-        'Digital prescription software',
-        'Digital prescription software for doctors'
+        'smart prescription software for doctors',
+        'digital prescription software',
+        'e prescription software for clinics'
       ]}
       primaryKeyword="Smart prescription software for doctors"
       secondaryKeywords={[
