@@ -6,39 +6,60 @@ const baseHtmlPath = path.join(distRoot, 'index.html');
 
 const pages = [
   {
+    route: '/',
+    title: 'Best Clinical Software in Chandigarh | Docsy ERP',
+    description:
+      'Docsy ERP is the best medical software for doctors in Chandigarh. Smart HIMS system for hospitals with EMR, billing, appointments & patient records.',
+    keywords: [
+      'Best Clinic Management Software India',
+      'Best Cloud-Based Clinic Management Software in India',
+      'Best Medical Software for Doctors',
+      'Best Clinic Management Software For Small Clinics',
+      'Best clinic management software India',
+      'Best clinic management software providers',
+      'best hospital management software in india',
+      'Best clinical software in chandigarh',
+      'Best Hospital Software for Chandigarh',
+      'Best HIMS Software in Chandigarh For Your Hospital',
+      'Clinic Management Software free',
+      'Clinic Management System Software Dealers in Chandigarh',
+    ],
+  },
+  {
     route: '/features/patient-management-system-for-clinics',
     title: 'Patient Management System for Clinics | Docsy ERP',
     description:
-      'Advanced patient health analytics software with clinic patient management and OPD management software for smart reporting, billing and workflow automation.',
+      'Best clinic patient management software in Chandigarh by Docsy ERP. Easy doctor patient management system for hospitals & clinics in Tricity.',
     keywords: [
-      'Patient Health Analytics Software',
-      'Patient Management System for Clinics',
-      'Clinic patient management software',
-      'OPD management software',
+      'clinic patient management software in chandigarh',
+      'Patient management system for clinics',
+      'Patient Management System for Chandigarh',
+      'Hospital Management Software in Chandigarh Metro',
+      'Patient Management software company chandigarh',
+      'Doctor Patient Management System in Tricity',
     ],
   },
   {
     route: '/features/pharmacy-management-software-tricity',
-    title: 'Pharmacy Management Software in tricity | Docsy ERP',
+    title: 'Pharmacy Management Software Tricity | Docsy ERP',
     description:
-      'Docsy ERP delivers medical store inventory software, pharmacy billing software and cloud pharmacy software for clinic billing, stock control and reports.',
+      'Docsy ERP Pharmacy Billing Software for medical stores. Complete pharmacy management software with stock, GST billing & reports.',
     keywords: [
-      'Pharmacy Management Software in tricity',
-      'Medical store inventory software',
+      'pharmacy management software tricity',
       'Pharmacy billing software',
-      'Cloud pharmacy software for clinic',
+      'Pharmacy Management Software',
     ],
   },
   {
     route: '/features/smart-prescription-software-for-doctors',
-    title: 'Smart Prescription Software for Doctors | Docsy ERP',
+    title: 'Best Digital Prescription Software for Physicians | Docsy ERP',
     description:
-      'Docsy ERP clinic e-prescription system and digital prescription software for doctors in India with EMR integration for secure, paperless workflows.',
+      'Docsy ERP smart prescription software for doctors with digital prescription system and cloud pharmacy software for clinics.',
     keywords: [
-      'Smart Prescription Software for Doctors',
-      'Clinic e-prescription system',
+      'smart prescription software for doctors',
+      'Best Digital Prescription Software for Physicians',
+      'Cloud pharmacy software for clinic',
       'Digital prescription software',
-      'Digital prescription software for doctors',
     ],
   },
 ];
@@ -81,6 +102,11 @@ async function main() {
     html = upsertTitle(html, page.title);
     html = upsertDescription(html, page.description);
     html = upsertKeywords(html, page.keywords);
+
+    if (page.route === '/') {
+      await writeFile(baseHtmlPath, html, 'utf8');
+      continue;
+    }
 
     const routeDir = page.route.replace(/^\/+/, '');
     const targetDir = path.join(distRoot, routeDir);
